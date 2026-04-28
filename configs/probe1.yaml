@@ -1,0 +1,38 @@
+# Probe 1 — Plumbing.
+# PPO hparams from CleanRL ppo_atari_lstm.py defaults, adapted for low-dim
+# discrete-action tasks. Env and agent specifics finalized at implementation
+# time; values here are starting points to be revised if the smoke loop or
+# CartPole sanity check warrants.
+
+env:
+  grid_size: 5
+  resource_count: 1
+  max_steps_per_episode: 200
+
+agent:
+  hidden_size: 128            # GRU hidden dim
+  encoder_hidden_size: 64     # MLP encoder hidden dim
+
+ppo:
+  learning_rate: 2.5e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_epsilon: 0.2
+  entropy_coef: 0.01
+  vf_coef: 0.5
+  ppo_epochs: 4
+  num_minibatches: 4
+  rollout_length: 128
+
+training:
+  total_steps: 200000
+  checkpoint_interval_steps: 25000
+
+mirror:
+  call_interval_episodes: 50    # invoke mirror every N completed episodes
+  context_window_episodes: 50   # how many recent episodes the mirror reads
+  model: claude-sonnet-4-6
+  max_tokens: 1024
+
+observer:
+  schema_version: 1

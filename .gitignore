@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Environment
+.env
+
+# Run artifacts
+runs/
+
+# Arc — separate project, archival reference, has its own .git
+Arc/
+
+# Local Claude settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
