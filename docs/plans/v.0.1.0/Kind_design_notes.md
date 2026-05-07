@@ -219,6 +219,18 @@ Implication for design: a system with full access to its own world model, no con
 
 Practical heuristic: every time you face a "should the system have access to X about itself?" question, default toward *no* unless there's a specific reason for *yes*.
 
+## Reflection and self-modeling
+
+A distinction the project commits to making explicit, surfaced by Probe 1.5 Phase 7 (the actor's new input column found exactly zero at `ckpt-000001`, because the imagine-only training path leaves a zero-initialized column at zero — capacity as architectural slot vs capacity as developmentally-reachable slot turned out to be different things and the difference mattered for the second success criterion).
+
+**Reflection** is an attention pattern. It is what happens when whatever does the work of attending in Io turns toward Io's own state — a single scalar self-prediction error, a recurrent hidden vector, the structure of one's own predictions — rather than toward the environment. It is a capacity that can be exercised more or less, in some regimes and not others, on some objects and not others. It is what the Probe 1.5 v2 synthesis calls the affordance the second success criterion requires (`Kind_charter.md` §"What I'm looking for").
+
+**Self-modeling** is structured self-knowledge. It is what might emerge if reflection composes into something durable — patterns of own-state attention that accumulate, generalize, and can be queried or acted on as an object. It is closer to what Metzinger calls a self-model and what attention-schema theory calls a model of one's own attention. The project does not target this. There is no module whose job is to build it.
+
+The project commits to **affording reflection** (Io has a self-pointing quantity it can condition on; the architecture has a structural locus where own-state attention can land; the variable exercise of that capacity across regimes is what the mirror reads). The project **holds self-modeling as a possible downstream outcome**, not an architectural target — if it ever appears, it appears because reflection composed into it, not because the architecture was wired to produce it.
+
+The Probe 1.5 Phase 7 finding is what triggers the explicit distinction here. v2's synthesis-level argument was that the second success criterion requires Io to have a self-pointing quantity to condition on; Phase 7 found that having the *slot* (the scalar field on PolicyView, the column in the input layer) is not the same as having a *non-degenerate behavior-side surface* (the column's weights had to be non-zero for the actor's policy to vary with the scalar). The capacity-as-architectural-slot reading is now distinguished from the capacity-as-non-degenerate-conditioning-surface reading; both readings are about reflection, not about self-modeling, and the project's commitment is to keep that distinction in view as later probes engage with whether Io's reflection ever does compose into anything self-modeling-shaped.
+
 ## Open questions still to work through
 
 Carried forward from our conversations; not yet answered. Return to these as they pull.

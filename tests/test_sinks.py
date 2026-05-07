@@ -24,7 +24,7 @@ import pytest
 
 from kind.observer.schemas import (
     RECORD_MODELS,
-    SCHEMA_VERSION,
+    PROBE_1_SCHEMA_VERSION,
     AgentStep,
     DreamRollout,
     RecordEnvelope,
@@ -49,7 +49,7 @@ HORIZON = 5
 
 def make_agent_step(t: int, *, run_id: str = "test-run") -> AgentStep:
     return AgentStep(
-        schema_version=SCHEMA_VERSION,
+        schema_version=PROBE_1_SCHEMA_VERSION,
         run_id=run_id,
         checkpoint_id=f"ckpt-{t // 10:04d}",
         t=t,
@@ -80,7 +80,7 @@ def make_agent_step(t: int, *, run_id: str = "test-run") -> AgentStep:
 
 def make_world_event(t: int, *, run_id: str = "test-run") -> WorldEvent:
     return WorldEvent(
-        schema_version=SCHEMA_VERSION,
+        schema_version=PROBE_1_SCHEMA_VERSION,
         run_id=run_id,
         checkpoint_id=None,
         t_event=t,
@@ -93,7 +93,7 @@ def make_world_event(t: int, *, run_id: str = "test-run") -> WorldEvent:
 
 def make_replay_meta(t: int, *, run_id: str = "test-run") -> ReplayMeta:
     return ReplayMeta(
-        schema_version=SCHEMA_VERSION,
+        schema_version=PROBE_1_SCHEMA_VERSION,
         run_id=run_id,
         checkpoint_id=None,
         event_type="insert",
@@ -109,7 +109,7 @@ def make_replay_meta(t: int, *, run_id: str = "test-run") -> ReplayMeta:
 
 def make_dream_rollout(t: int, *, run_id: str = "test-run") -> DreamRollout:
     return DreamRollout(
-        schema_version=SCHEMA_VERSION,
+        schema_version=PROBE_1_SCHEMA_VERSION,
         run_id=run_id,
         checkpoint_id=None,
         seed_step=t,
@@ -162,7 +162,7 @@ def test_gate_100_record_roundtrip_through_both_sinks(tmp_path: Path) -> None:
     reconstructed_a = [AgentStep.model_validate(r) for r in rows]
     for orig, recon in zip(originals_a, reconstructed_a, strict=True):
         assert recon == orig
-        assert recon.schema_version == SCHEMA_VERSION
+        assert recon.schema_version == PROBE_1_SCHEMA_VERSION
 
     # WorldEvent → JsonlSink (one record per line)
     jsonl_path = tmp_path / "world_event.jsonl"
@@ -175,7 +175,7 @@ def test_gate_100_record_roundtrip_through_both_sinks(tmp_path: Path) -> None:
     reconstructed_w = [WorldEvent.model_validate_json(line) for line in lines]
     for orig, recon in zip(originals_w, reconstructed_w, strict=True):
         assert recon == orig
-        assert recon.schema_version == SCHEMA_VERSION
+        assert recon.schema_version == PROBE_1_SCHEMA_VERSION
 
 
 # ---- smaller unit tests ----------------------------------------------------

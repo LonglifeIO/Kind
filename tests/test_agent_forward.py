@@ -64,7 +64,8 @@ def test_gate_world_model_step_and_loss_and_backward() -> None:
 
     step = wm.step(obs, h, z, a)
 
-    # All seven WorldModelStep fields, with the shapes the plan specifies.
+    # All eight WorldModelStep fields, with the shapes the plan specifies.
+    # Probe 1.5 added ``self_prediction`` as field eight.
     assert isinstance(step, WorldModelStep)
     assert step.h.shape == (batch, config.h_dim)
     assert step.z.shape == (batch, config.z_dim)
@@ -82,28 +83,61 @@ def test_gate_world_model_step_and_loss_and_backward() -> None:
         config.obs_size,
     )
     assert step.embed.shape == (batch, config.embed_dim)
+    assert step.self_prediction.shape == (batch, config.h_dim)
 
     # Dtype: float32 (default) on CPU.
-    for tensor in (step.h, step.z, step.kl_per_dim, step.recon, step.embed):
+    for tensor in (
+        step.h,
+        step.z,
+        step.kl_per_dim,
+        step.recon,
+        step.embed,
+        step.self_prediction,
+    ):
         assert tensor.dtype == torch.float32
 
-    # Finiteness — no NaN/Inf in either KL or reconstruction.
+    # Finiteness — no NaN/Inf in either KL, reconstruction, or the head's
+    # prediction.
     assert torch.isfinite(step.kl_per_dim).all()
     assert torch.isfinite(step.recon).all()
     assert torch.isfinite(step.h).all()
     assert torch.isfinite(step.z).all()
+    assert torch.isfinite(step.self_prediction).all()
 
-    # Loss dict — exactly the four keys, every value a finite 0-dim tensor.
-    loss = wm.loss(step, obs)
-    expected_keys = {"total", "recon", "kl", "kl_aggregate_unclipped"}
+    # Loss dict — exactly the five keys (Probe 1.5 added
+    # ``self_prediction_loss`` per plan §2.2), every value a finite 0-dim
+    # tensor. The auxiliary target is computed via the world model's own
+    # ``compute_self_prediction_target`` so the gate exercises the full
+    # Phase 1 path.
+    target_h = wm.compute_self_prediction_target(obs, h, z, a)
+    loss = wm.loss(step, obs, target_h_next=target_h)
+    expected_keys = {
+        "total",
+        "recon",
+        "kl",
+        "kl_aggregate_unclipped",
+        "self_prediction_loss",
+    }
     assert set(loss.keys()) == expected_keys
     for key, value in loss.items():
         assert value.dim() == 0, f"{key} is not a scalar (dim={value.dim()})"
         assert torch.isfinite(value), f"{key} is not finite ({value.item()})"
 
-    # Backward populates gradients on every learnable parameter.
-    loss["total"].backward()
+    # Backward over the combined Probe 1.5 objective populates gradients
+    # on every *trainable* parameter (the EMA target's encoder + GRU
+    # carry ``requires_grad=False`` and never receive gradients; the
+    # frozen projection — when allocated — likewise). The runner
+    # combines ``total + λ_self * self_prediction_loss``; here we use
+    # λ=1 to drive the head's gradient unambiguously.
+    (loss["total"] + loss["self_prediction_loss"]).backward()
     for name, param in wm.named_parameters():
+        if not param.requires_grad:
+            assert param.grad is None, (
+                f"requires_grad=False parameter {name} unexpectedly has a "
+                f"populated .grad — backward should not write into the EMA "
+                f"target or the frozen projection"
+            )
+            continue
         assert param.grad is not None, f"no gradient on {name}"
         assert torch.isfinite(param.grad).all(), f"non-finite gradient on {name}"
 
@@ -200,6 +234,7 @@ def test_free_bits_floor_applied_per_dim_below_threshold() -> None:
         kl_per_dim=torch.tensor([[0.1, 5.0, 0.5, 2.0]]),
         recon=fake_obs.clone(),  # recon == obs_target → recon_loss = 0
         embed=torch.zeros(1, config.embed_dim),
+        self_prediction=torch.zeros(1, config.h_dim),
     )
 
     loss = wm.loss(fake_step, fake_obs)
@@ -232,6 +267,7 @@ def test_free_bits_floor_does_not_clip_when_kl_above_floor() -> None:
         kl_per_dim=torch.tensor([[2.0, 3.0, 4.0, 5.0]]),
         recon=fake_obs.clone(),
         embed=torch.zeros(1, config.embed_dim),
+        self_prediction=torch.zeros(1, config.h_dim),
     )
     loss = wm.loss(fake_step, fake_obs)
     # All values are above the floor; unclipped == clipped.
@@ -262,6 +298,9 @@ def test_step_is_deterministic_given_same_seed_and_inputs() -> None:
     assert torch.equal(step1.recon, step2.recon)
     assert torch.equal(step1.kl_per_dim, step2.kl_per_dim)
     assert torch.equal(step1.embed, step2.embed)
+    # The Probe 1.5 head's forward is deterministic in the online ``h``,
+    # so identical seed + input must produce identical predictions.
+    assert torch.equal(step1.self_prediction, step2.self_prediction)
 
 
 # ---- output sanity ---------------------------------------------------------

@@ -1,0 +1,508 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "models": {
+    "AgentStep": {
+      "additionalProperties": false,
+      "description": "One record per environment timestep, written by the agent process.\n\nCaptures the full per-step substrate state the mirror needs (h_t, posterior\nand prior parameters, sampled latent, KL, recon, action, intrinsic signal,\nencoder embedding) plus indexing fields for downstream alignment.\n\nProbe 1.5 adds three optional fields tied to the self-prediction head\n(synthesis §1.3 v2): ``self_prediction_t`` is the head's output vector\n``ĥ_{t+1}`` (length ``h_dim``); ``self_prediction_error_t`` is the\nscalar loss between the head's output and the EMA target's\n``bar{h}_{t+1}`` (the value Io reads on PolicyView via the single-scalar\nWatts-heuristic exception); ``self_prediction_error_masked_t`` is True\non the first step of each episode (no actual ``h_{t+1}`` available, so\nthe scalar is forced to 0.0 as a sentinel) and False on subsequent\nsteps. All three are ``None`` on Probe 1 records (``\"0.1.0\"``); all\nthree must be non-None on Probe 1.5 records (``\"0.2.0\"``) — the\n``_enforce_v2_required_fields`` validator below is the writer-side\ncheck.",
+      "properties": {
+        "action_logprob_t": {
+          "title": "Action Logprob T",
+          "type": "number"
+        },
+        "action_t": {
+          "title": "Action T",
+          "type": "integer"
+        },
+        "checkpoint_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Checkpoint Id"
+        },
+        "encoder_embedding_t": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Encoder Embedding T",
+          "type": "array"
+        },
+        "episode_id": {
+          "title": "Episode Id",
+          "type": "integer"
+        },
+        "h_t": {
+          "items": {
+            "type": "number"
+          },
+          "title": "H T",
+          "type": "array"
+        },
+        "intrinsic_signal_t": {
+          "title": "Intrinsic Signal T",
+          "type": "number"
+        },
+        "kl_aggregate_t": {
+          "title": "Kl Aggregate T",
+          "type": "number"
+        },
+        "kl_per_dim_t": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Kl Per Dim T",
+          "type": "array"
+        },
+        "obs_hash_t": {
+          "title": "Obs Hash T",
+          "type": "string"
+        },
+        "p_params_t": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "P Params T",
+          "type": "array"
+        },
+        "policy_entropy_t": {
+          "title": "Policy Entropy T",
+          "type": "number"
+        },
+        "q_params_t": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Q Params T",
+          "type": "array"
+        },
+        "recon_loss_t": {
+          "title": "Recon Loss T",
+          "type": "number"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "self_prediction_error_masked_t": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Self Prediction Error Masked T"
+        },
+        "self_prediction_error_t": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Self Prediction Error T"
+        },
+        "self_prediction_t": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Self Prediction T"
+        },
+        "step_in_episode": {
+          "title": "Step In Episode",
+          "type": "integer"
+        },
+        "t": {
+          "title": "T",
+          "type": "integer"
+        },
+        "wallclock_ms": {
+          "title": "Wallclock Ms",
+          "type": "integer"
+        },
+        "z_t": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Z T",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "run_id",
+        "checkpoint_id",
+        "t",
+        "episode_id",
+        "step_in_episode",
+        "wallclock_ms",
+        "h_t",
+        "q_params_t",
+        "p_params_t",
+        "z_t",
+        "kl_per_dim_t",
+        "kl_aggregate_t",
+        "recon_loss_t",
+        "action_t",
+        "action_logprob_t",
+        "policy_entropy_t",
+        "obs_hash_t",
+        "intrinsic_signal_t",
+        "encoder_embedding_t"
+      ],
+      "title": "AgentStep",
+      "type": "object"
+    },
+    "DreamRollout": {
+      "additionalProperties": false,
+      "description": "One record per imagination episode (default cadence ~1 per 1k env steps).\n\nProbe 1 emits dream rollouts as a calibration handshake — nothing trains\non them — so that the imagination conduit is exercised and visible in\ntelemetry from day one.\n\nProbe 1.5 reserves ``sequence_self_prediction`` (synthesis §1.5 v2):\nthe self-prediction head runs only during waking at Probe 1.5, so this\nfield stays ``None``; Probe 3 may populate it if its design extends\nself-prediction to imagined trajectories (the framing question is\njournaled at ``docs/workingjournal/pre-probe3.md``). The reserved slot\nis the forward-compatibility hook — no schema bump is needed when\nProbe 3 lands.",
+      "properties": {
+        "checkpoint_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Checkpoint Id"
+        },
+        "cumulative_prior_entropy": {
+          "title": "Cumulative Prior Entropy",
+          "type": "number"
+        },
+        "max_step_latent_norm_change": {
+          "title": "Max Step Latent Norm Change",
+          "type": "number"
+        },
+        "mean_step_kl_successive_priors": {
+          "title": "Mean Step Kl Successive Priors",
+          "type": "number"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "seed_h0": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Seed H0",
+          "type": "array"
+        },
+        "seed_step": {
+          "title": "Seed Step",
+          "type": "integer"
+        },
+        "seed_z0": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Seed Z0",
+          "type": "array"
+        },
+        "sequence_action": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Sequence Action",
+          "type": "array"
+        },
+        "sequence_action_logprob": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Sequence Action Logprob",
+          "type": "array"
+        },
+        "sequence_decoded_obs": {
+          "anyOf": [
+            {
+              "items": {
+                "format": "binary",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Sequence Decoded Obs"
+        },
+        "sequence_h": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Sequence H",
+          "type": "array"
+        },
+        "sequence_prior_entropy": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Sequence Prior Entropy",
+          "type": "array"
+        },
+        "sequence_self_prediction": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Self Prediction"
+        },
+        "sequence_z_prior": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Sequence Z Prior",
+          "type": "array"
+        }
+      },
+      "required": [
+        "schema_version",
+        "run_id",
+        "checkpoint_id",
+        "seed_step",
+        "seed_h0",
+        "seed_z0",
+        "sequence_h",
+        "sequence_z_prior",
+        "sequence_action",
+        "sequence_action_logprob",
+        "sequence_prior_entropy",
+        "sequence_decoded_obs",
+        "cumulative_prior_entropy",
+        "mean_step_kl_successive_priors",
+        "max_step_latent_norm_change"
+      ],
+      "title": "DreamRollout",
+      "type": "object"
+    },
+    "ReplayMeta": {
+      "additionalProperties": false,
+      "description": "One record per replay buffer event (insert / sample / evict).",
+      "properties": {
+        "buffer_size": {
+          "title": "Buffer Size",
+          "type": "integer"
+        },
+        "checkpoint_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Checkpoint Id"
+        },
+        "event_type": {
+          "enum": [
+            "insert",
+            "sample",
+            "evict"
+          ],
+          "title": "Event Type",
+          "type": "string"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Priority"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "segment_end": {
+          "title": "Segment End",
+          "type": "integer"
+        },
+        "segment_id": {
+          "title": "Segment Id",
+          "type": "integer"
+        },
+        "segment_start": {
+          "title": "Segment Start",
+          "type": "integer"
+        },
+        "t_event": {
+          "title": "T Event",
+          "type": "integer"
+        },
+        "total_segments": {
+          "title": "Total Segments",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "run_id",
+        "checkpoint_id",
+        "event_type",
+        "t_event",
+        "segment_id",
+        "segment_start",
+        "segment_end",
+        "priority",
+        "buffer_size",
+        "total_segments"
+      ],
+      "title": "ReplayMeta",
+      "type": "object"
+    },
+    "WorldEvent": {
+      "additionalProperties": false,
+      "description": "One record per external event in the world.\n\nThe ``payload`` field is intentionally schemaless within itself (plan §3.4):\nthe same model carries per-event records (Probe 4's individual builder\nmutators) and per-episode aggregates (Probe 1's\n``internal_stochasticity_aggregate`` rollups). Adding new payload shapes\nfor future probes does not bump the schema version.",
+      "properties": {
+        "checkpoint_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Checkpoint Id"
+        },
+        "event_type": {
+          "enum": [
+            "builder_perturbation",
+            "env_reset",
+            "internal_stochasticity_aggregate",
+            "mirror_marker"
+          ],
+          "title": "Event Type",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "builder",
+            "environment",
+            "system"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "t_event": {
+          "title": "T Event",
+          "type": "integer"
+        },
+        "wallclock_ms": {
+          "title": "Wallclock Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "run_id",
+        "checkpoint_id",
+        "t_event",
+        "event_type",
+        "source",
+        "payload",
+        "wallclock_ms"
+      ],
+      "title": "WorldEvent",
+      "type": "object"
+    }
+  },
+  "schema_version": "0.2.0",
+  "title": "Kind Telemetry Schemas"
+}

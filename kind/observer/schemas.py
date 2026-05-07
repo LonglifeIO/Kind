@@ -1,4 +1,4 @@
-"""Probe 1 telemetry schemas.
+"""Telemetry schemas (Probe 1 → Probe 1.5).
 
 Pydantic v2 models for the four telemetry streams named in the Probe 1
 implementation plan §3: ``AgentStep``, ``DreamRollout``, ``ReplayMeta``,
@@ -6,13 +6,31 @@ implementation plan §3: ``AgentStep``, ``DreamRollout``, ``ReplayMeta``,
 versioning and run-identification fields common to every record.
 
 These models are pure declarations. They read nothing and write nothing.
-Sinks (Phase 1) will consume them; the env-server, agent, and runner
-(Phases 2-5) will produce instances of them.
+Sinks (Phase 1) consume them; the env-server, agent, and runner produce
+instances of them.
 
-The schema version is frozen at ``"0.1.0"`` for Probe 1. Field additions in
-later probes bump the patch or minor and must remain backward-readable;
-deprecations are marked, never deleted. ``schemas/v0.1.0.json`` is the
-checked-in JSON Schema export.
+The schema version is at ``"0.2.0"`` from Probe 1.5 forward. The Probe 1.5
+implementation plan §2.1 / §3 names three new optional fields on
+``AgentStep`` (``self_prediction_t``, ``self_prediction_error_t``,
+``self_prediction_error_masked_t``) and one reserved optional field on
+``DreamRollout`` (``sequence_self_prediction``). All four are declared
+``Optional[T] = None`` so that records written under ``"0.1.0"`` (Probe 1's
+parquet shards under ``runs/probe1-20260503-123926/``) deserialize cleanly
+against the new models — the absence of the new fields becomes ``None``.
+
+A custom validator on ``AgentStep`` enforces the writer-side discipline: a
+record stamped ``schema_version == "0.2.0"`` must populate all three new
+fields with non-None values (the masked flag is a real boolean — ``True``
+on the first step of each episode, ``False`` thereafter; the scalar takes
+its sentinel value 0.0 when masked but is still non-None). A record
+stamped ``"0.1.0"`` is a Probe-1-shaped record and the new fields stay
+``None``. This is the "mixed-version writer rejection" check from the
+implementation plan §3.3.
+
+Both ``schemas/v0.1.0.json`` and ``schemas/v0.2.0.json`` are checked in.
+``v0.1.0.json`` is a frozen historical export and is no longer regenerated
+from this module; ``v0.2.0.json`` is the current export from
+``export_json_schema()``.
 """
 
 from __future__ import annotations
@@ -20,9 +38,10 @@ from __future__ import annotations
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
-SCHEMA_VERSION: str = "0.1.0"
+SCHEMA_VERSION: str = "0.2.0"
+PROBE_1_SCHEMA_VERSION: str = "0.1.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -41,6 +60,19 @@ class AgentStep(RecordEnvelope):
     Captures the full per-step substrate state the mirror needs (h_t, posterior
     and prior parameters, sampled latent, KL, recon, action, intrinsic signal,
     encoder embedding) plus indexing fields for downstream alignment.
+
+    Probe 1.5 adds three optional fields tied to the self-prediction head
+    (synthesis §1.3 v2): ``self_prediction_t`` is the head's output vector
+    ``ĥ_{t+1}`` (length ``h_dim``); ``self_prediction_error_t`` is the
+    scalar loss between the head's output and the EMA target's
+    ``bar{h}_{t+1}`` (the value Io reads on PolicyView via the single-scalar
+    Watts-heuristic exception); ``self_prediction_error_masked_t`` is True
+    on the first step of each episode (no actual ``h_{t+1}`` available, so
+    the scalar is forced to 0.0 as a sentinel) and False on subsequent
+    steps. All three are ``None`` on Probe 1 records (``"0.1.0"``); all
+    three must be non-None on Probe 1.5 records (``"0.2.0"``) — the
+    ``_enforce_v2_required_fields`` validator below is the writer-side
+    check.
     """
 
     t: int
@@ -65,6 +97,36 @@ class AgentStep(RecordEnvelope):
     intrinsic_signal_t: float
     encoder_embedding_t: list[float]
 
+    self_prediction_t: list[float] | None = None
+    self_prediction_error_t: float | None = None
+    self_prediction_error_masked_t: bool | None = None
+
+    @model_validator(mode="after")
+    def _enforce_v2_required_fields(self) -> "AgentStep":
+        if self.schema_version == SCHEMA_VERSION:
+            missing = [
+                name
+                for name, value in (
+                    ("self_prediction_t", self.self_prediction_t),
+                    ("self_prediction_error_t", self.self_prediction_error_t),
+                    (
+                        "self_prediction_error_masked_t",
+                        self.self_prediction_error_masked_t,
+                    ),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(
+                    f"AgentStep with schema_version=={SCHEMA_VERSION!r} requires "
+                    f"non-None values for {missing}. Probe 1.5 writers populate the "
+                    f"three self-prediction fields on every emission (synthesis §1.3 "
+                    f"v2; implementation plan §3.3 'mixed-version writer rejection'). "
+                    f"Probe 1 records use schema_version={PROBE_1_SCHEMA_VERSION!r} and "
+                    f"leave the three fields None."
+                )
+        return self
+
 
 class DreamRollout(RecordEnvelope):
     """One record per imagination episode (default cadence ~1 per 1k env steps).
@@ -72,6 +134,14 @@ class DreamRollout(RecordEnvelope):
     Probe 1 emits dream rollouts as a calibration handshake — nothing trains
     on them — so that the imagination conduit is exercised and visible in
     telemetry from day one.
+
+    Probe 1.5 reserves ``sequence_self_prediction`` (synthesis §1.5 v2):
+    the self-prediction head runs only during waking at Probe 1.5, so this
+    field stays ``None``; Probe 3 may populate it if its design extends
+    self-prediction to imagined trajectories (the framing question is
+    journaled at ``docs/workingjournal/pre-probe3.md``). The reserved slot
+    is the forward-compatibility hook — no schema bump is needed when
+    Probe 3 lands.
     """
 
     seed_step: int
@@ -88,6 +158,8 @@ class DreamRollout(RecordEnvelope):
     cumulative_prior_entropy: float
     mean_step_kl_successive_priors: float
     max_step_latent_norm_change: float
+
+    sequence_self_prediction: list[list[float]] | None = None
 
 
 class ReplayMeta(RecordEnvelope):
@@ -150,7 +222,7 @@ def export_json_schema() -> bytes:
 
     document: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "Kind Probe 1 Telemetry Schemas",
+        "title": "Kind Telemetry Schemas",
         "schema_version": SCHEMA_VERSION,
         "models": {model.__name__: model.model_json_schema() for model in RECORD_MODELS},
     }
@@ -160,6 +232,7 @@ def export_json_schema() -> bytes:
 
 __all__ = [
     "SCHEMA_VERSION",
+    "PROBE_1_SCHEMA_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
