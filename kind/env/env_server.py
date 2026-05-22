@@ -283,6 +283,46 @@ class EnvServer:
         payload = mutators.move_object(grid_world, cell_from, cell_to)
         self._emit_builder_perturbation(payload)
 
+    # ---- sham perturbation (Probe 2 calibration protocol) --------------
+
+    def fire_sham_perturbation(
+        self,
+        mutator_label: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Emit a flag-only ``builder_perturbation`` ``WorldEvent``.
+
+        Probe 2 implementation plan §2.2 (carried unchanged from v1) and
+        synthesis §2.4 element 3: the calibration protocol's null-event
+        test fires this method to generate a builder-perturbation entry
+        in the ``world_event`` stream that is *not* paired with any
+        actual grid mutation. Concretely, the emitted record carries
+        ``payload['is_sham'] = True`` and
+        ``payload['sham_label'] = mutator_label``; the caller-supplied
+        ``payload`` (which may name the intended mutator and cell so the
+        sham looks structurally like a real perturbation in the JSONL)
+        is merged in unchanged. Two side-effects are explicitly absent:
+        no underlying-grid value is modified, and the regrowth and drift
+        RNG streams are not advanced. The agent's next observation is
+        therefore byte-equal to the observation that would have been
+        produced if the sham had not fired.
+
+        The mirror's reading at the sham timestamp must not flag any
+        manifestation it would flag for a real perturbation at any
+        reading surface; finding a flag at a sham timestamp is what the
+        protocol catches as confabulation.
+        """
+        # Require started — same precondition as the four real mutators
+        # — so the harness lifecycle is consistent across mutator-shaped
+        # methods. The grid world is fetched but never consulted.
+        self._require_started()
+        emitted_payload: dict[str, Any] = {
+            **payload,
+            "is_sham": True,
+            "sham_label": mutator_label,
+        }
+        self._emit_builder_perturbation(emitted_payload)
+
     # ---- runner-side wiring ---------------------------------------------
 
     def set_world_event_handler(self, handler: WorldEventHandler) -> None:
@@ -380,10 +420,19 @@ class EnvServer:
         resource_positions: list[list[int]] = [
             [int(r), int(c)] for r, c in zip(*np.where(resource_mask))
         ]
+        # Probe 2 env revision (synthesis §2.1; implementation plan §2.2):
+        # the actual cell the agent was placed at this reset is recorded
+        # so random-start runs are reproducible from the regrowth seed
+        # via the ``world_event`` JSONL alone. With a fixed
+        # ``GridWorldConfig.start_cell`` the recorded value equals the
+        # configured cell; with the Probe-2 default ``None`` it is the
+        # cell sampled from the regrowth stream.
+        ar, ac = state.agent_pos
         payload: dict[str, Any] = {
             "episode_id": self._current_episode_id,
             "resource_positions": resource_positions,
             "regrowth_p": float(state.regrowth_p),
+            "start_cell": [int(ar), int(ac)],
         }
         self._emit_world_event(
             t_event=t_event,

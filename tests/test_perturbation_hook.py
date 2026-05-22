@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -758,9 +759,11 @@ def test_mutator_effect_visible_in_next_observation_when_in_view(
 ) -> None:
     """A builder add_resource within the agent's ego-centric view shows up
     as a resource pixel in the next observation."""
-    quiet = _make_quiet_config()
-    # start_cell defaults to (3, 3); with view_size=7 the view spans rows
-    # 0..6 and cols 0..6. (3, 4) is in view, one cell to the right of center.
+    # Pin start_cell so the in-view assertion is deterministic post the
+    # Probe 2 default flip from (3, 3) to None (random non-wall sample).
+    # With start_cell=(3, 3) and view_size=7 the view spans rows 0..6 and
+    # cols 0..6; (3, 4) is one cell right of center.
+    quiet = replace(_make_quiet_config(), start_cell=(3, 3))
     with _make_env_server(tmp_path, grid_world_config=quiet) as (server, _path):
         before = server.start().observation.copy()
         server.add_resource((3, 4))

@@ -77,6 +77,7 @@ from kind.observer.schemas import (
     ReplayMeta,
     WorldEvent,
 )
+from kind.observer.pre_reg import PreRegistration, PreRegSink
 from kind.observer.sinks import JsonlSink, ParquetSink
 from kind.training.checkpoint import CheckpointContents, CheckpointManager
 from kind.training.replay import (
@@ -217,6 +218,61 @@ class RunnerConfig:
     ] = "online"
     self_prediction_loss_form: Literal["cosine", "mse"] = "cosine"
 
+    # Probe 2 v2 lesion plumbing (plan §2.5; synthesis §2.4 element 4).
+    # The five named lesions target three reading surfaces:
+    #
+    # * ``"ensemble_k1"`` / ``"ensemble_constant"`` — substrate-side; v1
+    #   candidates preserved here. ``"ensemble_k1"`` overrides
+    #   ``ensemble_k`` to 1 at construction; ``"ensemble_constant"``
+    #   passes ``lesion_constant_disagreement=True`` to the ensemble so
+    #   ``disagreement`` returns zeros.
+    # * ``"disable_self_prediction"`` — substrate-side; threaded into the
+    #   constructed ``WorldModelConfig.lesion_kind`` so ``WorldModel.step``
+    #   emits zeros from the head and ``_update_ema_target`` is a no-op.
+    # * ``"zero_or_randomize_scalar"`` — behavior-side; threaded into
+    #   ``views.split`` at every env-step so the actor's PolicyView's
+    #   ``self_prediction_error`` is overridden. ``lesion_zero_or_randomize_
+    #   variant`` selects the specific override; ``lesion_zero_or_
+    #   randomize_empirical_min`` / ``..._max`` are the bounds for the
+    #   randomize variant. The substrate-side reads exactly like the
+    #   un-lesioned run.
+    # * ``"init_zero_scalar_column"`` — capacity-as-init-shape; not a
+    #   runtime flag but a checkpoint mutation produced by
+    #   ``scripts/probe2_lesion_init_zero_scalar_column.py``. Setting this
+    #   value on a ``RunnerConfig`` is purely informational at run start
+    #   (it triggers the same ``mirror_marker`` emission convention the
+    #   other kinds use); the actual column-zeroing happens before the
+    #   runner loads the lesioned checkpoint.
+    #
+    # ``None`` (the default) is the un-lesioned path; downstream code
+    # treats it as the no-op carrier.
+    lesion_kind: Literal[
+        None,
+        "ensemble_k1",
+        "ensemble_constant",
+        "disable_self_prediction",
+        "zero_or_randomize_scalar",
+        "init_zero_scalar_column",
+    ] = None
+    lesion_zero_or_randomize_variant: Literal["zero", "randomize"] = "zero"
+    # Empirical bounds for the ``"randomize"`` variant; the defaults cover
+    # the cosine loss form's range. Real Probe 2 lesion runs journal the
+    # bounds derived from the source run's empirical
+    # ``self_prediction_error_t`` distribution.
+    lesion_zero_or_randomize_empirical_min: float = 0.0
+    lesion_zero_or_randomize_empirical_max: float = 1.0
+
+    # Probe 2 v2 pre-registration sink (plan §2.5; synthesis §2.4 element 1).
+    # When set, the runner constructs a :class:`PreRegSink` at this directory
+    # and :meth:`Runner.emit_pre_registration` writes records to
+    # ``<pre_reg_dir>/pre_reg.jsonl``. When ``None`` (the default), the
+    # runner has no pre-reg sink, no directory is created, and
+    # ``emit_pre_registration`` raises. The Probe 2 convention is
+    # ``runs/{run_id}/pre_reg/`` as a sibling of ``telemetry_dir``;
+    # adversarial-pass orchestration (Phase 8) sets this explicitly. Probe 1
+    # and Probe 1.5 runners leave it ``None``.
+    pre_reg_dir: Path | None = None
+
     # Pickled extra fields are stored as a Tensor-friendly dict via the
     # rng_state pickle so checkpoint resume can restore them.
     _checkpoint_id_zero_pad: int = field(default=6, repr=False)
@@ -272,11 +328,22 @@ class Runner:
         # ``world_model_config`` so the constructed WorldModel honors
         # whatever the runner config specifies. By default both share
         # the same defaults, so this is a no-op for unmodified configs.
+        # Probe 2 v2 (plan §2.5): only the ``"disable_self_prediction"``
+        # kind affects WorldModel; other kinds are absorbed at the
+        # ensemble construction (``"ensemble_k1"``, ``"ensemble_constant"``)
+        # or at views.split (``"zero_or_randomize_scalar"``) or via a
+        # pre-run checkpoint mutation (``"init_zero_scalar_column"``).
+        wm_lesion_kind: Literal[None, "disable_self_prediction"] = (
+            "disable_self_prediction"
+            if config.lesion_kind == "disable_self_prediction"
+            else None
+        )
         wm_cfg = dataclasses.replace(
             config.world_model_config,
             ema_decay=config.ema_decay,
             self_prediction_target_mode=config.self_prediction_target_mode,
             self_prediction_loss_form=config.self_prediction_loss_form,
+            lesion_kind=wm_lesion_kind,
         )
         self._world_model = WorldModel(wm_cfg).to(self._device)
         self._actor = Actor(
@@ -285,12 +352,26 @@ class Runner:
             action_dim=config.action_dim,
             mlp_hidden=wm_cfg.mlp_hidden,
         ).to(self._device)
+        # Probe 2 v2 ``ensemble_k1`` / ``ensemble_constant`` lesions
+        # (plan §2.5): the v1 candidates' implementation point is the
+        # ensemble's constructor. ``ensemble_k1`` shrinks K to 1 (single
+        # head → variance over a length-1 axis is identically 0;
+        # disagreement is structurally absent). ``ensemble_constant``
+        # keeps K at config.ensemble_k but flips the
+        # ``lesion_constant_disagreement`` flag so ``disagreement(...)``
+        # short-circuits to zeros — the heads still train normally so
+        # resume / checkpoint shape is unaffected.
+        ensemble_k_effective = (
+            1 if config.lesion_kind == "ensemble_k1" else config.ensemble_k
+        )
+        ensemble_constant = config.lesion_kind == "ensemble_constant"
         self._ensemble = LatentDisagreementEnsemble(
             h_dim=wm_cfg.h_dim,
             z_dim=wm_cfg.z_dim,
             action_dim=config.action_dim,
-            K=config.ensemble_k,
+            K=ensemble_k_effective,
             mlp_hidden=wm_cfg.mlp_hidden,
+            lesion_constant_disagreement=ensemble_constant,
         ).to(self._device)
 
         # ---- optimizers ------------------------------------------------
@@ -325,6 +406,17 @@ class Runner:
         )
         self._world_event_sink = JsonlSink(
             config.telemetry_dir / _WORLD_EVENT_FILE, WorldEvent
+        )
+
+        # Probe 2 v2 pre-registration sink (plan §2.5; synthesis §2.4
+        # element 1). Constructed only when ``pre_reg_dir`` is set so
+        # Probe 1 / Probe 1.5 runners create no extra artifact. The sink's
+        # constructor creates the directory if missing and opens the file
+        # for append.
+        self._pre_reg_sink: PreRegSink | None = (
+            PreRegSink(config.pre_reg_dir)
+            if config.pre_reg_dir is not None
+            else None
         )
 
         # Wire the WorldEvent stream from the transport client into our
@@ -375,6 +467,21 @@ class Runner:
         # per loop iteration. Persisted across checkpoints.
         self._iteration: int = 0
 
+        # Probe 2 v2 lesion bookkeeping (plan §2.5; synthesis §2.4
+        # element 4): a single ``mirror_marker`` is emitted at the top of
+        # ``run()`` if ``lesion_kind`` is non-None; the flag below
+        # guarantees one emission per Runner instance regardless of
+        # ``run()`` re-entry edge cases. Pre-computed lesion routing
+        # decisions for ``views.split``: only the
+        # ``"zero_or_randomize_scalar"`` kind reaches split; other kinds
+        # have already taken effect at construction time.
+        self._lesion_marker_emitted: bool = False
+        self._views_lesion_kind: Literal["zero", "randomize"] | None = (
+            config.lesion_zero_or_randomize_variant
+            if config.lesion_kind == "zero_or_randomize_scalar"
+            else None
+        )
+
         self._closed: bool = False
 
     # ---- public API -----------------------------------------------------
@@ -403,6 +510,17 @@ class Runner:
             initial = self._transport.connect()
             self._absorb_env_step(initial)
             self._init_runtime_zero_state()
+
+        # Probe 2 v2 (plan §2.5; synthesis §2.4 element 4): emit a single
+        # ``mirror_marker`` ``world_event`` at run start if a lesion is
+        # configured, so downstream digests / readers can identify the
+        # run's lesion shape from the world_event stream alone. The flag
+        # guarantees one emission per Runner instance even if ``run()``
+        # is re-entered. Convention matches Probe 1.5 Phase 5's
+        # mirror_marker: ``event_type="mirror_marker"``, ``source="system"``,
+        # ``payload.lesion_kind=<the kind>``, plus
+        # ``payload.lesion_variant`` for ``"zero_or_randomize_scalar"``.
+        self._maybe_emit_lesion_mirror_marker()
 
         for _ in range(total_env_steps):
             self._step_once()
@@ -601,10 +719,97 @@ class Runner:
             except Exception:
                 # Best-effort cleanup; don't mask earlier exceptions.
                 pass
+        if self._pre_reg_sink is not None:
+            try:
+                self._pre_reg_sink.close()
+            except Exception:
+                pass
         try:
             self._transport.close()
         except Exception:
             pass
+
+    def emit_pre_registration(self, record: PreRegistration) -> None:
+        """Write a :class:`PreRegistration` record through the runner's
+        :class:`PreRegSink`.
+
+        Probe 2 v2 calibration protocol's first element (plan §2.5;
+        synthesis §2.4 element 1): pre-registration is the structural
+        counter against the reading drifting toward what the builder
+        hopes for in retrospect. Append-only, written before the
+        adversarial-pass reading runs. Multiple calls within a single
+        runner instance append additional records to the same JSONL.
+
+        Raises :class:`RuntimeError` if the runner has been closed or if
+        no ``pre_reg_dir`` was configured on the :class:`RunnerConfig`.
+        """
+        if self._closed:
+            raise RuntimeError("Runner is closed; cannot emit pre-registration.")
+        if self._pre_reg_sink is None:
+            raise RuntimeError(
+                "Runner.emit_pre_registration called but no pre_reg_dir is "
+                "configured on RunnerConfig. Set RunnerConfig.pre_reg_dir to "
+                "enable pre-registration emission."
+            )
+        self._pre_reg_sink.write(record)
+
+    # ---- lesion mirror_marker emission ---------------------------------
+
+    def _maybe_emit_lesion_mirror_marker(self) -> None:
+        """Emit a single ``mirror_marker`` ``world_event`` at run start
+        if a lesion is configured.
+
+        Probe 2 v2 (plan §2.5; synthesis §2.4 element 4). The emission's
+        shape matches Probe 1.5 Phase 5's settled convention:
+        ``event_type="mirror_marker"``, ``source="system"``, and a
+        payload carrying the lesion identification fields. For the
+        ``"zero_or_randomize_scalar"`` kind the payload also carries
+        ``lesion_variant`` (``"zero"`` or ``"randomize"``) plus the
+        empirical bounds that drove the randomize variant; the
+        ``"init_zero_scalar_column"`` kind is normally emitted by the
+        mutation script (which runs before the runner loads the lesioned
+        checkpoint), but if a runner is constructed with that kind set
+        explicitly, the marker fires here for consistency. The flag
+        ``self._lesion_marker_emitted`` guarantees one emission per
+        Runner instance.
+        """
+        if self._lesion_marker_emitted:
+            return
+        if self._config.lesion_kind is None:
+            self._lesion_marker_emitted = True
+            return
+
+        t_event = (
+            self._env_step_meta.env_step
+            if self._env_step_meta is not None
+            else 0
+        )
+        payload: dict[str, Any] = {
+            "lesion_kind": self._config.lesion_kind,
+        }
+        if self._config.lesion_kind == "zero_or_randomize_scalar":
+            payload["lesion_variant"] = (
+                self._config.lesion_zero_or_randomize_variant
+            )
+            payload["lesion_empirical_min"] = (
+                self._config.lesion_zero_or_randomize_empirical_min
+            )
+            payload["lesion_empirical_max"] = (
+                self._config.lesion_zero_or_randomize_empirical_max
+            )
+        self._world_event_sink.write(
+            WorldEvent(
+                schema_version=SCHEMA_VERSION,
+                run_id=self._config.run_id,
+                checkpoint_id=self._checkpoint_id,
+                t_event=t_event,
+                event_type="mirror_marker",
+                source="system",
+                payload=payload,
+                wallclock_ms=time.monotonic_ns() // 1_000_000,
+            )
+        )
+        self._lesion_marker_emitted = True
 
     # ---- one iteration --------------------------------------------------
 
@@ -657,28 +862,42 @@ class Runner:
         #    masked flag True so the actor's input is dimensionally
         #    consistent across all steps and downstream analyzers can
         #    discriminate the sentinel from an empirical near-zero.
-        target_h_next = self._world_model.compute_self_prediction_target(
-            obs_t_dev,
-            self._h_prev,
-            self._z_prev,
-            self._a_prev,
-            next_obs=next_obs_for_target,
-        )
         loss_form = self._config.self_prediction_loss_form
-        with torch.no_grad():
-            if loss_form == "cosine":
-                sp_scalar_computed = (
-                    1.0
-                    - F.cosine_similarity(
-                        wm_step.self_prediction,
-                        target_h_next.detach(),
-                        dim=-1,
-                    ).mean()
-                )
-            else:  # "mse"
-                sp_scalar_computed = F.mse_loss(
-                    wm_step.self_prediction, target_h_next.detach()
-                )
+        if self._config.lesion_kind == "disable_self_prediction":
+            # Probe 2 v2 lesion (plan §2.5): the head emits zeros from
+            # ``WorldModel.step`` and the auxiliary loss is identically
+            # zero; the per-step scalar is the loss-form's zero-pair
+            # value (``cosine: 1.0`` since 1 − cos(0, 0) is 1 under
+            # PyTorch's eps-guarded definition; ``mse: 0.0`` since
+            # ``||0 − 0||² = 0``). Skipping the actual computation
+            # avoids the degenerate cosine-similarity-of-zero-vectors
+            # call and pins the sentinel deterministically.
+            sp_zero_pair = 1.0 if loss_form == "cosine" else 0.0
+            sp_scalar_computed = torch.tensor(
+                sp_zero_pair, device=self._device
+            )
+        else:
+            target_h_next = self._world_model.compute_self_prediction_target(
+                obs_t_dev,
+                self._h_prev,
+                self._z_prev,
+                self._a_prev,
+                next_obs=next_obs_for_target,
+            )
+            with torch.no_grad():
+                if loss_form == "cosine":
+                    sp_scalar_computed = (
+                        1.0
+                        - F.cosine_similarity(
+                            wm_step.self_prediction,
+                            target_h_next.detach(),
+                            dim=-1,
+                        ).mean()
+                    )
+                else:  # "mse"
+                    sp_scalar_computed = F.mse_loss(
+                        wm_step.self_prediction, target_h_next.detach()
+                    )
         is_first_step_of_episode = env_step_meta.step_in_episode == 0
         if is_first_step_of_episode:
             sp_scalar_for_view = torch.zeros((), device=self._device)
@@ -691,11 +910,28 @@ class Runner:
         #    (the synthesis §1.3 v2 single-scalar Watts-heuristic
         #    exception); the full prediction vector + masked flag land
         #    on TelemetryView (mirror-side reading).
+        # Probe 2 v2 ``zero_or_randomize_scalar`` lesion (plan §2.5):
+        # ``self._views_lesion_kind`` is the precomputed routing decision;
+        # ``views.split`` overrides the scalar (and forces the masked
+        # flag True) for the lesioned step. The substrate-side
+        # telemetry path is untouched — ``self_prediction_t`` /
+        # ``self_prediction_error_t`` continue to record the head's
+        # actual output and the empirical scalar respectively, so the
+        # mirror's substrate-side / head-internal cohorts read the
+        # un-lesioned signals; only the actor's input is lesioned.
         policy_view, telemetry_view = split(
             wm_step,
             intrinsic,
             self_prediction_error=sp_scalar_for_view,
             self_prediction_error_masked=sp_masked,
+            lesion_zero_or_randomize=self._views_lesion_kind,
+            lesion_empirical_min=(
+                self._config.lesion_zero_or_randomize_empirical_min
+            ),
+            lesion_empirical_max=(
+                self._config.lesion_zero_or_randomize_empirical_max
+            ),
+            lesion_rng=self._sample_rng,
         )
         action_output = self._actor.forward(policy_view)
         action_int = int(action_output.action.item())
@@ -717,7 +953,17 @@ class Runner:
         )
         self._replay.insert(transition)
 
-        # 6. Emit AgentStep telemetry.
+        # 6. Emit AgentStep telemetry. Probe 2 v2 (plan §2.5): the
+        #    scalar/masked fields recorded into AgentStep come *post-
+        #    split* so the ``"zero_or_randomize_scalar"`` lesion's
+        #    override on PolicyView's scalar (and the True masked flag
+        #    on TelemetryView) lands in the telemetry stream. Under no
+        #    lesion the post-split values equal the pre-split values
+        #    exactly (split passes them through), so non-lesioned runs
+        #    produce telemetry byte-identical to the un-lesioned
+        #    reference. The head's full vector (``self_prediction_t``)
+        #    is *not* lesioned at split — substrate-side / head-internal
+        #    cohorts continue to see the head's actual output.
         agent_step_record = self._emit_agent_step(
             env_step_meta=env_step_meta,
             wm_step=wm_step,
@@ -725,8 +971,10 @@ class Runner:
             action_output=action_output,
             intrinsic=intrinsic,
             obs_hash=self._obs_curr_hash,
-            self_prediction_error=sp_scalar_for_view,
-            self_prediction_error_masked=sp_masked,
+            self_prediction_error=policy_view.self_prediction_error,
+            self_prediction_error_masked=(
+                telemetry_view.self_prediction_error_masked
+            ),
         )
 
         # 7. Update runtime state for next iteration.

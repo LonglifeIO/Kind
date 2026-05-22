@@ -76,6 +76,17 @@ class WorldModelConfig:
     ema_decay: float = 0.99
     self_prediction_target_mode: Literal["online", "frozen", "environmental"] = "online"
     self_prediction_loss_form: Literal["cosine", "mse"] = "cosine"
+    # Probe 2 v2 lesion plumbing (plan §2.5; synthesis §2.4 element 4).
+    # Only ``"disable_self_prediction"`` affects WorldModel behavior; the
+    # other Probe 2 lesion kinds operate at views.split (zero_or_randomize_
+    # scalar), at the runner's ensemble construction (ensemble_k1,
+    # ensemble_constant), or as a checkpoint mutation (init_zero_scalar_
+    # column). When ``"disable_self_prediction"``: ``WorldModel.step`` emits
+    # zeros from the head, ``_update_ema_target`` is a no-op, and
+    # ``WorldModel.loss``'s ``self_prediction_loss`` is identically zero so
+    # the runner's ``wm_total + λ_self * self_prediction_loss`` backward
+    # contributes nothing on the head/EMA axis.
+    lesion_kind: Literal[None, "disable_self_prediction"] = None
 
 
 @dataclass(frozen=True)
@@ -371,7 +382,17 @@ class WorldModel(nn.Module):
         is *not* EMA-tracked (it is shared with the online network);
         plan §2.2's "EMA-tracked sibling copies of encoder + gru_cell"
         names exactly two modules.
+
+        Probe 2 v2 ``disable_self_prediction`` lesion (plan §2.5): when
+        the lesion is in effect, the EMA target stops tracking the online
+        network — the substrate-side lesion targets the head's gradient
+        flow, and freezing the target is what makes the head's auxiliary
+        loss path do no work. The target's parameters retain their
+        construction-time values (from
+        ``_initialize_ema_target_from_online``).
         """
+        if self.config.lesion_kind == "disable_self_prediction":
+            return
         ema_decay = self.config.ema_decay
         with torch.no_grad():
             for online_p, target_p in zip(
@@ -505,7 +526,21 @@ class WorldModel(nn.Module):
         p_dist = Normal(mu_p, sigma_p)
         kl_per_dim = kl_divergence(q_dist, p_dist)
 
-        self_prediction = self.self_prediction_head(h)
+        # Probe 2 v2 ``disable_self_prediction`` lesion (plan §2.5): replace
+        # the head's output with a fixed zero tensor of shape ``(B, h_dim)``;
+        # the head is structurally present (its parameters serialise
+        # normally into checkpoints) but does no work in the forward, and
+        # the auxiliary loss path will be identically zero. The runner
+        # continues to populate ``self_prediction_t`` from this zero tensor
+        # so AgentStep's writer-side discipline (``"0.2.0"`` requires
+        # non-None) is satisfied with a sentinel that downstream readers
+        # can identify as the lesion's signature.
+        if self.config.lesion_kind == "disable_self_prediction":
+            self_prediction = torch.zeros(
+                h.shape[0], self.config.h_dim, device=h.device, dtype=h.dtype
+            )
+        else:
+            self_prediction = self.self_prediction_head(h)
 
         return WorldModelStep(
             h=h,
@@ -566,6 +601,18 @@ class WorldModel(nn.Module):
         total = recon_loss + kl_loss
 
         if target_h_next is None:
+            self_prediction_loss = torch.zeros(
+                (), device=step.self_prediction.device, dtype=step.self_prediction.dtype
+            )
+        elif self.config.lesion_kind == "disable_self_prediction":
+            # Probe 2 v2 lesion (plan §2.5): the auxiliary loss is
+            # identically zero so the runner's
+            # ``wm_total + λ_self * self_prediction_loss`` backward
+            # contributes nothing on the head/EMA axis. Skipping the
+            # computation also avoids a degenerate cosine_similarity over
+            # the zero ``step.self_prediction`` vector (which PyTorch
+            # treats as 0 via the eps guard but is semantically
+            # ill-defined).
             self_prediction_loss = torch.zeros(
                 (), device=step.self_prediction.device, dtype=step.self_prediction.dtype
             )

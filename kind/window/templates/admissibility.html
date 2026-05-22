@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %} — admissibility{% endblock %}
+{% block content %}
+<h2>Admissibility</h2>
+
+<p class="note">The joined faithfulness + stability verdict. A reading is
+admissible iff its faithfulness rate clears the threshold AND every
+declared reading surface clears its stability thresholds
+(AND-conjunction). This view counts and joins; it does not rank,
+highlight, or filter.</p>
+
+<dl class="kv">
+  <dt>readings total</dt><dd>{{ batch.n_readings_total }}</dd>
+  <dt>admissible</dt><dd>{{ batch.n_admissible }}</dd>
+  <dt>admissibility rate</dt>
+  <dd>{{ '%.4f'|format(batch.admissibility_rate) }}</dd>
+  <dt>inadmissible — faithfulness only</dt>
+  <dd>{{ batch.n_inadmissible_faithfulness }}</dd>
+  <dt>inadmissible — stability only</dt>
+  <dd>{{ batch.n_inadmissible_stability }}</dd>
+  <dt>inadmissible — both</dt>
+  <dd>{{ batch.n_inadmissible_both }}</dd>
+  <dt>inadmissible — no stability record</dt>
+  <dd>{{ batch.n_inadmissible_no_stability }}</dd>
+</dl>
+{% if batch.notes %}
+<div class="verbatim">{{ batch.notes }}</div>
+{% endif %}
+
+<h3>Per-reading verdicts ({{ batch.verdicts|length }})</h3>
+{% if not batch.verdicts %}
+<p class="empty">No admissibility verdicts — the run has no faithfulness
+records under <code>mirror/faithfulness.jsonl</code> yet.</p>
+{% else %}
+<table>
+  <tr>
+    <th>criterion</th><th>role</th><th>pass</th><th>checkpoint</th>
+    <th>faithfulness rate</th><th>faithfulness ok</th>
+    <th>per-surface stability</th><th>verdict</th><th>notes</th>
+  </tr>
+  {% for verdict in batch.verdicts %}
+  <tr>
+    <td>{{ verdict.criterion_id }}</td>
+    <td>{{ verdict.reader_role }}</td>
+    <td>{{ verdict.pass_index }}</td>
+    <td>{{ verdict.checkpoint_id }}</td>
+    <td>{{ '%.4f'|format(verdict.faithfulness_rate) }}</td>
+    <td>{{ verdict.faithfulness_admissible }}</td>
+    <td>
+      {% if not verdict.stability_admissible_per_surface %}
+      <span class="empty">no stability record</span>
+      {% else %}
+      {% for surface, ok in verdict.stability_admissible_per_surface.items() %}
+      {{ surface.value }}: {{ ok }}<br>
+      {% endfor %}
+      {% endif %}
+    </td>
+    <td><b>{{ 'admissible' if verdict.admissible else 'inadmissible' }}</b></td>
+    <td>{{ verdict.notes }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

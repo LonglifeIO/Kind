@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %} — round {{ result.round_id }}{% endblock %}
+
+{% macro reading_group(label, readings) %}
+<h3>{{ label }} ({{ readings|length }} reading{{ '' if readings|length == 1 else 's' }})</h3>
+{% if not readings %}
+<p class="empty">no readings</p>
+{% else %}
+{% for reading in readings %}
+<p class="note">role: {{ reading.reader_role }} &middot;
+framework: {{ reading.framework_anchor }} &middot;
+baseline: {{ reading.baseline_flag }} &middot;
+claims: {{ reading.claims|length }}</p>
+{% if reading.claims %}
+<table>
+  <tr>
+    <th>#</th><th>claim</th><th>surface</th><th>cited stream</th>
+    <th>cited field</th><th>cited value</th><th>step range</th>
+    <th>faithfulness</th><th>judge ruling</th>
+  </tr>
+  {% for claim in reading.claims %}
+  <tr>
+    <td>{{ loop.index0 }}</td>
+    <td>{{ claim.claim }}</td>
+    <td>{{ claim.reading_surface }}</td>
+    <td>{{ claim.cited_stream }}</td>
+    <td>{{ claim.cited_scalar_field }}</td>
+    <td>{{ claim.cited_value }}</td>
+    <td>{{ claim.cited_step_range if claim.cited_step_range is not none else '—' }}</td>
+    <td>{{ claim.faithfulness_status }}</td>
+    <td>{{ claim.judge_ruling }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if reading.free_text_notes %}
+<div class="verbatim">{{ reading.free_text_notes }}</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<h2>Round — {{ result.round_id }}</h2>
+<dl class="kv">
+  <dt>passes</dt><dd>{{ result.pass_results|length }}</dd>
+  <dt>round wallclock</dt><dd>{{ result.round_wallclock_ms }} ms</dd>
+  <dt>sham admissions / events</dt>
+  <dd>{{ result.sham_findings_summary.total }} /
+      {{ result.sham_findings_summary.total_sham_events }}</dd>
+  <dt>judgment</dt>
+  <dd><a href="{{ url_for('judgment_detail', round_id=result.round_id) }}">judgment detail</a>
+      <span class="note">(404 if no judgment for this round)</span></dd>
+</dl>
+{% if result.notes %}
+<div class="verbatim">{{ result.notes }}</div>
+{% endif %}
+
+{% for pass_result in result.pass_results %}
+<h2>Pass {{ loop.index0 }} — checkpoint {{ pass_result.checkpoint_id }}</h2>
+{{ reading_group("active / primary", pass_result.active_primary_readings) }}
+{{ reading_group("active / adversarial", pass_result.active_adversarial_readings) }}
+{{ reading_group("held-out / primary", pass_result.held_out_primary_readings) }}
+{{ reading_group("held-out / adversarial", pass_result.held_out_adversarial_readings) }}
+{% set pass_verdicts = verdicts_per_pass[loop.index0] %}
+{% if pass_verdicts %}
+<h3>admissibility verdicts ({{ pass_verdicts|length }})</h3>
+<p class="note">The joined faithfulness + stability verdict for this
+pass's readings. Shown as recorded — not ranked, highlighted, or
+filtered.</p>
+<table>
+  <tr>
+    <th>criterion</th><th>role</th><th>faithfulness rate</th>
+    <th>per-surface stability</th><th>verdict</th><th>notes</th>
+  </tr>
+  {% for verdict in pass_verdicts %}
+  <tr>
+    <td>{{ verdict.criterion_id }}</td>
+    <td>{{ verdict.reader_role }}</td>
+    <td>{{ '%.4f'|format(verdict.faithfulness_rate) }}</td>
+    <td>
+      {% if not verdict.stability_admissible_per_surface %}
+      <span class="empty">no stability record</span>
+      {% else %}
+      {% for surface, ok in verdict.stability_admissible_per_surface.items() %}
+      {{ surface.value }}: {{ ok }}<br>
+      {% endfor %}
+      {% endif %}
+    </td>
+    <td><b>{{ 'admissible' if verdict.admissible else 'inadmissible' }}</b></td>
+    <td>{{ verdict.notes }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% if pass_result.notes %}
+<h3>pass notes</h3>
+<div class="verbatim">{{ pass_result.notes }}</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

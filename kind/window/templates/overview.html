@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %} — overview{% endblock %}
+{% block content %}
+<h2>Overview</h2>
+
+<dl class="kv">
+  <dt>run id</dt><dd>{{ ov.run_id }}</dd>
+  <dt>run start</dt>
+  <dd>
+    {% if ov.start_time %}{{ ov.start_time.strftime('%Y-%m-%d %H:%M:%S') }}
+    {% else %}<span class="empty">unknown (no timestamp in run directory name)</span>
+    {% endif %}
+  </dd>
+  <dt>current state of Io</dt>
+  <dd><span class="state">{{ ov.current_state.value }}</span></dd>
+  <dt>wallclock since start</dt><dd>{{ ov.uptime_human }}</dd>
+  <dt>total training steps</dt><dd>{{ ov.total_steps }}</dd>
+  <dt>total episodes</dt><dd>{{ ov.total_episodes }}</dd>
+  <dt>pace (episodes/hour, last 24h)</dt>
+  <dd>{{ '%.3f'|format(ov.pace_episodes_per_hour) }}</dd>
+</dl>
+
+{% if not ov.has_telemetry %}
+<p class="note">This run has no <code>telemetry/</code> directory — it is a
+mirror-only calibration run, so the current state is reported as
+<code>unknown</code> and the step / episode / pace figures are zero.</p>
+{% endif %}
+
+<h3>State-time breakdown — last 24 hours</h3>
+<table>
+  <tr><th>state</th><th>hours</th></tr>
+  {% for state in states %}
+  <tr><td>{{ state.value }}</td><td>{{ ov.breakdown_24h[state] }}</td></tr>
+  {% endfor %}
+</table>
+
+<h3>State-time breakdown — last 7 days</h3>
+<table>
+  <tr><th>state</th><th>hours</th></tr>
+  {% for state in states %}
+  <tr><td>{{ state.value }}</td><td>{{ ov.breakdown_7d[state] }}</td></tr>
+  {% endfor %}
+</table>
+<p class="note">The breakdown is coarse: <code>dream_rollout</code> and
+<code>replay_meta</code> records carry no per-record wallclock, so dreaming
+and dormant hours cannot be placed on the timeline. Explicit
+state-transition events (Probe 3) would make this exact.</p>
+
+{% if ov.telemetry_errors %}
+<h3>Telemetry load errors</h3>
+{% for error in ov.telemetry_errors %}
+<div class="err">{{ error }}</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

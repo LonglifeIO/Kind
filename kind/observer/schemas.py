@@ -30,7 +30,52 @@ implementation plan §3.3.
 Both ``schemas/v0.1.0.json`` and ``schemas/v0.2.0.json`` are checked in.
 ``v0.1.0.json`` is a frozen historical export and is no longer regenerated
 from this module; ``v0.2.0.json`` is the current export from
-``export_json_schema()``.
+``export_json_schema()``. Probe 2 adds a third checked-in JSON Schema
+file at ``schemas/v0.3.0.json`` covering Probe 1.5's ``"0.2.0"``
+telemetry models (unchanged from the ``v0.2.0.json`` export) plus Probe
+2's ``"0.2.0"`` mirror-side models (:class:`StructuredReading`,
+:class:`StructuredClaim`, :class:`JudgeRuling`,
+:class:`PreRegistration`) plus Probe 2's ``"0.1.0"`` conditioning model
+(:class:`ConditioningResult`, :class:`RegimeStats`,
+:class:`RegimeBucket`); see :func:`kind.mirror.structured` and
+:func:`kind.observer.pre_reg` and :func:`kind.observer.conditioning`
+for the new models.
+
+**``world_event.payload`` conventions (Probe 1 → Probe 1.5 → Probe 2).**
+The ``WorldEvent.payload`` field is intentionally schemaless within
+itself (per the docstring on :class:`WorldEvent`) — adding new payload
+shapes for future probes does not bump the ``WorldEvent`` schema
+version. The conventions accumulated to date:
+
+- ``payload["episode_id"]: int`` — emitted on ``"env_reset"`` events.
+- ``payload["start_cell"]: tuple[int, int]`` — emitted on
+  ``"env_reset"`` events from Probe 2 forward, when the env's
+  start-cell randomization is in effect (per Probe 2 implementation
+  plan §2.2).
+- ``payload["is_sham"]: bool`` — emitted on ``"builder_perturbation"``
+  events fired via the env-server's sham-perturbation flag-only path
+  (Probe 2 implementation plan §2.2; synthesis §2.4 element 3). The
+  field is set to ``True`` on sham events and is absent (or ``False``)
+  on real perturbations. Sham-perturbation events are part of the
+  calibration protocol's null-event test: the agent observation is
+  byte-equal pre- and post-sham; the mirror's reading must not flag
+  reflexive-attention or equanimity at the sham timestamp at any
+  reading surface.
+- ``payload["lesion_kind"]: str`` and
+  ``payload["source_checkpoint"]: str`` — emitted on
+  ``"mirror_marker"`` events from ``source="system"`` at the start of
+  a lesion run (per Probe 2 implementation plan §2.5; synthesis §2.4
+  element 4). The ``lesion_kind`` is one of
+  ``"ensemble_k1"``, ``"ensemble_constant"``,
+  ``"disable_self_prediction"``,
+  ``"zero_or_randomize_scalar"``, or
+  ``"init_zero_scalar_column"``. The ``source_checkpoint`` field
+  records the checkpoint a mutation-time lesion (the
+  ``init_zero_scalar_column`` case) was derived from so the lesion
+  run's identity can be traced back to its source.
+- ``payload["internal_stochasticity_aggregate"]: dict`` — per-episode
+  aggregate emitted on ``"internal_stochasticity_aggregate"`` events
+  (Probe 1 plan §3.4).
 """
 
 from __future__ import annotations
@@ -230,9 +275,81 @@ def export_json_schema() -> bytes:
     return (text + "\n").encode("utf-8")
 
 
+PROBE_2_EXPORT_VERSION: str = "0.3.0"
+
+
+def export_json_schema_v0_3_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 2's full
+    schema surface.
+
+    The v0.3.0 export aggregates three model families:
+
+    * Probe 1.5's ``"0.2.0"`` telemetry models — :class:`AgentStep`,
+      :class:`DreamRollout`, :class:`ReplayMeta`, :class:`WorldEvent` —
+      unchanged from the :func:`export_json_schema` v0.2.0 export.
+    * Probe 2's ``"0.2.0"`` mirror-side models — ``StructuredReading``,
+      ``StructuredClaim``, ``JudgeRuling`` from
+      :mod:`kind.mirror.structured`, plus ``PreRegistration`` from
+      :mod:`kind.observer.pre_reg`.
+    * Probe 2's ``"0.1.0"`` conditioning models — ``ConditioningResult``,
+      ``RegimeBucket``, ``RegimeStats`` from
+      :mod:`kind.observer.conditioning`.
+
+    Imports are local to the function body to keep ``kind.observer.schemas``
+    importable without pulling the mirror stack at module load time.
+    Stability semantics carry from :func:`export_json_schema`:
+    ``sort_keys=True``, indent of 2, trailing newline, deterministic
+    Pydantic schema generation.
+    """
+
+    from kind.mirror.structured import (
+        JudgeRuling,
+        StructuredClaim,
+        StructuredReading,
+    )
+    from kind.observer.conditioning import (
+        ConditioningResult,
+        RegimeBucket,
+        RegimeStats,
+    )
+    from kind.observer.pre_reg import PreRegistration
+
+    telemetry_models: dict[str, Any] = {
+        model.__name__: model.model_json_schema() for model in RECORD_MODELS
+    }
+    mirror_models: dict[str, Any] = {
+        "StructuredReading": StructuredReading.model_json_schema(),
+        "StructuredClaim": StructuredClaim.model_json_schema(),
+        "JudgeRuling": JudgeRuling.model_json_schema(),
+        "PreRegistration": PreRegistration.model_json_schema(),
+    }
+    conditioning_models: dict[str, Any] = {
+        "ConditioningResult": ConditioningResult.model_json_schema(),
+        "RegimeBucket": RegimeBucket.model_json_schema(),
+        "RegimeStats": RegimeStats.model_json_schema(),
+    }
+
+    document: dict[str, Any] = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Kind Probe 2 Schemas",
+        "schema_version": PROBE_2_EXPORT_VERSION,
+        "telemetry_schema_version": SCHEMA_VERSION,
+        "mirror_schema_version": "0.2.0",
+        "conditioning_schema_version": "0.1.0",
+        "models": {
+            "telemetry": telemetry_models,
+            "mirror": mirror_models,
+            "conditioning": conditioning_models,
+        },
+    }
+    text = json.dumps(document, sort_keys=True, indent=2, ensure_ascii=False)
+    return (text + "\n").encode("utf-8")
+
+
 __all__ = [
     "SCHEMA_VERSION",
     "PROBE_1_SCHEMA_VERSION",
+    "PROBE_2_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -241,4 +358,5 @@ __all__ = [
     "WorldEventType",
     "RECORD_MODELS",
     "export_json_schema",
+    "export_json_schema_v0_3_0",
 ]

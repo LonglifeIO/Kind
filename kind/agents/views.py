@@ -14,6 +14,24 @@ vector ``ĥ_{t+1}`` plus the masked-step flag. The ``split`` function is
 the only place where a ``WorldModelStep`` is projected into the two
 views.
 
+**Probe 2 v2 ``zero_or_randomize_scalar`` lesion (plan §2.5; synthesis
+§2.4 element 4).** ``split`` accepts an optional
+``lesion_zero_or_randomize`` kwarg ``"zero" | "randomize" | None``. When
+non-None, ``split`` overrides the ``self_prediction_error`` field on the
+returned ``PolicyView`` with either ``0.0`` (zero variant) or
+``Uniform(empirical_min, empirical_max)`` (randomize variant); the
+TelemetryView's ``self_prediction_error_masked`` field is set to True
+on the lesioned step (the scalar's value is sentinel, not empirical).
+The TelemetryView's ``self_prediction`` vector is *not* overridden —
+the substrate-side reading sees the head's output unchanged; only the
+actor's behavior-side input is lesioned. The runner threads the kwarg
+from ``RunnerConfig.lesion_kind`` plus
+``RunnerConfig.lesion_zero_or_randomize_variant``; the empirical bounds
+come from ``RunnerConfig.lesion_zero_or_randomize_empirical_min`` /
+``..._max`` (defaults to ``[0.0, 1.0]`` covering the cosine loss
+form's range; a real Probe 2 lesion run journals the bounds it pulls
+from the source run's empirical distribution).
+
 The opacity boundary is enforced at three levels per implementation plan
 §7, in order of strictness from "checked at test time" to "checked at
 type-check time" to "checked at runtime":
@@ -64,7 +82,9 @@ no preprocessing smuggled in).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
+import torch
 from torch import Tensor
 
 from kind.agents.world_model import WorldModelStep
@@ -153,6 +173,10 @@ def split(
     *,
     self_prediction_error: Tensor,
     self_prediction_error_masked: bool,
+    lesion_zero_or_randomize: Literal["zero", "randomize"] | None = None,
+    lesion_empirical_min: float = 0.0,
+    lesion_empirical_max: float = 1.0,
+    lesion_rng: torch.Generator | None = None,
 ) -> tuple[PolicyView, TelemetryView]:
     """Project a ``WorldModelStep`` plus per-step signals into
     ``(PolicyView, TelemetryView)``.
@@ -190,11 +214,51 @@ def split(
             self_prediction_error=scalar,
             self_prediction_error_masked=is_first_step,
         )
+
+    **Probe 2 v2 ``zero_or_randomize_scalar`` lesion (plan §2.5).** When
+    ``lesion_zero_or_randomize`` is ``"zero"``, the returned
+    ``PolicyView.self_prediction_error`` is forced to ``0.0`` and the
+    ``TelemetryView.self_prediction_error_masked`` flag is set to
+    ``True`` (the scalar's value is sentinel, not empirical). When
+    ``"randomize"``, the scalar is drawn from
+    ``Uniform(lesion_empirical_min, lesion_empirical_max)``; the masked
+    flag is also set ``True``. Either variant lesions only the actor's
+    behavior-side input — the head and the EMA target continue to train
+    normally and the substrate-side reads exactly like the un-lesioned
+    run. The mirror writes ``self_prediction_error_t`` from the
+    lesioned (sentinel) value via the runner's existing telemetry
+    plumbing; the masked flag is what distinguishes a lesion-overridden
+    record from a genuine first-step-of-episode mask. ``lesion_rng`` is
+    the ``torch.Generator`` the runner threads through for
+    determinism; if ``None``, the device's default generator is used.
     """
+    if lesion_zero_or_randomize == "zero":
+        scalar_for_view = torch.zeros(
+            (), device=step.h.device, dtype=step.h.dtype
+        )
+        masked_for_view = True
+    elif lesion_zero_or_randomize == "randomize":
+        # Uniform(min, max) on the same device/dtype as ``step.h`` so the
+        # actor's concat in forward picks up no device-mismatch error.
+        # ``torch.rand`` accepts an optional ``generator`` kwarg; the
+        # runner threads its sample-RNG through for determinism on CPU
+        # tests and falls back to the default generator on accelerators
+        # whose generator API is partial.
+        unit = torch.rand(
+            (), generator=lesion_rng, device=step.h.device, dtype=step.h.dtype
+        )
+        scalar_for_view = lesion_empirical_min + unit * (
+            lesion_empirical_max - lesion_empirical_min
+        )
+        masked_for_view = True
+    else:
+        scalar_for_view = self_prediction_error
+        masked_for_view = self_prediction_error_masked
+
     policy = PolicyView(
         h=step.h,
         z=step.z,
-        self_prediction_error=self_prediction_error,
+        self_prediction_error=scalar_for_view,
     )
     telemetry = TelemetryView(
         h=step.h,
@@ -206,7 +270,7 @@ def split(
         embed=step.embed,
         intrinsic_signal=intrinsic,
         self_prediction=step.self_prediction,
-        self_prediction_error_masked=self_prediction_error_masked,
+        self_prediction_error_masked=masked_for_view,
     )
     return policy, telemetry
 

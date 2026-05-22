@@ -87,6 +87,18 @@ class GridWorldConfig:
     (±10% over 50 episodes ⇒ σ_step ≈ 1e-5) is recorded in the journal.
     ``walls`` is empty at Probe 1; the cell type exists in the vocabulary
     but no walls are placed by default.
+
+    Probe 2 env revision (synthesis §2.1; implementation plan §2.2):
+    ``start_cell`` defaults to ``None``, which selects a random non-wall
+    in-bounds cell at every episode reset, drawn from the regrowth RNG
+    stream. The previous Probe 1 default ``(3, 3)`` is still accepted as
+    an explicit override; the post-Probe-1 journal entry documented the
+    fixed-start as the cause of late-episode trajectory collapse onto a
+    degenerate two-cell loop, and §2.1 of the synthesis settled the
+    revision. Reproducibility commitment: given the seed, every
+    episode's sampled start cell can be recovered from the
+    ``env_reset`` event in the ``world_event`` stream — see
+    :meth:`kind.env.env_server.EnvServer._emit_env_reset`.
     """
 
     grid_size: int = 8
@@ -98,7 +110,7 @@ class GridWorldConfig:
     drift_p_min: float = 0.001
     drift_p_max: float = 0.05
     n_initial_resources: int = 4
-    start_cell: tuple[int, int] | None = (3, 3)
+    start_cell: tuple[int, int] | None = None
     walls: tuple[tuple[int, int], ...] = ()
 
 
@@ -321,14 +333,18 @@ class GridWorld:
         Drift parameter ``p`` is preserved by this method; only ``reset()``
         re-initializes ``p``. Walls are restored from config.
         """
+        wall_set = set(self.config.walls)
+
         # Place agent. Random start cell draws from the regrowth stream so
         # there is no third RNG to seed — spatial events on cells share one
-        # source of randomness.
+        # source of randomness. Wall rejection consults ``wall_set`` from
+        # config rather than the (possibly stale or freshly-zeroed) grid
+        # buffer, so the first reset with non-empty walls also rejects
+        # them correctly.
         if self.config.start_cell is None:
             r = int(self._regrowth_rng.integers(0, self.config.grid_size))
             c = int(self._regrowth_rng.integers(0, self.config.grid_size))
-            # If random landed on a wall, draw again until it doesn't.
-            while self._is_wall(r, c):
+            while (r, c) in wall_set:
                 r = int(self._regrowth_rng.integers(0, self.config.grid_size))
                 c = int(self._regrowth_rng.integers(0, self.config.grid_size))
             self._agent_pos = (r, c)
@@ -346,7 +362,6 @@ class GridWorld:
         # interpreted as a *count*, see the journal entry. This keeps the
         # initial sparsity controllable and makes the smoke test legible.
         ar, ac = self._agent_pos
-        wall_set = set(self.config.walls)
         available: list[tuple[int, int]] = []
         for r in range(self.config.grid_size):
             for c in range(self.config.grid_size):

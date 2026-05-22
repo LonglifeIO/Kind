@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %} — judgment {{ judgment.round_id }}{% endblock %}
+{% block content %}
+<h2>Judgment — round {{ judgment.round_id }}</h2>
+
+<dl class="kv">
+  <dt>criteria judged</dt><dd>{{ judgment.criterion_judgments|length }}</dd>
+  <dt>judge wallclock</dt><dd>{{ judgment.wallclock_ms }} ms</dd>
+  <dt>judge LLM calls</dt><dd>{{ judgment.judge_llm_call_records|length }}</dd>
+</dl>
+
+<h3>Round config summary (judge's view)</h3>
+<div class="verbatim">{{ judgment.round_config_summary }}</div>
+
+{% for cj in judgment.criterion_judgments %}
+<h2>{{ cj.criterion_id }}</h2>
+<dl class="kv">
+  <dt>framework</dt><dd>{{ cj.framework }}</dd>
+  <dt>verdict</dt><dd><b>{{ cj.verdict }}</b></dd>
+  <dt>confidence</dt><dd>{{ '%.4f'|format(cj.confidence) }}</dd>
+</dl>
+
+<h3>Per-falsifier breakdown</h3>
+<table>
+  <tr>
+    <th>falsifier</th><th>supporting</th><th>refuting</th>
+    <th>non-falsifying</th><th>ambiguous</th>
+  </tr>
+  {% for fv in cj.falsifier_verdicts %}
+  <tr>
+    <td>{{ fv.falsifier_id }}</td>
+    <td>{{ fv.passes_supporting|join(', ') or '—' }}</td>
+    <td>{{ fv.passes_refuting|join(', ') or '—' }}</td>
+    <td>{{ fv.passes_non_falsifying|join(', ') or '—' }}</td>
+    <td>{{ fv.passes_ambiguous|join(', ') or '—' }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h3>Judge's rationale</h3>
+<div class="verbatim">{{ cj.rationale }}</div>
+
+<h3>Claim polarity assignments ({{ cj.claim_polarity_assignments|length }})</h3>
+{% if cj.claim_polarity_assignments %}
+<table>
+  <tr>
+    <th>pass</th><th>role</th><th>claim #</th><th>step range</th>
+    <th>polarity</th><th>rationale</th>
+  </tr>
+  {% for ca in cj.claim_polarity_assignments %}
+  <tr>
+    <td>{{ ca.pass_index }}</td>
+    <td>{{ ca.reader_role }}</td>
+    <td>{{ ca.claim_index }}</td>
+    <td>{{ ca.cited_step_range if ca.cited_step_range is not none else '—' }}</td>
+    <td>{{ ca.polarity.value }}</td>
+    <td>{{ ca.polarity_rationale }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="empty">no claim polarity assignments</p>
+{% endif %}
+{% endfor %}
+{% endblock %}

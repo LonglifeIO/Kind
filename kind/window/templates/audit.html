@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %} — audit{% endblock %}
+{% block content %}
+<h2>LLM-call audit</h2>
+<p class="note">Aggregated across every round under
+<code>mirror/rounds/</code> for this run.</p>
+
+<dl class="kv">
+  <dt>total calls</dt><dd>{{ audit.total_calls }}</dd>
+  <dt>total retries</dt><dd>{{ audit.total_retries }}</dd>
+  <dt>total failures</dt><dd>{{ audit.total_failures }}</dd>
+  <dt>total wallclock</dt><dd>{{ audit.total_wallclock_ms }} ms</dd>
+  <dt>total tokens in</dt>
+  <dd>
+    {% if audit.total_tokens_in is not none %}{{ audit.total_tokens_in }}
+    {% else %}<span class="empty">not recorded — the token thread-through
+    fix (Phase 12 §2) is still open, so the audit carries no cost
+    ground-truth</span>{% endif %}
+  </dd>
+  <dt>total tokens out</dt>
+  <dd>
+    {% if audit.total_tokens_out is not none %}{{ audit.total_tokens_out }}
+    {% else %}<span class="empty">not recorded — see total tokens in</span>
+    {% endif %}
+  </dd>
+</dl>
+
+<h3>Latency distribution (per role, per checkpoint)</h3>
+{% if not latency %}
+<p class="empty">no records with a measured latency</p>
+{% else %}
+<table>
+  <tr>
+    <th>role</th><th>checkpoint</th><th>n</th>
+    <th>min ms</th><th>max ms</th><th>median ms</th><th>mean ms</th>
+  </tr>
+  {% for row in latency %}
+  <tr>
+    <td>{{ row.role }}</td>
+    <td>{{ row.checkpoint_id }}</td>
+    <td>{{ row.n }}</td>
+    <td>{{ row.min_ms }}</td>
+    <td>{{ row.max_ms }}</td>
+    <td>{{ '%.1f'|format(row.median_ms) }}</td>
+    <td>{{ '%.1f'|format(row.mean_ms) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

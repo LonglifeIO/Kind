@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %} — rounds{% endblock %}
+{% block content %}
+<h2>Rounds</h2>
+
+{% if not rows %}
+<p class="empty">No round records under <code>mirror/rounds/</code>.</p>
+{% else %}
+<table>
+  <tr>
+    <th>round id</th><th>checkpoints</th><th>passes</th>
+    <th>judgment verdicts</th><th>file</th>
+  </tr>
+  {% for row in rows %}
+  <tr>
+    <td>
+      {% if row.error %}{{ row.round_id }}
+      {% else %}<a href="{{ url_for('round_detail', round_id=row.round_id) }}">{{ row.round_id }}</a>
+      {% endif %}
+    </td>
+    <td>
+      {% if row.error %}<span class="empty">—</span>
+      {% else %}{{ row.checkpoint_ids|join(', ') }}{% endif %}
+    </td>
+    <td>{{ row.n_passes }}</td>
+    <td>
+      {% if row.error %}<span class="empty">—</span>
+      {% elif row.has_judgment %}
+        {% for v in row.verdicts %}
+        {{ v.criterion_id }}: <b>{{ v.verdict }}</b>
+        (conf {{ '%.2f'|format(v.confidence) }})<br>
+        {% endfor %}
+        <a href="{{ url_for('judgment_detail', round_id=row.round_id) }}">judgment detail</a>
+      {% else %}<span class="empty">no matching judgment</span>
+      {% endif %}
+    </td>
+    <td>{{ row.file_name }}</td>
+  </tr>
+  {% if row.error %}
+  <tr><td colspan="5"><div class="err">{{ row.error }}</div></td></tr>
+  {% endif %}
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

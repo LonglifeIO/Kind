@@ -81,6 +81,7 @@ class LatentDisagreementEnsemble(nn.Module):
         K: int = 5,
         action_emb_dim: int = 16,
         mlp_hidden: int = 200,
+        lesion_constant_disagreement: bool = False,
     ) -> None:
         super().__init__()
         if K <= 0:
@@ -94,6 +95,17 @@ class LatentDisagreementEnsemble(nn.Module):
         self.z_dim = z_dim
         self.action_dim = action_dim
         self.action_emb_dim = action_emb_dim
+        # Probe 2 v2 ``ensemble_constant`` lesion (plan §2.5): when True,
+        # ``disagreement`` and ``disagreement_from_action_emb`` short-circuit
+        # to a zero per-batch tensor, regardless of head outputs. The heads
+        # still train normally so the ensemble's internal state remains
+        # consistent across resume; the lesion's observable effect is
+        # ``intrinsic_signal_t == 0`` in the agent_step stream and an actor
+        # whose only intrinsic signal is constant. The companion
+        # ``ensemble_k1`` lesion is implemented at construction time by
+        # passing ``K=1`` (variance over a single head is identically zero
+        # via :func:`torch.var`'s biased reduction at K=1).
+        self._lesion_constant_disagreement = lesion_constant_disagreement
 
         self.action_embedding = nn.Embedding(action_dim, action_emb_dim)
 
@@ -135,7 +147,22 @@ class LatentDisagreementEnsemble(nn.Module):
             Tensor of shape ``(B,)``.
         """
         predictions = self.predict_next_latent(h, z, a)
-        return self._variance(predictions)
+        raw = self._variance(predictions)
+        if self._lesion_constant_disagreement:
+            # Probe 2 v2 ``ensemble_constant`` lesion (plan §2.5): the
+            # actor's intrinsic signal is forced constant-zero regardless
+            # of head outputs. The lesion targets the substrate-side
+            # surface by removing the actor's intrinsic motivation; the
+            # head outputs themselves are untouched (they still receive
+            # gradient through ``compute_loss``) so the substrate-side
+            # latent dynamics are preserved. Multiplying ``raw`` by 0.0
+            # keeps the autograd chain intact (backward through this
+            # path computes a zero gradient on the actor's parameters)
+            # rather than detaching, which would break the actor's
+            # ``actor_loss.backward()`` when the only signal is the
+            # lesioned one.
+            return raw * 0.0
+        return raw
 
     def disagreement_from_action_emb(
         self, h: Tensor, z: Tensor, a_emb: Tensor
@@ -160,7 +187,19 @@ class LatentDisagreementEnsemble(nn.Module):
             Tensor of shape ``(B,)``.
         """
         predictions = self._heads_forward(h, z, a_emb)
-        return self._variance(predictions)
+        raw = self._variance(predictions)
+        if self._lesion_constant_disagreement:
+            # Probe 2 v2 ``ensemble_constant`` lesion (plan §2.5): see
+            # ``disagreement`` above. The actor imagines under a
+            # constant-zero intrinsic signal; multiplying ``raw`` by 0.0
+            # keeps the autograd chain intact (the actor's
+            # ``actor_loss.backward()`` runs cleanly with zero gradient
+            # contribution from this path) while pinning the value at
+            # zero. A bare ``torch.zeros(...)`` would detach the chain
+            # and break backward when the lesioned signal is the only
+            # contribution to the loss.
+            return raw * 0.0
+        return raw
 
     # ---- training loss ----------------------------------------------
 
