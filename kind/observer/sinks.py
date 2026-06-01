@@ -21,15 +21,18 @@ nullable from the start.
 
 from __future__ import annotations
 
+import json
 import os
 import types
 from pathlib import Path
 from types import TracebackType
-from typing import IO, Any, Literal, Self, Union, get_args, get_origin
+from typing import IO, Any, Literal, Self, TypeVar, Union, get_args, get_origin
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import BaseModel
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 class SinkClosedError(RuntimeError):
@@ -119,6 +122,7 @@ class ParquetSink:
         dir.mkdir(parents=True, exist_ok=True)
         self._buffer: list[dict[str, Any]] = []
         self._arrow_schema: pa.Schema = _arrow_schema_from_pydantic(schema)
+        self._json_fields: frozenset[str] = json_encoded_field_names(schema)
         self._next_shard_index = 0
         self._closed = False
 
@@ -130,7 +134,15 @@ class ParquetSink:
                 f"ParquetSink for {self._schema.__name__} cannot write a "
                 f"{type(record).__name__}"
             )
-        self._buffer.append(record.model_dump())
+        row = record.model_dump()
+        # JSON-encode dict-typed fields into their string columns (None stays
+        # None → a null cell). Symmetric with the decode in
+        # model_validate_parquet_row / read_parquet_dir.
+        for name in self._json_fields:
+            value = row.get(name)
+            if value is not None:
+                row[name] = json.dumps(value, sort_keys=True)
+        self._buffer.append(row)
         if len(self._buffer) >= self._rows_per_shard:
             self._flush_shard()
 
@@ -232,10 +244,15 @@ def _arrow_type_for(annotation: Any) -> pa.DataType:
         return pa.list_(first)
 
     if origin is dict:
-        raise ValueError(
-            "ParquetSink: dict fields are not supported — route the record "
-            f"to JsonlSink instead. Annotation: {annotation!r}"
-        )
+        # dict-typed fields (e.g. DreamRollout.sampling_parameters, whose value
+        # union dict[str, float | int | str | bool] is heterogeneous and so has
+        # no clean native Arrow column type) are stored JSON-encoded in a
+        # string column. The write path encodes the dict to a JSON string; the
+        # read path (model_validate_parquet_row / read_parquet_dir) decodes it
+        # back to a dict before model_validate, so consumers see a dict, not a
+        # string. Keeps the columnar streams together (no JsonlSink split) and
+        # leaves the Pydantic model — and its JSON Schema export — unchanged.
+        return pa.string()
 
     if annotation is str:
         return pa.string()
@@ -263,9 +280,85 @@ def _arrow_schema_from_pydantic(model: type[BaseModel]) -> pa.Schema:
     return pa.schema(fields)
 
 
+def _unwrap_optional(annotation: Any) -> Any:
+    """Return the single non-None arm of an Optional union, else the annotation."""
+    origin = get_origin(annotation)
+    if origin in (Union, types.UnionType):
+        non_none = [a for a in get_args(annotation) if a is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
+def json_encoded_field_names(model: type[BaseModel]) -> frozenset[str]:
+    """Field names ``ParquetSink`` stores JSON-encoded (dict-typed fields).
+
+    A field is JSON-encoded iff its annotation, after unwrapping ``Optional``,
+    has ``dict`` origin. Shared by the write path (encode) and the read path
+    (``model_validate_parquet_row`` / ``read_parquet_dir`` decode) so the two
+    halves stay symmetric — the single source of truth for which columns are
+    JSON strings on disk.
+    """
+    names: set[str] = set()
+    for name, info in model.model_fields.items():
+        if get_origin(_unwrap_optional(info.annotation)) is dict:
+            names.add(name)
+    return frozenset(names)
+
+
+def decode_parquet_row(model: type[BaseModel], row: dict[str, Any]) -> dict[str, Any]:
+    """Decode a ``ParquetSink``-written row back to model-ready values.
+
+    JSON-decodes the model's dict-typed string columns (see
+    :func:`json_encoded_field_names`) so the row is ready for
+    ``model.model_validate``. A no-op for models with no dict fields, so it is
+    safe to route every parquet-row reconstruction through it. Does not mutate
+    the input.
+    """
+    json_fields = json_encoded_field_names(model)
+    if not json_fields:
+        return row
+    decoded = dict(row)
+    for name in json_fields:
+        value = decoded.get(name)
+        if isinstance(value, str):
+            decoded[name] = json.loads(value)
+    return decoded
+
+
+def model_validate_parquet_row(model: type[ModelT], row: dict[str, Any]) -> ModelT:
+    """Reconstruct a model from a ``ParquetSink``-written row (decode + validate).
+
+    The symmetric counterpart to ``ParquetSink.write``'s JSON encoding: decodes
+    dict-typed string columns back to dicts, then ``model_validate``s. Use this
+    (or :func:`read_parquet_dir`) instead of bare ``model.model_validate(row)``
+    when a model may carry dict fields, so consumers transparently get a dict.
+    """
+    return model.model_validate(decode_parquet_row(model, row))
+
+
+def read_parquet_dir(directory: Path, model: type[ModelT]) -> list[ModelT]:
+    """Read every shard under ``directory`` and reconstruct ``model`` records.
+
+    Concatenates ``shard-*.parquet`` in name order and reconstructs each row via
+    :func:`model_validate_parquet_row` (dict-field-aware). The canonical
+    ``ParquetSink`` read counterpart.
+    """
+    records: list[ModelT] = []
+    for shard in sorted(directory.glob("shard-*.parquet")):
+        table = pq.read_table(shard)  # type: ignore[no-untyped-call]
+        for row in table.to_pylist():
+            records.append(model_validate_parquet_row(model, row))
+    return records
+
+
 __all__ = [
     "JsonlSink",
     "ParquetSink",
     "SchemaMismatchError",
     "SinkClosedError",
+    "decode_parquet_row",
+    "json_encoded_field_names",
+    "model_validate_parquet_row",
+    "read_parquet_dir",
 ]

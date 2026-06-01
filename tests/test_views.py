@@ -646,3 +646,76 @@ def test_split_requires_keyword_only_self_prediction_args() -> None:
     )
     assert isinstance(policy, PolicyView)
     assert isinstance(telemetry, TelemetryView)
+
+
+# ===========================================================================
+# Probe 3 Phase 5 — the mirror's one-way constraint, extended to the
+# dream-reading boundary (plan §2.6 / §4 Phase 5 row).
+#
+# The existing dependency lint above pins the actor↔TelemetryView boundary
+# (Io must not read the mirror's surface). The dual Probe 3 boundary is that
+# the mirror's dream-reading layer must not import the training-side modules
+# that would let its output flow back to Io. ``kind.mirror.dream_reading`` may
+# import read-only observer models and mirror-side modules; it must not import
+# ``kind.training.state_machine``, ``kind.training.dream``, or any other
+# ``kind.training`` module. Making that dependency edge fail to exist is the
+# one-way constraint made structural.
+# ===========================================================================
+
+
+DREAM_READING_PATH = REPO_ROOT / "kind" / "mirror" / "dream_reading.py"
+
+
+def _imported_module_names_in(path: Path) -> list[str]:
+    """Collect the *module* names imported in the file (``ImportFrom.module``
+    and ``Import`` alias names), so a ``from kind.training.x import Y`` is
+    detected by its module path rather than by the symbol ``Y``."""
+    tree = ast.parse(path.read_text())
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module is not None:
+                modules.append(node.module)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.append(alias.name)
+    return modules
+
+
+def test_dream_reading_does_not_import_training_modules() -> None:
+    """The mirror's dream-reading layer is one-way: no ``kind.training``
+    import. Catches ``kind.training.state_machine`` and
+    ``kind.training.dream`` by name and any other training submodule by
+    prefix."""
+    assert DREAM_READING_PATH.exists(), f"missing module at {DREAM_READING_PATH}"
+    modules = _imported_module_names_in(DREAM_READING_PATH)
+    offending = [
+        m for m in modules if m == "kind.training" or m.startswith("kind.training.")
+    ]
+    assert offending == [], (
+        "kind/mirror/dream_reading.py imports training-side module(s) "
+        f"{offending} — the mirror's one-way constraint (plan §2.6) forbids "
+        f"any kind.training import. Found modules: {modules}"
+    )
+    assert "kind.training.state_machine" not in modules
+    assert "kind.training.dream" not in modules
+
+
+def test_dream_reading_import_lint_trips_on_forbidden_import() -> None:
+    """The lint genuinely fails when a training import is present — the
+    structural guard is only meaningful if it can catch a regression. We
+    assert against a positive-control source rather than mutating the real
+    module on disk."""
+    bad_source = (
+        "from kind.observer.schemas import DreamRollout\n"
+        "from kind.training.dream import emit_dream\n"
+    )
+    tree = ast.parse(bad_source)
+    modules: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules.append(node.module)
+    offending = [
+        m for m in modules if m == "kind.training" or m.startswith("kind.training.")
+    ]
+    assert offending == ["kind.training.dream"]

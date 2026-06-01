@@ -46,6 +46,7 @@ from kind.mirror import (
     StabilityResult,
 )
 from kind.observer.schemas import AgentStep, DreamRollout, ReplayMeta, WorldEvent
+from kind.observer.sinks import model_validate_parquet_row
 
 __all__ = [
     "Loaded",
@@ -223,7 +224,7 @@ def _load_parquet_dir(
             continue
         for index, row in enumerate(rows):
             try:
-                value = model.model_validate(row)
+                value = model_validate_parquet_row(model, row)
             except ValidationError as exc:
                 outcomes.append(
                     Loaded(

@@ -25,6 +25,7 @@ import pytest
 from kind.observer.schemas import (
     RECORD_MODELS,
     PROBE_1_SCHEMA_VERSION,
+    PROBE_3_TELEMETRY_SCHEMA_VERSION,
     AgentStep,
     DreamRollout,
     RecordEnvelope,
@@ -36,6 +37,10 @@ from kind.observer.sinks import (
     ParquetSink,
     SchemaMismatchError,
     SinkClosedError,
+    decode_parquet_row,
+    json_encoded_field_names,
+    model_validate_parquet_row,
+    read_parquet_dir,
 )
 
 
@@ -361,3 +366,112 @@ def test_parquet_sink_creates_directory(tmp_path: Path) -> None:
         sink.write(make_agent_step(0))
     assert directory.exists()
     assert sorted(directory.glob("shard-*.parquet"))
+
+
+# ---- v0.3.0 dict-field (sampling_parameters) round-trip --------------------
+# Regression coverage for the sink-routing fix: ParquetSink JSON-encodes
+# dict-typed fields into string columns on write and the read helpers decode
+# them back to dicts, so a heterogeneous-valued sampling_parameters survives
+# write -> read with types intact. (Before the fix, ParquetSink raised at
+# construction on the dict annotation — the 52-failure root cause.)
+
+
+def _make_dream_rollout_v0_3_0(t: int, *, run_id: str = "test-run") -> DreamRollout:
+    return DreamRollout(
+        schema_version=PROBE_3_TELEMETRY_SCHEMA_VERSION,
+        run_id=run_id,
+        checkpoint_id="ckpt-000001",
+        seed_step=t,
+        seed_h0=[float(i) * 0.01 for i in range(H_DIM)],
+        seed_z0=[float(i) * 0.01 for i in range(Z_DIM)],
+        sequence_h=[
+            [float(j + i) * 0.01 for i in range(H_DIM)] for j in range(HORIZON)
+        ],
+        sequence_z_prior=[
+            [float(j + i) * 0.01 for i in range(Z_DIM)] for j in range(HORIZON)
+        ],
+        sequence_action=[i % 5 for i in range(HORIZON)],
+        sequence_action_logprob=[-float(i) * 0.1 for i in range(HORIZON)],
+        sequence_prior_entropy=[float(i) * 0.05 for i in range(HORIZON)],
+        sequence_decoded_obs=None,
+        cumulative_prior_entropy=float(HORIZON) * 0.5,
+        mean_step_kl_successive_priors=0.1,
+        max_step_latent_norm_change=0.5,
+        sequence_self_prediction=None,
+        dream_session_id="sess-abc",
+        seed_kind="perturbed_prior",
+        seed_perturbation_magnitude=0.0,
+        temperature_schedule=[1.0] * HORIZON,
+        sub_mode_tags=["prior_only_control"],
+        # Heterogeneous value union: int, float, str, bool — the case that has
+        # no clean native Arrow column type and motivates JSON encoding.
+        sampling_parameters={
+            "replay_warmup_length": 8,
+            "horizon": HORIZON,
+            "actor_action_temperature": 1.5,
+            "action_policy": "uniform_random",
+            "record_ensemble_disagreement": True,
+        },
+        gradient_policy="none",
+        rng_seed=12345,
+        termination_reason="horizon_complete",
+        re_seed_step_indices=None,
+        sequence_ensemble_disagreement_variance=[0.2] * HORIZON,
+        checkpoint_hash="deadbeef",
+    )
+
+
+def test_dream_rollout_v0_3_0_dict_field_survives_parquet_roundtrip(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "dream_rollout"
+    originals = [_make_dream_rollout_v0_3_0(t) for t in range(3)]
+    with ParquetSink(directory, schema=DreamRollout, rows_per_shard=10) as sink:
+        for r in originals:
+            sink.write(r)
+
+    # Read via the symmetric helper — consumers get a dict back, not a string.
+    reconstructed = read_parquet_dir(directory, DreamRollout)
+    assert reconstructed == originals
+
+    # The dict is a real dict with value types preserved (int stays int, float
+    # stays float, str stays str, bool stays bool — not all coerced to one type).
+    sp = reconstructed[0].sampling_parameters
+    assert isinstance(sp, dict)
+    assert sp["replay_warmup_length"] == 8 and isinstance(sp["replay_warmup_length"], int)
+    assert sp["actor_action_temperature"] == 1.5
+    assert sp["action_policy"] == "uniform_random"
+    assert sp["record_ensemble_disagreement"] is True
+
+
+def test_dict_field_is_stored_as_json_string_column(tmp_path: Path) -> None:
+    directory = tmp_path / "dream_rollout"
+    with ParquetSink(directory, schema=DreamRollout, rows_per_shard=10) as sink:
+        sink.write(_make_dream_rollout_v0_3_0(0))
+    shard = sorted(directory.glob("shard-*.parquet"))[0]
+    table = pq.read_table(shard)
+    # On disk the column is a string; the raw row carries a JSON string, and
+    # the decode helper turns it back into a dict.
+    assert table.schema.field("sampling_parameters").type == pa.string()
+    raw_row = table.to_pylist()[0]
+    assert isinstance(raw_row["sampling_parameters"], str)
+    decoded = decode_parquet_row(DreamRollout, raw_row)
+    assert isinstance(decoded["sampling_parameters"], dict)
+
+
+def test_json_encoded_field_names_detects_only_dict_fields() -> None:
+    assert json_encoded_field_names(DreamRollout) == frozenset({"sampling_parameters"})
+    assert json_encoded_field_names(AgentStep) == frozenset()
+    assert json_encoded_field_names(ReplayMeta) == frozenset()
+
+
+def test_decode_and_validate_are_noop_for_dict_free_model(tmp_path: Path) -> None:
+    # For a model with no dict fields, decode_parquet_row returns the row
+    # untouched and model_validate_parquet_row == model.model_validate.
+    directory = tmp_path / "agent_step"
+    original = make_agent_step(0)
+    with ParquetSink(directory, schema=AgentStep, rows_per_shard=10) as sink:
+        sink.write(original)
+    row = pq.read_table(sorted(directory.glob("shard-*.parquet"))[0]).to_pylist()[0]
+    assert decode_parquet_row(AgentStep, row) is row
+    assert model_validate_parquet_row(AgentStep, row) == original

@@ -51,7 +51,7 @@ Research (≥3 LLMs in parallel) → synthesis (`docs/decisions/`) → implement
 - Don't add machinery the synthesis didn't decide on
 - Forward-compatibility lives in schemas / conduits / mutators / opacity boundary; nothing else
 - mypy `--strict` on all `kind/` sources
-- Tests must pass before a phase is declared done
+- Tests must pass before a phase is declared done — run the **full** test suite, not just the phase's new tests (the Probe 3 sink-routing gap stayed red across three phases because per-phase validation was scoped to new tests; see `docs/decisions/sink_routing_dream_rollout_2026-06-01.md`)
 - Trust outputs only at the level the probe's question allows
 
 ## What not to do

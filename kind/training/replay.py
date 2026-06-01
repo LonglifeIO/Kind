@@ -266,6 +266,101 @@ class SequenceReplayBuffer:
         self._dispatch(sample_meta)
         return batch, sample_meta
 
+    # ---- read-only window access (Phase 1 of Probe 3) -------------------
+
+    def valid_seed_window_starts(
+        self, length: int, min_age_steps: int
+    ) -> list[int]:
+        """Return ``env_step`` values of windows of ``length`` valid for seeding.
+
+        A start is valid iff (a) its window of ``length`` consecutive
+        transitions does not cross an episode boundary, and (b) its start
+        ``env_step`` is at least ``min_age_steps`` older than the buffer's
+        latest insert (`start_env_step <= latest_env_step - min_age_steps`).
+
+        The episode-boundary scan reuses the same logic as
+        ``_valid_window_starts`` — parameterized by ``length`` rather than
+        ``self._L`` since the seed warmup window is independent of the
+        buffer's training sequence length.
+
+        Returns the matching transitions' ``env_step`` values (the stable
+        within-run identifier the Phase 0.5 decision adopts). Read-only;
+        does not mutate buffer state, does not emit a ReplayMeta.
+        """
+        if length <= 0:
+            raise ValueError(f"length must be positive, got {length}")
+        if min_age_steps < 0:
+            raise ValueError(
+                f"min_age_steps must be non-negative, got {min_age_steps}"
+            )
+        n = len(self._transitions)
+        if n < length:
+            return []
+
+        snapshot = list(self._transitions)
+        latest_env_step = snapshot[-1].env_step
+        max_allowed_start_env_step = latest_env_step - min_age_steps
+
+        episodes = [t.episode_id for t in snapshot]
+        boundaries: list[int] = [
+            i for i in range(1, n) if episodes[i] != episodes[i - 1]
+        ]
+
+        starts: list[int] = []
+        bi = 0
+        max_start_idx = n - length
+        for s in range(max_start_idx + 1):
+            while bi < len(boundaries) and boundaries[bi] <= s:
+                bi += 1
+            # No internal boundary iff the next boundary is at or past s+length.
+            window_clean = bi == len(boundaries) or boundaries[bi] >= s + length
+            if not window_clean:
+                continue
+            if snapshot[s].env_step > max_allowed_start_env_step:
+                continue
+            starts.append(snapshot[s].env_step)
+        return starts
+
+    def get_window(
+        self, start_env_step: int, length: int
+    ) -> tuple[Tensor, Tensor]:
+        """Read obs and action tensors from the window of ``length`` transitions
+        whose first transition has ``env_step == start_env_step``.
+
+        Returns ``(obs, action)`` with shapes ``(L, *obs_shape)`` and ``(L,)``
+        long. Read-only; does not mutate buffer state, does not emit a
+        ReplayMeta.
+
+        Raises ``RuntimeError`` if no transition matches ``start_env_step``
+        or the window of ``length`` extends past the buffer. Does not
+        re-check episode-boundary integrity — callers that obtained
+        ``start_env_step`` from :meth:`valid_seed_window_starts` get that
+        guarantee for free.
+        """
+        if length <= 0:
+            raise ValueError(f"length must be positive, got {length}")
+        snapshot = list(self._transitions)
+        start_idx: int | None = None
+        for i, t in enumerate(snapshot):
+            if t.env_step == start_env_step:
+                start_idx = i
+                break
+        if start_idx is None:
+            raise RuntimeError(
+                f"no transition with env_step={start_env_step} in buffer "
+                f"(buffer_size={len(snapshot)})"
+            )
+        if start_idx + length > len(snapshot):
+            raise RuntimeError(
+                f"window of length {length} starting at env_step="
+                f"{start_env_step} (index {start_idx}) extends past buffer "
+                f"end (size={len(snapshot)})"
+            )
+        window = snapshot[start_idx : start_idx + length]
+        obs = torch.stack([t.obs for t in window], dim=0)
+        action = torch.tensor([t.action for t in window], dtype=torch.long)
+        return obs, action
+
     # ---- internals ------------------------------------------------------
 
     def _valid_window_starts(self) -> list[int]:
