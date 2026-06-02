@@ -180,16 +180,33 @@ class DreamSessionContext:
 
     Deliberately carries *only* content-blind quantities (synthesis §6; plan
     §2.4 commitment 2): the envelope, the rollout count so far, the session's
-    elapsed wallclock, and the checkpoint barrier boolean. It carries no
-    ``DreamRollout`` content, no mirror reading, and nothing derived from Io's
-    state. Phase 6 may extend this with the rolling compute ledger; it must not
-    add a content-bearing field.
+    elapsed wallclock, the checkpoint barrier boolean, and (Phase 6) the two
+    rolling-ledger-derived scalars below. It carries no ``DreamRollout``
+    content, no mirror reading, and nothing derived from Io's state. Every
+    field is a content-blind primitive (or the content-blind
+    :class:`DreamEnvelopeConfig`); the type-level test in
+    ``tests/test_runtime_protection.py`` enforces this and must trip if a
+    content-bearing field is ever added.
+
+    The two Phase 6 fields are populated by the composite
+    :class:`~kind.training.protection.DreamProtectionPolicy` from its rolling
+    compute ledger before it delegates to the per-cap sub-policies — so the
+    sub-policies consume *only* this content-blind context and cannot reach the
+    ledger (or anything else) directly. Both default to ``0.0`` so the Phase 4
+    construction sites (``_plan_session_rollouts``, ``tick``) that don't carry a
+    ledger still build a valid context; the composite overwrites them with the
+    ledger's real values.
     """
 
     envelope: DreamEnvelopeConfig
     rollouts_completed: int
     session_wallclock_ms_elapsed: int
     checkpoint_in_progress: bool
+    # Ledger-derived, content-blind. The wallclock cap reads the running
+    # rollout-duration estimate (a projection input, not actual-elapsed); the
+    # compute-budget cap reads the rolling-window compute already accrued.
+    rollout_duration_estimate_ms: float = 0.0
+    window_compute_seconds: float = 0.0
 
 
 @dataclass(frozen=True)

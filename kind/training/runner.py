@@ -80,11 +80,13 @@ from kind.observer.schemas import (
 from kind.observer.pre_reg import PreRegistration, PreRegSink
 from kind.observer.sinks import JsonlSink, ParquetSink
 from kind.training.checkpoint import CheckpointContents, CheckpointManager
+from kind.training.dream_seed import SeedSelectionConfig
 from kind.training.replay import (
     Batch,
     SequenceReplayBuffer,
     Transition,
 )
+from kind.training.state_machine import DreamEnvelopeConfig
 
 __all__ = ["Runner", "RunnerConfig", "RunnerStepInfo", "StepCallback"]
 
@@ -272,6 +274,22 @@ class RunnerConfig:
     # adversarial-pass orchestration (Phase 8) sets this explicitly. Probe 1
     # and Probe 1.5 runners leave it ``None``.
     pre_reg_dir: Path | None = None
+
+    # Probe 3 Phase 7 — the cross-probe surface (plan §7). The two
+    # Probe-4-perturbable configs: the dream *envelope* (the when / how-long
+    # of dreaming — caps, heartbeat, compute budget) and the *seed-selection*
+    # (the from-what — seed mode, perturbation sigma, replay window). They are
+    # exposed here as the typed control surface a Probe 4 builder perturbation
+    # (via ``scripts/perturb_dream_envelope.py`` →
+    # ``kind.training.cross_probe_surface``) overrides at a checkpoint boundary.
+    #
+    # **Additive and inert at Phase 7.** The waking loop reads neither field;
+    # live state-machine ↔ runner consumption is Phase 8. They are
+    # content-blind from Io's side (the actor and world model never read them),
+    # and they add no Io-readable interface — this is a builder-side control.
+    # Both defaults are the settled §2.2 / §2.4 configs.
+    dream_envelope: DreamEnvelopeConfig = DreamEnvelopeConfig()
+    seed_selection: SeedSelectionConfig = SeedSelectionConfig()
 
     # Pickled extra fields are stored as a Tensor-friendly dict via the
     # rng_state pickle so checkpoint resume can restore them.
