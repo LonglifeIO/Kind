@@ -92,6 +92,7 @@ class _StubDriver:
         started_at_wallclock_ms: int,
         protection: Any,
         envelope: Any,
+        checkpoint_in_progress: bool = False,
     ) -> DreamSessionOutcome:
         self.sessions.append(dream_session_id)
         return DreamSessionOutcome(

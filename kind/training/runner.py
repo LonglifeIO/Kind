@@ -50,6 +50,7 @@ import random
 import shutil
 import tempfile
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,16 +78,27 @@ from kind.observer.schemas import (
     ReplayMeta,
     WorldEvent,
 )
+from kind.observer.dream_session import DreamSessionSink
 from kind.observer.pre_reg import PreRegistration, PreRegSink
 from kind.observer.sinks import JsonlSink, ParquetSink
 from kind.training.checkpoint import CheckpointContents, CheckpointManager
+from kind.training.dream import DreamRolloutConfig
 from kind.training.dream_seed import SeedSelectionConfig
+from kind.training.protection import DreamProtectionPolicy
 from kind.training.replay import (
     Batch,
     SequenceReplayBuffer,
     Transition,
 )
-from kind.training.state_machine import DreamEnvelopeConfig
+from kind.training.state_machine import (
+    AlwaysAwakeDesktop,
+    DesktopSignalSource,
+    DreamEnvelopeConfig,
+    HostSignals,
+    RunDreamSessionDriver,
+    State,
+    StateController,
+)
 
 __all__ = ["Runner", "RunnerConfig", "RunnerStepInfo", "StepCallback"]
 
@@ -291,6 +303,19 @@ class RunnerConfig:
     dream_envelope: DreamEnvelopeConfig = DreamEnvelopeConfig()
     seed_selection: SeedSelectionConfig = SeedSelectionConfig()
 
+    # Phase 8a — the four-axis dream-rollout config the live state-machine-driven
+    # dream session uses (distinct from ``dream_horizon``, which is the *waking-
+    # planning* rollout's horizon, the Phase 3 control). Default is the settled
+    # four-axis dreaming regime (``kind/training/dream.py`` §2.3). Read only on the
+    # dreaming path; the waking loop never touches it.
+    dream_rollout_config: DreamRolloutConfig = DreamRolloutConfig()
+
+    # Phase 8a — the supervisor's dormant-state poll cadence (Fork A / the
+    # decision doc's tick-cadence ratification: ~1 Hz wall-clock while dormant,
+    # responsive to desktop_on within ~1 s, sub-heartbeat granularity). Only the
+    # dormant branch sleeps; the waking branch ticks once per ``_step_once``.
+    dormant_tick_interval_s: float = 1.0
+
     # Pickled extra fields are stored as a Tensor-friendly dict via the
     # rng_state pickle so checkpoint resume can restore them.
     _checkpoint_id_zero_pad: int = field(default=6, repr=False)
@@ -333,12 +358,37 @@ class Runner:
         transport_client: EnvTransportClient,
         env_server: EnvServer | None = None,
         step_callback: StepCallback | None = None,
+        host_signal_source: DesktopSignalSource | None = None,
+        host_clock_ms: Callable[[], int] | None = None,
     ) -> None:
         self._config = config
         self._transport = transport_client
         self._env_server = env_server
         self._step_callback = step_callback
         self._device = torch.device(config.device)
+        # Phase 8a supervisor inputs. The desktop on/off source is the
+        # exogenous trigger (default: always-on, so the pre-8a smokes run pure
+        # waking). The clock drives the controller tick's wallclock (heartbeat
+        # cadence, transition timestamps); injectable so tests are deterministic.
+        self._host_signal_source: DesktopSignalSource = (
+            host_signal_source if host_signal_source is not None else AlwaysAwakeDesktop()
+        )
+        self._host_clock_ms: Callable[[], int] = (
+            host_clock_ms
+            if host_clock_ms is not None
+            else (lambda: time.monotonic_ns() // 1_000_000)
+        )
+        # Set True only while a checkpoint commit is staging (item 6 plumbing).
+        # In the single-process synchronous supervisor the tick never runs
+        # *during* a commit, so the dreaming path reads this as False; the path
+        # is wired live (no hardcoded constant) and becomes meaningful in a real
+        # Mac/desktop split where a commit could overlap dreaming.
+        self._checkpoint_in_progress: bool = False
+        # The state-machine supervisor pieces are built lazily at the top of
+        # run() (so checkpoint_id reflects any load_checkpoint), once.
+        self._controller: StateController | None = None
+        self._dream_session_sink: DreamSessionSink | None = None
+        self._dream_rng: torch.Generator | None = None
 
         # ---- models on device -----------------------------------------
         # RunnerConfig is authoritative for the four Probe 1.5 self-
@@ -539,9 +589,112 @@ class Runner:
         # ``payload.lesion_kind=<the kind>``, plus
         # ``payload.lesion_variant`` for ``"zero_or_randomize_scalar"``.
         self._maybe_emit_lesion_mirror_marker()
+        self._build_state_controller()
 
-        for _ in range(total_env_steps):
-            self._step_once()
+        # Phase 8a supervisor loop (Fork A, A-shape-1). Each iteration ticks the
+        # StateController on the current host signals, then runs the body of the
+        # resulting state. ``total_env_steps`` counts *waking* steps (env steps),
+        # so dreaming/dormant iterations don't consume the budget — and when the
+        # desktop is on throughout (the pre-8a smokes), every iteration is a
+        # waking ``_step_once`` and behavior is byte-identical to the old
+        # ``for _ in range(total_env_steps): self._step_once()`` loop (the
+        # controller starts in waking and tick returns None each time, emitting
+        # nothing). The dream-state machinery activates only on a desktop_off
+        # edge, which the always-on default source never produces.
+        controller = self._controller
+        assert controller is not None
+        waking_steps_done = 0
+        while waking_steps_done < total_env_steps:
+            host = self._current_host_signals()
+            env_step_now = (
+                self._env_step_meta.env_step
+                if self._env_step_meta is not None
+                else self._iteration
+            )
+            controller.tick(host, env_step_now, self._host_clock_ms())
+            state: State = controller.current_state
+            if state == "waking":
+                self._step_once()
+                waking_steps_done += 1
+            elif state == "dreaming":
+                # The dream session already ran synchronously inside tick()
+                # (RunDreamSessionDriver runs run_dream_session in
+                # _enter_dreaming); the next tick transitions dreaming → dormant
+                # on the pending cap. Nothing to do here.
+                continue
+            elif state == "dormant":
+                # Heartbeat-idle: poll at the ratified ~1 Hz dormant cadence,
+                # responsive to desktop_on. The heartbeat itself fires inside
+                # tick() (dormant branch) off the injected clock.
+                if self._config.dormant_tick_interval_s > 0:
+                    time.sleep(self._config.dormant_tick_interval_s)
+            else:  # "paused" — supervisor-mediated; not entered by this loop.
+                break
+
+    def _build_state_controller(self) -> None:
+        """Construct the supervisor's StateController + dream driver once.
+
+        Built lazily at the top of run() (after any load_checkpoint) so the
+        driver's ``checkpoint_id`` reflects the loaded checkpoint. Wires the
+        *live* Phase 7 surface (``config.dream_envelope`` / ``config.seed_selection``
+        — the caps and seed-selection the entering session reads, and the
+        ``DreamSessionMeta`` provenance snapshots), the Phase 6 protection
+        composite (not the stub), and the four-axis dream config. The dream
+        session writes four-axis ``"0.3.0"`` ``DreamRollout`` records to the same
+        ``dream_rollout`` stream as the waking-planning rollout (disambiguated by
+        ``schema_version`` + ``dream_session_id``, Fork A), and state transitions
+        to the existing ``world_event`` stream.
+
+        ``checkpoint_hash=None`` so ``run_dream_session`` recomputes the hash from
+        the *live* weights each session. (Known 8a limitation: the driver's
+        ``checkpoint_id`` *label* is captured here at run-start; a checkpoint that
+        commits during waking before a later dream session leaves the label
+        stale — cosmetic, since the hash is live. Refreshing the label per
+        session is a later refinement.)
+        """
+        if self._controller is not None:
+            return
+        self._dream_session_sink = DreamSessionSink(self._config.telemetry_dir)
+        self._dream_rng = torch.Generator()
+        self._dream_rng.manual_seed(0)
+        driver = RunDreamSessionDriver(
+            world_model=self._world_model,
+            actor=self._actor,
+            ensemble=self._ensemble,
+            replay_buffer=self._replay,
+            seed_selection_config=self._config.seed_selection,
+            rollout_config=self._config.dream_rollout_config,
+            run_id=self._config.run_id,
+            checkpoint_id=self._checkpoint_id,
+            rng=self._dream_rng,
+            device=self._device,
+            dream_rollout_sink=self._dream_sink,
+            dream_session_sink=self._dream_session_sink,
+            envelope_config_snapshot=dataclasses.asdict(self._config.dream_envelope),
+            checkpoint_hash=None,
+        )
+        self._controller = StateController(
+            self._config.dream_envelope,
+            self._config.seed_selection,
+            dream_driver=driver,
+            protection=DreamProtectionPolicy(),
+            world_event_emit=self._world_event_sink,
+            run_id=self._config.run_id,
+            checkpoint_id=self._checkpoint_id,
+            dream_session_id_factory=lambda: str(uuid.uuid4()),
+        )
+
+    def _current_host_signals(self) -> HostSignals:
+        """Assemble the exogenous ``HostSignals`` for one supervisor tick.
+
+        ``desktop_alive`` comes from the injected desktop source (the exogenous
+        trigger); ``checkpoint_in_progress`` is the runner's *own* commit state
+        (item 6 plumbing). Nothing here is Io-derived.
+        """
+        return HostSignals(
+            desktop_alive=self._host_signal_source.desktop_alive(),
+            checkpoint_in_progress=self._checkpoint_in_progress,
+        )
 
     def load_checkpoint(self, checkpoint_id: str) -> None:
         """Restore weights, optimizer state, RNG state, and runtime state.
@@ -740,6 +893,11 @@ class Runner:
         if self._pre_reg_sink is not None:
             try:
                 self._pre_reg_sink.close()
+            except Exception:
+                pass
+        if self._dream_session_sink is not None:
+            try:
+                self._dream_session_sink.close()
             except Exception:
                 pass
         try:
@@ -1018,13 +1176,21 @@ class Runner:
         ):
             self._train_step()
 
-        # 9. Dream rollout at cadence.
+        # 9. Waking-planning rollout at cadence. This is the Probe-1.5
+        #    calibration handshake (current-state-seeded, actor-driven, "0.2.0",
+        #    sequence_self_prediction None) — the Phase 3 visibility-smoke's
+        #    waking-planning *control*, NOT the four-axis offline dream (which is
+        #    state-machine-driven, fires only on a desktop_off edge, and lives in
+        #    the dreaming branch of the supervisor). Reframed in Phase 8a (Fork A
+        #    option iii): renamed to mark it as waking-planning, behavior
+        #    unchanged. It fires only in the waking state, which is the only
+        #    state that runs _step_once.
         dream_emitted = (
             env_step_now > 0
             and env_step_now % self._config.dream_cadence_env_steps == 0
         )
         if dream_emitted:
-            self._emit_dream(env_step_now)
+            self._emit_waking_planning_rollout_for_phase3_control(env_step_now)
 
         # 10. Checkpoint at cadence.
         checkpoint_committed = (
@@ -1176,8 +1342,19 @@ class Runner:
 
     # ---- dream rollout --------------------------------------------------
 
-    def _emit_dream(self, env_step: int) -> None:
-        """Emit one DreamRollout record using prior dynamics from current state."""
+    def _emit_waking_planning_rollout_for_phase3_control(self, env_step: int) -> None:
+        """Emit one waking-planning ``DreamRollout`` (Probe-1.5 handshake).
+
+        Renamed in Phase 8a (Fork A option iii) from ``_emit_dream`` — the name
+        ``dream`` was a Probe-1 misnomer for what is, on inspection, a *waking*
+        rollout: current-state-seeded (``_h_curr`` / ``_z_curr``), actor-driven
+        (goal-coupled), ``"0.2.0"``, ``sequence_self_prediction is None``, with
+        the environment live. It is the Phase 3 visibility-smoke's
+        *waking-planning control* (the four-axis offline dream is differentiated
+        *from* it). Behavior is unchanged from the pre-8a ``_emit_dream``; only
+        the name and call-site framing changed. The four-axis dream lives in the
+        supervisor's dreaming branch.
+        """
         if self._h_curr is None or self._z_curr is None:
             return
         horizon = self._config.dream_horizon
@@ -1407,6 +1584,20 @@ class Runner:
         self._checkpoint_counter += 1
         checkpoint_id = self._format_checkpoint_id(self._checkpoint_counter)
 
+        # Item 6: mark the checkpoint-window open while staging/committing, so a
+        # supervisor tick that observes it during the window would route a dream
+        # session away from the atomic state-sync boundary. In the single-process
+        # synchronous supervisor the tick never runs *during* this method (it is
+        # called from within _step_once, between ticks), so the dreaming path
+        # reads this as False — the path is live (no hardcoded constant), and the
+        # flag becomes meaningful in a real Mac/desktop split.
+        self._checkpoint_in_progress = True
+        try:
+            self._commit_checkpoint_inner(checkpoint_id, env_step)
+        finally:
+            self._checkpoint_in_progress = False
+
+    def _commit_checkpoint_inner(self, checkpoint_id: str, env_step: int) -> None:
         with tempfile.TemporaryDirectory(prefix="kind_ckpt_stage_") as staging_str:
             staging = Path(staging_str)
 

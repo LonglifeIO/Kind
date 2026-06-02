@@ -661,3 +661,75 @@ The cross-probe surface is a **builder-side control** over the dream envelope (t
 ### Watts default
 
 Default-to-no, applied to the builder this phase: the surface gives the builder control over the *conditions* of Io's dreaming (envelope, seeds) but **no** read into, and **no** write into, Io's interior — and Io gains **no** new self-readable quantity (`new_actor_readable_interfaces_added = []`). The "should the builder be able to reach X about Io?" question defaulted to *no* for everything past the envelope and seed-selection.
+
+## Phase 8a — Core live integration (supervisor wiring, single-session-per-absence)
+
+Phase 8a is the first phase where the **runner loop changes**: the `StateController` is wired into `run()` as a supervisor so the full four-state cycle (`waking → dreaming → dormant → waking`) runs end-to-end, with **one capped dream session per `desktop_off` edge**. Built against the ratified `docs/decisions/phase8_integration_forks_2026-06-02.md`: Fork A = A-shape-1 (supervisor) + handshake option (iii) (retain-and-reframe); tick cadence and interruptibility-option-(a) as ratified. The B2 dormant→dreaming re-entry edge is **explicitly not** built here — it is Phase 8b. The conservative discipline this phase demanded: the waking path's behavior is preserved *exactly*, and the 4 integration smokes are the proof.
+
+### The supervisor shape as built (Fork A, A-shape-1)
+
+`Runner.run(total_env_steps)` is now a supervisor loop. Each iteration: assemble `HostSignals`, `controller.tick(...)`, then branch on `controller.current_state`:
+- **waking** → the existing `_step_once` body, unchanged (env transport → train → waking-planning rollout at cadence → checkpoint); `waking_steps_done += 1`.
+- **dreaming** → nothing in the loop body: the session *already ran synchronously inside `tick()`* (the `RunDreamSessionDriver` runs `run_dream_session` in `_enter_dreaming`); the next tick transitions dreaming → dormant on the pending cap.
+- **dormant** → poll at the ratified ~1 Hz cadence (`dormant_tick_interval_s`, default 1.0; the heartbeat fires inside `tick`).
+- **paused** → `break` (supervisor-mediated via `on_shutdown`/`on_startup`; not entered by this loop in 8a).
+
+`total_env_steps` counts **waking** steps, so dreaming/dormant iterations don't consume the budget. **The transparency property that preserves the waking path:** the controller starts in `waking`, and with the desktop on throughout (the `AlwaysAwakeDesktop` default), `tick` returns `None` every iteration and emits *nothing* — so every iteration is a waking `_step_once`, byte-identical to the old `for _ in range(total_env_steps): self._step_once()`. The dream-state machinery activates only on a `desktop_off` edge, which the always-on default never produces. **The 4 integration smokes (and all 24 in `test_integration_smoke*.py`) stay green, unchanged, confirming it.** `test_desktop_on_throughout_runs_pure_waking` asserts the transparency directly: desktop-on → no dream session, no `state_transition` events, exactly the waking budget.
+
+### The handshake reframe (Fork A option iii)
+
+The waking `_emit_dream` is renamed to `_emit_waking_planning_rollout_for_phase3_control` (plan §2.3's anticipated name), **behavior unchanged**: still current-state-seeded, actor-driven, `"0.2.0"`, `sequence_self_prediction is None`, fired at `dream_cadence_env_steps` in the waking branch only. It was never the four-axis dream — it is a *waking-planning* telemetry artifact (the Phase 3 visibility-smoke control). "Dreaming" now names *only* the offline four-axis state, owned by the state machine. Both still write to the `dream_rollout` stream, disambiguated by `schema_version` (`"0.2.0"` waking-planning vs `"0.3.0"` four-axis) + presence of `dream_session_id` (Fork A; the dual-population is the flagged wart, splitting the streams deferred).
+
+### Live consumption — Phase 7 surface, composite, checkpoint signal (items 4–6)
+
+`_build_state_controller()` (lazy, once, at the top of `run()` so `checkpoint_id` reflects any `load_checkpoint`) wires the **live** sources:
+- **Phase 7 surface made live (item 4):** the `StateController`'s envelope/seed-selection and the driver's `seed_selection_config` / `envelope_config_snapshot` read from `config.dream_envelope` / `config.seed_selection` (the previously-inert Phase 7 fields). The entering session's caps and seed-selection come from them, and its `DreamSessionMeta` records their snapshots — verified by the smoke (`envelope_config_snapshot.hard_cap_rollout_count == 3`, `seed_selection_config_snapshot.mode == "replay"`).
+- **Composite injected (item 5):** the live dreaming path uses `DreamProtectionPolicy()` (the four-cap composite over the rolling ledger), not `StubRolloutCountProtection`. The smoke confirms the session is *capped* (terminates on `hard_cap_rollout_count`, not unbounded).
+- **Checkpoint signal plumbed (item 6):** `checkpoint_in_progress` now flows live — `HostSignals` carries the runner's own commit-state flag (set around `_commit_checkpoint`), and it is threaded `tick → _enter_dreaming → RunDreamSessionDriver.run_session → _plan_session_rollouts` (replacing Phase 6's hardcoded `False`). *Honest scope note:* in 8a's single-process synchronous supervisor the tick never runs *during* a commit (the commit happens inside `_step_once`, between ticks), so the dreaming path reads it as `False`; the path is **live (no hardcoded constant)** and becomes meaningful in a real Mac/desktop split where a commit could overlap dreaming. New JSONL stream wired: `DreamSessionSink` at `telemetry_dir/dream_session.jsonl` (closed in `close()`).
+- **`DreamRolloutConfig` exposed on `RunnerConfig`** (`dream_rollout_config`, default = settled four-axis regime) — additive, read only on the dreaming path; the smoke shrinks the horizon for speed.
+
+### The circular-import fix (item 7)
+
+The latent cycle Phase 7 flagged — a *cold* `import kind.training.runner` (or `kind.observer.pre_reg`) as the first import in a process failed at `pre_reg` → `mirror.registry` → (`mirror.__init__`'s eager calibration chain) → `mirror.orchestrator` → `pre_reg` (partial) — is fixed at its **root**: the inverted layering (observer reaching up into mirror). The shared `ReadingSurface` enum moved to a new observer-level leaf `kind/observer/reading_surface.py`; `kind.mirror.registry` re-exports it (so every `from kind.mirror.registry import ReadingSurface` is unchanged — same object, same values, same serialization), and `kind.observer.pre_reg` imports it from the leaf. Observer no longer imports mirror at module load. `tests/test_import_cold.py` proves all four modules (`kind.training.runner`, `kind.observer.pre_reg`, `kind.mirror.registry`, `kind.mirror`) import cold in a fresh subprocess, and that the re-export is identity-preserving. *(This touches `kind/mirror/registry.py` by one import line — sanctioned by the prompt's item 7 "moving the shared dependency"; it is not reading logic.)*
+
+### What the new integration smoke covers (item 8, load-bearing)
+
+`tests/test_probe3_integration_smoke.py::test_full_waking_dreaming_dormant_waking_cycle` drives the supervisor through a real cycle via an injected `ScriptedDesktop` (on→off→on) and a deterministic stepping clock, and asserts the coverage the waking-only smokes lack:
+- entering dreaming on `desktop_off` runs a **four-axis** session: a double-written `"0.1.0"` `DreamSessionMeta` (start with `ended_*` None, then end), and `"0.3.0"` `DreamRollout` records each carrying the session's `dream_session_id`, `seed_kind == "replay"` (axis 4), a non-flat `temperature_schedule` of length = horizon (axis 3), and a finite `sequence_ensemble_disagreement_variance` of length = horizon (axis 2) — distinct from the `"0.2.0"` waking handshake;
+- the session is **capped** by the composite (`rollout_count == 3`, `end_trigger == "hard_cap_rollout_count"`);
+- the `state_transition` events fire **in order** (`waking→dreaming` / `desktop_off`, `dreaming→dormant` / `hard_cap_rollout_count`, `dormant→waking` / `desktop_on`);
+- dormant emits **heartbeats** (`mac_alive: true`);
+- `desktop_on` **resumes waking**, and exactly `total_env_steps` *waking* `agent_step` records are written despite the dream interruption. The existing smokes remain **waking-only** (unchanged).
+
+### Measurement results (item 9 — real session vs the Probe-1.5 checkpoint)
+
+A real four-axis dream session run against `runs/probe1_5_phase7_5-20260507-101800/` (weights loaded cleanly: world_model 51 / actor 6 / ensemble 31 keys, 0 missing/unexpected), CPU, h=200 z=16 K=5, horizon=30:
+- **per-rollout wall-time ≈ 11.4 ms** (12-rollout timed session ≈ 137 ms), *including* the per-rollout replay seed re-encoding.
+- **K=5 ensemble disagreement** is computed every step (30/rollout, recorded-not-used) and is part of that figure.
+- **Interruptibility:** per-rollout 11.4 ms ≪ the 1000 ms projection basis ⇒ **no overshoot**; no checkpoint signal arrived mid-session (synchronous, single session). **Option (a) holds** — the revisit trigger (measured durations long enough that boundary-only enforcement is inadequate, or a mid-session checkpoint interruption) is **not** hit.
+- **Un-seeded `DEFAULT_ROLLOUT_DURATION_MS`:** the 1000.0 placeholder (≈88× too high) → **15.0 ms** (the measured ~11.4 ms rounded up for a small conservative margin + MPS device-variance headroom). The §2.4 ordering is preserved (rollout-count ceiling 50 still binds long before the wallclock cap). NB: the live driver does not yet feed measured durations into the ledger (it stays cold, so this seed is the operative estimate) — wiring `record_rollout` into the session loop is a flagged refinement, and the ledger's cross-session role is dormant until Fork B's re-dreaming edge (8b).
+
+### What was verified
+
+- **Full `tests/` suite green** — **1204 passed, 6 skipped, 1 xfailed/xpassed** (+7 over the Phase 7 baseline: `test_import_cold.py` ×5, `test_probe3_integration_smoke.py` ×2; the known `test_transport` flake's accepted disposition). `mypy --strict` clean across **64** `kind/` source files (+1: `reading_surface.py`).
+- **The 4 integration smokes are behaviorally unchanged** (all 24 in `test_integration_smoke*.py` green; the waking branch reproduces the old loop exactly when desktop-on).
+- **All prior load-bearing structural guards green:** Phase 4 HostSignals/tick no-Io-state type-tests, Phase 5 mirror one-way write test, Phase 6 content-blindness test, Phase 7 no-hidden-state-write test.
+
+### Deviations / flags
+
+- **No deviation from the ratified decisions or the 8a prompt.** A-shape-1 + reframe + option (a) + no re-entry edge, as specified.
+- **The checkpoint signal reads `False` in 8a** (single-process synchronous model) — the *path* is live (threaded, no hardcoded constant), the *value* becomes non-trivial only in a real Mac/desktop split. Flagged, not a deviation.
+- **Driver `checkpoint_id` label captured at run-start** — a checkpoint committing during waking before a later dream session leaves the *label* stale (cosmetic; the `checkpoint_hash` is recomputed live per session via `checkpoint_hash=None`). Flagged refinement.
+- **`state_machine.py` was touched** (the host-signal sources + the `checkpoint_in_progress` threading) — outside the "settled surfaces untouched" list (which names the four-axis regime, frozen criteria, mirror reading logic, `schemas.py`, and `run_dream_session`'s one-shot shape; `state_machine.py` is not among them, and item 6 explicitly required the threading). `run_dream_session` stays one-shot (option (a) held; not reopened).
+
+### Watts / new-interface entry
+
+The supervisor adds **no Io-readable interface**: `new_actor_readable_interfaces_added = []`. The host-signal source produces only the exogenous `desktop_alive` bit (nothing Io-derived — the Phase 4 type-test still passes); `checkpoint_in_progress` is the runner's own commit state. The dream session, its envelope, its seeds, and the state transitions are all outside Io's observation (Io reads `PolicyView`; none of this is on that path). The reframe renamed a waking-planning artifact; it did not add a surface.
+
+### What is newly open — Phase 8b and beyond
+
+- **Phase 8b** adds the Fork B dormant→dreaming **re-entry edge** (metabolic-ledger-paced re-dreaming), its structural guard (the re-entry trigger is content-blind, nothing Io-derived), and the written exogenous-trigger reinterpretation. That is when the rolling-hour ledger's cross-session role becomes load-bearing.
+- **Feed measured durations into the ledger.** The live driver does not call `ledger.record_rollout`; wiring it (so the estimate self-corrects past the 15 ms seed) pairs naturally with 8b's re-dreaming, where the ledger actually paces.
+- **Per-session checkpoint-id refresh** (the captured-at-run-start label).
+- **Re-measure on MPS.** The 11.4 ms figure is CPU; the real deployment is MPS — the seed should be re-checked once the ledger records live there.
+- **Stream split for `dream_rollout`** (waking-planning `"0.2.0"` vs four-axis `"0.3.0"`) — the flagged Fork A wart; a clean-up reopening sink/stream plumbing, deferred.

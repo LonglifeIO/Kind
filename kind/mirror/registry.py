@@ -167,32 +167,13 @@ class TelemetrySurface(str, Enum):
     # amending the membrane decision is wrong.
 
 
-class ReadingSurface(str, Enum):
-    """Surfaces the mirror produces readings *at*.
-
-    Per the Probe 2 v2 synthesis (`docs/decisions/Kind_probe2_synthesis.md`
-    §2.2), the mirror's evidential weight is stratified across three
-    surfaces. Substrate-side is weakest (Probe 1.5 Phase 8's KS-D shows
-    substrate-shaping is largely auxiliary-target-shape-independent);
-    head-internal is strongest for self-specificity; behavior-side is most
-    confabulation-susceptible (the actor's new column may be byte-identical
-    to its initialization throughout training; the conditioning is
-    fixed-by-init not developed-through-training).
-
-    Enum values match the strings used by Phase 0's
-    :data:`kind.mirror.structured.ReadingSurface` Literal
-    (``"substrate_side"``, ``"head_internal"``, ``"behavior_side"``). As of
-    Phase 7, :class:`~kind.observer.pre_reg.PreRegistration` keys its
-    ``expected_outcome_per_surface`` and ``reading_surfaces_per_criterion``
-    dicts with *this* enum; the value-level alignment with the Phase 0
-    Literal means str-valued enum members serialize identically to their
-    string values, so the migration was a type tightening rather than a
-    value or JSON-serialization change.
-    """
-
-    SUBSTRATE_SIDE = "substrate_side"
-    HEAD_INTERNAL = "head_internal"
-    BEHAVIOR_SIDE = "behavior_side"
+# ``ReadingSurface`` now lives in the observer-level leaf
+# ``kind.observer.reading_surface`` (Phase 8a, to break the observer→mirror
+# import cycle ``pre_reg`` could trigger on a cold import). It is re-exported
+# here unchanged so every ``from kind.mirror.registry import ReadingSurface``
+# keeps resolving; the enum's identity, values, and serialization are
+# unchanged. See ``kind/observer/reading_surface.py`` for the rationale.
+from kind.observer.reading_surface import ReadingSurface
 
 
 # ---------------------------------------------------------------------------

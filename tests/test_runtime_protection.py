@@ -98,9 +98,14 @@ class _PlanningDriver:
         started_at_wallclock_ms: int,
         protection: object,
         envelope: DreamEnvelopeConfig,
+        checkpoint_in_progress: bool = False,
     ) -> DreamSessionOutcome:
         self.sessions.append(dream_session_id)
-        count, trigger = _plan_session_rollouts(protection, envelope)  # type: ignore[arg-type]
+        count, trigger = _plan_session_rollouts(
+            protection,  # type: ignore[arg-type]
+            envelope,
+            checkpoint_in_progress=checkpoint_in_progress,
+        )
         return DreamSessionOutcome(end_trigger=trigger, rollout_count=count)
 
 
@@ -499,7 +504,9 @@ def test_envelope_defaults_match_plan_2_4() -> None:
     assert env.hard_cap_rollout_count == 50
     assert env.checkpoint_window_force_dormant is True
     assert env.compute_budget_seconds_per_hour == 1800.0
-    assert DEFAULT_ROLLOUT_DURATION_MS == 1000.0
+    # Phase 8a un-seeded the 1000.0 placeholder with the measured ~11.4 ms/rollout
+    # (Probe-1.5 checkpoint, CPU), rounded up to 15.0 for a conservative margin.
+    assert DEFAULT_ROLLOUT_DURATION_MS == 15.0
 
 
 def test_dataclasses_replace_round_trips_new_context_fields() -> None:

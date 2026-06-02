@@ -63,7 +63,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 # Phase 7: the surface keys on ``expected_outcome_per_surface`` and the
 # surface values on ``reading_surfaces_per_criterion`` use the
-# :class:`~kind.mirror.registry.ReadingSurface` *enum*, not the Phase 0
+# :class:`~kind.observer.reading_surface.ReadingSurface` *enum*, not the Phase 0
 # ``Literal`` at :data:`kind.mirror.structured.ReadingSurface`. The enum's
 # values match the Literal's strings exactly, so this is a type tightening
 # with no value change and no JSON-data-serialization change (str-valued
@@ -71,7 +71,11 @@ from pydantic import BaseModel, ConfigDict, model_validator
 # surface key now trips at construction rather than reaching a validator
 # late. :mod:`kind.mirror.structured`'s ``StructuredClaim`` /
 # ``StructuredReading`` / ``JudgeRuling`` still use the Phase 0 Literal.
-from kind.mirror.registry import ReadingSurface
+#
+# Phase 8a: imported from the observer-level leaf (re-exported by
+# ``kind.mirror.registry`` for back-compat) so the observer layer no longer
+# reaches up into the mirror layer — breaking the cold-import cycle.
+from kind.observer.reading_surface import ReadingSurface
 
 __all__ = [
     "PRE_REG_SCHEMA_VERSION",

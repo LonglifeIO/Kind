@@ -82,13 +82,22 @@ ONE_HOUR_MS: Final[int] = 60 * 60 * 1000
 #: A design choice within §2.4's range: §2.4 fixes the budgets (30 min/hour
 #: compute, 30 min/session wallclock) but not a per-rollout duration; §2.7's
 #: reference is a *compute* figure (~150 K=5 head evals/rollout), not a time.
-#: 1 s/rollout is a deliberately conservative placeholder so the wallclock and
-#: compute caps are non-degenerate on a cold ledger; Phase 8 supplies the
-#: measured figure once real dream sessions run. With this seed the rollout-
-#: count ceiling (default 50) binds long before the wallclock cap (default
-#: 30 min ⇒ ~1800 rollouts), which is the intended ordering: rollout-count is
-#: the working bound, wallclock is the slow-rollout backstop.
-DEFAULT_ROLLOUT_DURATION_MS: Final[float] = 1000.0
+#:
+#: **Phase 8a measurement (un-seeds the prior 1000.0 placeholder).** A real
+#: four-axis dream session run against the Probe-1.5 checkpoint
+#: (``runs/probe1_5_phase7_5-20260507-101800/``, h=200 z=16 K=5, horizon=30, CPU)
+#: measured ~11.4 ms/rollout — including the per-rollout replay seed re-encoding.
+#: Seeded here at 15.0 ms (the measured figure rounded up for a small conservative
+#: margin and device-variance headroom; the real deployment is MPS). The ordering
+#: §2.4 intends is preserved: the rollout-count ceiling (default 50) still binds
+#: long before the wallclock cap (default 30 min ⇒ ~120k rollouts at 15 ms),
+#: rollout-count being the working bound and wallclock the slow-rollout backstop.
+#: NB: the live driver does not yet feed measured durations back into the ledger
+#: (it stays cold, so this seed is the operative estimate); wiring
+#: ``record_rollout`` into the session loop is a flagged refinement (and, under the
+#: as-built single-session-per-absence model, the ledger's cross-session role is
+#: dormant until Fork B's re-dreaming edge — Phase 8b).
+DEFAULT_ROLLOUT_DURATION_MS: Final[float] = 15.0
 
 
 def _default_clock_ms() -> int:

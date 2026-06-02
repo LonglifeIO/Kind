@@ -53,8 +53,9 @@ Phase 0 ``world_event`` payload conventions.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal, Protocol
 
 import torch
@@ -77,6 +78,10 @@ __all__ = [
     "Trigger",
     "CapTrigger",
     "HostSignals",
+    "DesktopSignalSource",
+    "AlwaysAwakeDesktop",
+    "ScriptedDesktop",
+    "DesktopWatcher",
     "StateTransition",
     "DreamEnvelopeConfig",
     "DreamSessionContext",
@@ -136,6 +141,70 @@ class HostSignals:
 
     desktop_alive: bool = True
     checkpoint_in_progress: bool = False
+
+
+class DesktopSignalSource(Protocol):
+    """Produces the exogenous ``desktop_alive`` bit (plan §2.4 ``poll() -> bool``).
+
+    Deliberately produces *only* ``desktop_alive`` — a host-observable fact Io
+    cannot see. ``checkpoint_in_progress`` is *not* sourced here: it is the
+    runner's own checkpoint-commit state, assembled into :class:`HostSignals` by
+    the supervisor. Keeping this source desktop-only preserves the exogenous
+    trigger commitment at the type level (nothing here is Io-derived) and the
+    Phase 4 ``HostSignals`` type-test.
+    """
+
+    def desktop_alive(self) -> bool: ...
+
+
+class AlwaysAwakeDesktop:
+    """The loopback / smoke default: the desktop is always on.
+
+    With this source the supervisor never leaves the waking state, so the
+    pre-Phase-8a integration smokes run pure waking and stay behaviorally
+    unchanged (the dream-state machinery only activates on a ``desktop_off``
+    edge, which this source never produces).
+    """
+
+    def desktop_alive(self) -> bool:
+        return True
+
+
+class ScriptedDesktop:
+    """A test source returning a programmed sequence of ``desktop_alive`` bits.
+
+    Each :meth:`desktop_alive` call advances through ``sequence`` and *sticks on
+    the last value* once exhausted — so a sequence ending in ``True`` guarantees
+    the supervisor eventually resumes waking (the smoke drives desktop
+    on→off→on by ending on ``True``).
+    """
+
+    def __init__(self, sequence: Sequence[bool]) -> None:
+        if not sequence:
+            raise ValueError("ScriptedDesktop requires a non-empty sequence")
+        self._sequence = list(sequence)
+        self._i = 0
+
+    def desktop_alive(self) -> bool:
+        value = self._sequence[self._i]
+        if self._i < len(self._sequence) - 1:
+            self._i += 1
+        return value
+
+
+class DesktopWatcher:
+    """Plan §2.4 sentinel-file poll: ``desktop_alive`` iff the sentinel exists.
+
+    The desktop writes/deletes a sentinel file (e.g. on a shared/synced path);
+    its presence is the exogenous on/off signal. A pure filesystem read —
+    nothing Io-derived. Probe 4 may replace this with a network heartbeat.
+    """
+
+    def __init__(self, sentinel_path: Path) -> None:
+        self._sentinel_path = sentinel_path
+
+    def desktop_alive(self) -> bool:
+        return self._sentinel_path.exists()
 
 
 @dataclass(frozen=True)
@@ -273,12 +342,15 @@ class DreamDriver(Protocol):
         started_at_wallclock_ms: int,
         protection: ProtectionPolicy,
         envelope: DreamEnvelopeConfig,
+        checkpoint_in_progress: bool = False,
     ) -> DreamSessionOutcome: ...
 
 
 def _plan_session_rollouts(
     protection: ProtectionPolicy,
     envelope: DreamEnvelopeConfig,
+    *,
+    checkpoint_in_progress: bool = False,
 ) -> tuple[int, CapTrigger]:
     """Ask the protection hook, rollout by rollout, where the session stops.
 
@@ -299,7 +371,7 @@ def _plan_session_rollouts(
                 envelope=envelope,
                 rollouts_completed=k,
                 session_wallclock_ms_elapsed=0,
-                checkpoint_in_progress=False,
+                checkpoint_in_progress=checkpoint_in_progress,
             )
         )
         if verdict is not None:
@@ -359,8 +431,11 @@ class RunDreamSessionDriver:
         started_at_wallclock_ms: int,
         protection: ProtectionPolicy,
         envelope: DreamEnvelopeConfig,
+        checkpoint_in_progress: bool = False,
     ) -> DreamSessionOutcome:
-        num_rollouts, end_trigger = _plan_session_rollouts(protection, envelope)
+        num_rollouts, end_trigger = _plan_session_rollouts(
+            protection, envelope, checkpoint_in_progress=checkpoint_in_progress
+        )
         run_dream_session(
             world_model=self._world_model,
             actor=self._actor,
@@ -552,7 +627,11 @@ class StateController:
         """
         if self._state == "waking":
             if not host_signals.desktop_alive:
-                return self._enter_dreaming(env_step, wallclock_ms)
+                return self._enter_dreaming(
+                    env_step,
+                    wallclock_ms,
+                    checkpoint_in_progress=host_signals.checkpoint_in_progress,
+                )
             return None
 
         if self._state == "dreaming":
@@ -629,7 +708,13 @@ class StateController:
 
     # ---- internals --------------------------------------------------------
 
-    def _enter_dreaming(self, env_step: int, wallclock_ms: int) -> StateTransition:
+    def _enter_dreaming(
+        self,
+        env_step: int,
+        wallclock_ms: int,
+        *,
+        checkpoint_in_progress: bool = False,
+    ) -> StateTransition:
         session_id = str(self._id_factory())
         transition = self._transition(
             "waking", "dreaming", "desktop_off", env_step, wallclock_ms, session_id
@@ -646,6 +731,7 @@ class StateController:
                 started_at_wallclock_ms=wallclock_ms,
                 protection=self._protection,
                 envelope=self._envelope,
+                checkpoint_in_progress=checkpoint_in_progress,
             )
             self._pending_dormant_trigger = outcome.end_trigger
         return transition
