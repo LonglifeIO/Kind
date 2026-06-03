@@ -29,8 +29,8 @@ from kind.mirror.structured import StructuredClaim
 from kind.observer.schemas import AgentStep, DreamRollout
 from kind.training.protection import (
     DreamProtectionPolicy,
+    MetabolicBudget,
     MetabolicState,
-    RollingComputeLedger,
     has_metabolic_room,
 )
 from kind.training.state_machine import DreamEnvelopeConfig, StubRolloutCountProtection
@@ -116,24 +116,26 @@ def test_reentry_content_blindness_check_trips_on_injected_io_field() -> None:
     assert _io_derived_offenders(_BadWithTensor) == ["latents"]
 
 
-def test_has_metabolic_room_is_the_budget_cap_complement() -> None:
-    """Re-enter iff ``window + projected <= budget`` — the exact complement of the
-    ComputeBudgetCap's stop condition (``window + projected > budget``)."""
-    # Room: 8 s window + 1 s projected = 9 ≤ 10.
+def test_has_metabolic_room_is_full_session_token_check() -> None:
+    """Re-enter iff the bucket holds a full projected session's worth of tokens —
+    the anti-trickle hysteresis (full session, not one rollout)."""
+    # Room: 3 tokens ≥ a 2.5 s projected session.
     assert has_metabolic_room(
         MetabolicState(
-            window_compute_seconds=8.0,
-            projected_session_seconds=1.0,
-            compute_budget_seconds_per_hour=10.0,
+            tokens=3.0,
+            capacity=10.0,
+            refill_rate=0.17,
+            projected_session_seconds=2.5,
             wallclock_ms=0,
         )
     )
-    # No room: 9.5 + 1.0 = 10.5 > 10.
+    # No room: 3 tokens < a 3.5 s projected session.
     assert not has_metabolic_room(
         MetabolicState(
-            window_compute_seconds=9.5,
-            projected_session_seconds=1.0,
-            compute_budget_seconds_per_hour=10.0,
+            tokens=3.0,
+            capacity=10.0,
+            refill_rate=0.17,
+            projected_session_seconds=3.5,
             wallclock_ms=0,
         )
     )
@@ -147,22 +149,28 @@ def test_stub_never_redreams_and_records_nothing() -> None:
     stub.record_session(num_rollouts=3, session_wallclock_ms=100, now_ms=0)  # no raise
 
 
-def test_composite_reentry_tracks_the_ledger() -> None:
-    """The composite re-enters while the rolling window has room and stops once a
-    recorded session fills it past the budget — the metabolic loop end to end."""
-    clock = {"t": 0}
-    ledger = RollingComputeLedger(
-        default_rollout_duration_ms=15.0, clock=lambda: clock["t"]
+def test_composite_reentry_tracks_the_token_bucket() -> None:
+    """The composite re-enters while the bucket affords a FULL session, stops once
+    spending drains it below one, then continuous refill recovers it — the
+    depletion→replenishment metabolic loop end to end (no rolling-window trickle)."""
+    budget = MetabolicBudget(
+        capacity_seconds=10.0,
+        refill_rate=1.0,  # 1 compute-s per wall-s
+        seed_rollout_duration_ms=1000.0,
+        initial_tokens=10.0,
     )
-    composite = DreamProtectionPolicy(ledger=ledger)
-    env = DreamEnvelopeConfig(compute_budget_seconds_per_hour=0.25)  # 250 ms budget
+    composite = DreamProtectionPolicy(budget=budget)
+    env = DreamEnvelopeConfig(hard_cap_rollout_count=3)  # full session ≈ 3 × 1 s = 3 s
 
-    # Cold ledger: window 0 + ~15 ms projected ≤ 250 ms → room.
+    # Full bucket affords a 3 s session.
     assert composite.metabolic_reentry(env, now_ms=0) is True
-    # Record sessions of 100 ms each; after the window passes the budget, no room.
-    composite.record_session(num_rollouts=3, session_wallclock_ms=100, now_ms=0)
-    assert composite.metabolic_reentry(env, now_ms=0) is True  # 100 + 33 ≤ 250
-    composite.record_session(num_rollouts=3, session_wallclock_ms=100, now_ms=0)
-    composite.record_session(num_rollouts=3, session_wallclock_ms=100, now_ms=0)
-    # Window now 300 ms > 250 ms budget → no room → rest.
-    assert composite.metabolic_reentry(env, now_ms=0) is False
+    # Spend three 3 s sessions at the same instant (no refill): 10 → 7 → 4 → 1.
+    composite.record_session(num_rollouts=3, session_wallclock_ms=3000, now_ms=0)
+    assert composite.metabolic_reentry(env, now_ms=0) is True  # 7 ≥ 3
+    composite.record_session(num_rollouts=3, session_wallclock_ms=3000, now_ms=0)
+    assert composite.metabolic_reentry(env, now_ms=0) is True  # 4 ≥ 3
+    composite.record_session(num_rollouts=3, session_wallclock_ms=3000, now_ms=0)
+    assert composite.metabolic_reentry(env, now_ms=0) is False  # 1 < 3 → rest
+    # Continuous refill (vs the old all-at-once-an-hour-later return) recovers:
+    # +1 token/s, so 2 s later tokens = 3 → affordable again.
+    assert composite.metabolic_reentry(env, now_ms=2000) is True

@@ -32,9 +32,8 @@ from kind.observer.schemas import AgentStep, DreamRollout
 from kind.training.protection import (
     DEFAULT_ROLLOUT_DURATION_MS,
     CheckpointWindowCap,
-    ComputeBudgetCap,
     DreamProtectionPolicy,
-    RollingComputeLedger,
+    MetabolicBudget,
     RolloutCountCap,
     WallclockCap,
 )
@@ -219,7 +218,6 @@ def test_policies_consume_only_dream_session_context() -> None:
         RolloutCountCap(),
         WallclockCap(),
         CheckpointWindowCap(),
-        ComputeBudgetCap(),
         DreamProtectionPolicy(),
     ):
         sig = inspect.signature(policy.should_stop)
@@ -229,28 +227,27 @@ def test_policies_consume_only_dream_session_context() -> None:
         assert hints["ctx"] is DreamSessionContext
 
 
-def test_ledger_is_content_blind() -> None:
-    """The rolling ledger records and exposes only numbers — durations and
-    timestamps — never any dream content. No ledger method touches a forbidden
-    Io/content type."""
+def test_budget_is_content_blind() -> None:
+    """The metabolic token bucket records and exposes only numbers — durations,
+    counts, tokens, timestamps — never any dream content. No bucket method touches
+    a forbidden Io/content type."""
     for method_name in (
-        "record_rollout",
-        "window_compute_seconds",
+        "record_session",
+        "current_tokens",
         "rollout_duration_estimate_ms",
+        "affords_session",
     ):
-        method = getattr(RollingComputeLedger, method_name)
+        method = getattr(MetabolicBudget, method_name)
         hints = typing.get_type_hints(method)
         for name, annotation in hints.items():
             assert annotation not in _FORBIDDEN_CONTENT_TYPES, (
-                f"RollingComputeLedger.{method_name} param/return {name} is a "
+                f"MetabolicBudget.{method_name} param/return {name} is a "
                 f"content/Io type {annotation!r}."
             )
-    # Recorded entries are numeric tuples, not content.
-    ledger = RollingComputeLedger(clock=lambda: 0)
-    ledger.record_rollout(123.0, now_ms=0)
-    completed_at, duration = ledger._entries[0]
-    assert isinstance(completed_at, int)
-    assert isinstance(duration, float)
+    # Recorded state is numeric, not content.
+    budget = MetabolicBudget(capacity_seconds=10.0, refill_rate=1.0)
+    budget.record_session(session_wallclock_ms=123.0, num_rollouts=1, now_ms=0)
+    assert isinstance(budget.current_tokens(now_ms=0), float)
 
 
 def test_no_mirror_verdict_can_short_circuit_the_runtime() -> None:
@@ -313,30 +310,10 @@ def test_checkpoint_window_cap_fires_on_checkpoint_in_progress() -> None:
     assert cap.should_stop(_ctx(checkpoint_in_progress=True, envelope=env_off)) is None
 
 
-def test_compute_budget_cap_fires_when_window_would_exceed() -> None:
-    cap = ComputeBudgetCap()
-    env = DreamEnvelopeConfig(compute_budget_seconds_per_hour=10.0)
-    # 8 s already in the window, 1 s/rollout: projected 8 + k exceeds 10 at k=3.
-    assert cap.should_stop(
-        _ctx(
-            rollouts_completed=2,
-            rollout_duration_estimate_ms=1000.0,
-            window_compute_seconds=8.0,
-            envelope=env,
-        )
-    ) is None
-    assert cap.should_stop(
-        _ctx(
-            rollouts_completed=3,
-            rollout_duration_estimate_ms=1000.0,
-            window_compute_seconds=8.0,
-            envelope=env,
-        )
-    ) == ProtectionVerdict(trigger="compute_budget")
-
-
 # ---------------------------------------------------------------------------
 # Composition — earliest cap wins; rollout-count is the absolute ceiling.
+# (The compute-budget cap is gone — cross-session pacing is the token bucket's
+# job now, not a per-session cap.)
 # ---------------------------------------------------------------------------
 
 
@@ -346,8 +323,8 @@ def test_composition_rollout_count_ceiling_bounds_a_bad_wallclock_estimate() -> 
     bound the session."""
     # estimate 1 ms ⇒ wallclock projection reaches the 30-min budget only at
     # ~1.8M rollouts — far past the ceiling.
-    ledger = RollingComputeLedger(default_rollout_duration_ms=1.0)
-    composite = DreamProtectionPolicy(ledger=ledger)
+    budget = MetabolicBudget(seed_rollout_duration_ms=1.0)
+    composite = DreamProtectionPolicy(budget=budget)
     env = DreamEnvelopeConfig(
         hard_cap_rollout_count=50, hard_cap_wallclock_ms=30 * 60 * 1000
     )
@@ -358,67 +335,55 @@ def test_composition_rollout_count_ceiling_bounds_a_bad_wallclock_estimate() -> 
 def test_composition_wallclock_wins_when_estimate_is_large() -> None:
     """When rollouts are slow (large estimate), the wallclock backstop fires
     before the rollout-count ceiling — the earliest cap wins."""
-    ledger = RollingComputeLedger(default_rollout_duration_ms=60_000.0)  # 60 s/rollout
-    composite = DreamProtectionPolicy(ledger=ledger)
+    budget = MetabolicBudget(seed_rollout_duration_ms=60_000.0)  # 60 s/rollout
+    composite = DreamProtectionPolicy(budget=budget)
     env = DreamEnvelopeConfig(
         hard_cap_rollout_count=50,
         hard_cap_wallclock_ms=30 * 60 * 1000,
-        # High budget so the (8b) pacer default (600 s) doesn't fire first — this
-        # test isolates the wallclock cap winning over rollout-count.
-        compute_budget_seconds_per_hour=10**6,
     )  # 30 min ⇒ projection hits the budget at 30 rollouts < 50
     count, trigger = _plan_session_rollouts(composite, env)
     assert (count, trigger) == (30, "hard_cap_wallclock")
 
 
-def test_composition_compute_budget_can_win() -> None:
-    """A nearly-spent compute window makes the compute cap fire before the
-    rollout-count ceiling."""
-    clock = {"t": 1_000_000}
-    ledger = RollingComputeLedger(
-        default_rollout_duration_ms=1000.0, clock=lambda: clock["t"]
-    )
-    # 7 prior rollouts of 1 s each within the window ⇒ 7 s accrued.
-    for _ in range(7):
-        ledger.record_rollout(1000.0, now_ms=clock["t"])
-    composite = DreamProtectionPolicy(ledger=ledger)
-    env = DreamEnvelopeConfig(
-        hard_cap_rollout_count=50,
-        hard_cap_wallclock_ms=30 * 60 * 1000,
-        compute_budget_seconds_per_hour=10.0,
-    )
-    # 7 s window + 1 s/rollout ⇒ projected exceeds 10 s at 4 rollouts.
-    count, trigger = _plan_session_rollouts(composite, env)
-    assert (count, trigger) == (4, "compute_budget")
-
-
 # ---------------------------------------------------------------------------
-# The ledger — rolling-window accounting, content-blind.
+# The metabolic token bucket — continuous refill, spend, content-blind estimate.
 # ---------------------------------------------------------------------------
 
 
-def test_ledger_rolling_window_ages_out_old_compute() -> None:
-    clock = {"t": 0}
-    ledger = RollingComputeLedger(window_ms=1000, clock=lambda: clock["t"])
-    ledger.record_rollout(500.0, now_ms=0)
-    ledger.record_rollout(500.0, now_ms=500)
-    # Both within the 1 s window at t=900 ⇒ 1.0 s.
-    assert ledger.window_compute_seconds(now_ms=900) == 1.0
-    # At t=1400 (cutoff 400) the first (t=0) rollout has aged out; the second
-    # (t=500) is still within the window ⇒ 0.5 s.
-    assert ledger.window_compute_seconds(now_ms=1400) == 0.5
-    # At t=1600 (cutoff 600) the t=500 rollout has also aged out ⇒ 0.0 s.
-    assert ledger.window_compute_seconds(now_ms=1600) == 0.0
+def test_budget_refills_continuously_toward_capacity() -> None:
+    budget = MetabolicBudget(capacity_seconds=10.0, refill_rate=1.0, initial_tokens=0.0)
+    # First observation sets the baseline (no refill yet).
+    assert budget.current_tokens(now_ms=0) == 0.0
+    # +3 s of wall-time at 1 token/s ⇒ +3 tokens.
+    assert budget.current_tokens(now_ms=3000) == 3.0
+    # Clamped to capacity, never above.
+    assert budget.current_tokens(now_ms=100_000) == 10.0
 
 
-def test_ledger_running_estimate_is_all_time_average() -> None:
-    ledger = RollingComputeLedger(default_rollout_duration_ms=1000.0, clock=lambda: 0)
-    # Cold ledger returns the seed default.
-    assert ledger.rollout_duration_estimate_ms() == 1000.0
-    ledger.record_rollout(200.0, now_ms=0)
-    ledger.record_rollout(400.0, now_ms=0)
-    # All-time average, stable even as windowed compute ages out.
-    assert ledger.rollout_duration_estimate_ms() == 300.0
+def test_budget_spend_drains_and_refill_recovers() -> None:
+    budget = MetabolicBudget(capacity_seconds=10.0, refill_rate=1.0)
+    assert budget.current_tokens(now_ms=0) == 10.0  # starts full
+    budget.record_session(session_wallclock_ms=5000.0, num_rollouts=3, now_ms=0)
+    assert budget.current_tokens(now_ms=0) == 5.0  # spent 5 s of compute
+    assert budget.current_tokens(now_ms=2000) == 7.0  # +2 s refill
+
+
+def test_budget_estimate_is_all_time_average() -> None:
+    budget = MetabolicBudget(seed_rollout_duration_ms=1000.0)
+    # Cold bucket returns the seed default.
+    assert budget.rollout_duration_estimate_ms() == 1000.0
+    budget.record_session(session_wallclock_ms=600.0, num_rollouts=2, now_ms=0)
+    budget.record_session(session_wallclock_ms=600.0, num_rollouts=2, now_ms=0)
+    # All-time per-rollout average: (600 + 600) / (2 + 2) = 300.
+    assert budget.rollout_duration_estimate_ms() == 300.0
+
+
+def test_budget_affords_full_session_is_the_reentry_hysteresis() -> None:
+    """Affordability is full-session, not one-rollout — the anti-trickle
+    hysteresis."""
+    budget = MetabolicBudget(capacity_seconds=10.0, refill_rate=0.0, initial_tokens=3.0)
+    assert budget.affords_session(2.5, now_ms=0) is True  # 3 ≥ 2.5
+    assert budget.affords_session(3.5, now_ms=0) is False  # 3 < 3.5
 
 
 # ---------------------------------------------------------------------------
@@ -444,12 +409,11 @@ def test_controller_rollout_count_cap_to_dormant() -> None:
 
 
 def test_controller_wallclock_cap_to_dormant() -> None:
-    ledger = RollingComputeLedger(default_rollout_duration_ms=60_000.0)
-    composite = DreamProtectionPolicy(ledger=ledger)
+    budget = MetabolicBudget(seed_rollout_duration_ms=60_000.0)
+    composite = DreamProtectionPolicy(budget=budget)
     env = DreamEnvelopeConfig(
         hard_cap_rollout_count=50,
         hard_cap_wallclock_ms=30 * 60 * 1000,
-        compute_budget_seconds_per_hour=10**6,  # high so the pacer doesn't fire first
     )
     c = _controller(envelope=env, protection=composite, driver=_PlanningDriver())
     c.tick(_OFF, 1, 100)  # → dreaming, driver plans via the composite
@@ -511,13 +475,13 @@ def test_envelope_defaults_match_plan_2_4() -> None:
     assert env.hard_cap_wallclock_ms == 30 * 60 * 1000
     assert env.hard_cap_rollout_count == 50
     assert env.checkpoint_window_force_dormant is True
-    # Phase 8b (Fork B = B2): compute_budget became the dream/rest pacer; the
-    # default dropped from the Phase-6 protection value (1800 s) to a rest-
-    # majority ~17%-duty-cycle pacer (600 s). The builder's knob to tune.
-    assert env.compute_budget_seconds_per_hour == 600.0
-    # Phase 8b re-tuned the seed to the MPS (deployment-device) per-rollout cost
-    # (~108 ms on the Probe-1.5 checkpoint — ~9.5× the CPU figure, MPS dispatch
-    # overhead dominating at this small scale), rounded up to 110.0.
+    # Phase 8 token-bucket pacer (superseding 8b's compute_budget_seconds_per_hour):
+    # C bounds the burst, R (~17% duty) is the long-run dream/rest ratio. Both are
+    # the builder's rhythm knobs.
+    assert env.metabolic_capacity_seconds == 150.0
+    assert env.metabolic_refill_rate == 0.17
+    # The seed is the MPS (deployment-device) per-rollout cost (~108 ms on the
+    # Probe-1.5 checkpoint — ~9.5× the CPU figure), rounded up to 110.0.
     assert DEFAULT_ROLLOUT_DURATION_MS == 110.0
 
 

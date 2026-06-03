@@ -172,7 +172,7 @@ def test_surface_round_trips_only_named_fields() -> None:
 
     delta_json = (
         '{"dream_envelope": {"hard_cap_rollout_count": 7, '
-        '"compute_budget_seconds_per_hour": 600.0}, '
+        '"metabolic_refill_rate": 0.25}, '
         '"seed_selection": {"mode": "hybrid", "replay_warmup_length": 16}}'
     )
     perturbation = stage_perturbation(delta_json)
@@ -182,7 +182,7 @@ def test_surface_round_trips_only_named_fields() -> None:
 
     # Exactly the named envelope fields changed; the rest are untouched.
     assert result.dream_envelope.hard_cap_rollout_count == 7
-    assert result.dream_envelope.compute_budget_seconds_per_hour == 600.0
+    assert result.dream_envelope.metabolic_refill_rate == 0.25
     assert (
         result.dream_envelope.hard_cap_wallclock_ms == base_env.hard_cap_wallclock_ms
     )

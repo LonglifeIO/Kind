@@ -84,7 +84,7 @@ from kind.observer.sinks import JsonlSink, ParquetSink
 from kind.training.checkpoint import CheckpointContents, CheckpointManager
 from kind.training.dream import DreamRolloutConfig
 from kind.training.dream_seed import SeedSelectionConfig
-from kind.training.protection import DreamProtectionPolicy
+from kind.training.protection import DreamProtectionPolicy, MetabolicBudget
 from kind.training.replay import (
     Batch,
     SequenceReplayBuffer,
@@ -673,11 +673,17 @@ class Runner:
             envelope_config_snapshot=dataclasses.asdict(self._config.dream_envelope),
             checkpoint_hash=None,
         )
+        # Phase 8 token-bucket metabolic pacer, built from the live Phase 7
+        # envelope's capacity/refill knobs (the dream/rest duty cycle).
+        metabolic_budget = MetabolicBudget(
+            capacity_seconds=self._config.dream_envelope.metabolic_capacity_seconds,
+            refill_rate=self._config.dream_envelope.metabolic_refill_rate,
+        )
         self._controller = StateController(
             self._config.dream_envelope,
             self._config.seed_selection,
             dream_driver=driver,
-            protection=DreamProtectionPolicy(),
+            protection=DreamProtectionPolicy(budget=metabolic_budget),
             world_event_emit=self._world_event_sink,
             run_id=self._config.run_id,
             checkpoint_id=self._checkpoint_id,

@@ -58,13 +58,16 @@ def _stepping_clock(step_ms: int = _SESSION_STEP_MS) -> Callable[[], int]:
 
 
 def _dream_cycle_config(
-    tmp_path: Path, *, compute_budget_seconds_per_hour: float = 0.5
+    tmp_path: Path,
+    *,
+    metabolic_capacity_seconds: float = 1.2,
+    metabolic_refill_rate: float = 0.0,
 ) -> RunnerConfig:
     # The controller measures each dream session at one clock step = 1.0 s and
-    # records it into the metabolic ledger. So compute_budget is the dream/rest
-    # pacer for these tests: 0.5 s leaves room for a single 3-rollout session
-    # (window 1.0 s afterwards ⇒ no re-entry — the "budget-spent, rest" case);
-    # a larger budget (≥ ~0.67 s) leaves room for ≥1 re-entry.
+    # spends it from the metabolic token bucket. Defaults give the single-session
+    # case: C=1.2 s spends down past a full session (≈1.0 s) after one 3-rollout
+    # session, and R=0 never refills ⇒ no re-entry (rest). A larger C + positive R
+    # produce a periodic dream-burst / rest rhythm (the rhythm-shape test).
     return RunnerConfig(
         world_model_config=_tiny_world_model_config(),
         run_id="probe3-cycle",
@@ -91,7 +94,8 @@ def _dream_cycle_config(
         dream_envelope=DreamEnvelopeConfig(
             hard_cap_rollout_count=3,
             hard_cap_wallclock_ms=10**12,
-            compute_budget_seconds_per_hour=compute_budget_seconds_per_hour,
+            metabolic_capacity_seconds=metabolic_capacity_seconds,
+            metabolic_refill_rate=metabolic_refill_rate,
             dormant_heartbeat_interval_ms=_HEARTBEAT_MS,
         ),
         seed_selection=SeedSelectionConfig(
@@ -106,10 +110,11 @@ def _dream_cycle_config(
 
 
 def test_full_waking_dreaming_dormant_waking_cycle(tmp_path: Path) -> None:
-    # Under 8b this is the *budget-spent → rest* case: the default 0.5 s budget
-    # leaves no room after one 3-rollout session (window 1.0 s), so no metabolic
-    # re-entry fires and the absence stays single-session — exactly the 8a cycle,
-    # now with the B2 pacer present but exhausted. (The re-entry case is next.)
+    # The *bucket-depleted → rest* case: the default C=1.2 s bucket drops below a
+    # full session (≈1.0 s) after one 3-rollout session, and R=0 never refills, so
+    # no metabolic re-entry fires and the absence stays single-session — the 8a
+    # cycle, now with the token-bucket pacer present but depleted. (The periodic
+    # re-dream rhythm is the next test.)
     config = _dream_cycle_config(tmp_path)
     total_env_steps = 24
 
@@ -190,20 +195,36 @@ def test_full_waking_dreaming_dormant_waking_cycle(tmp_path: Path) -> None:
     assert all(e["payload"]["mac_alive"] is True for e in heartbeats)
 
 
-def test_metabolic_redream_cycle(tmp_path: Path) -> None:
-    """Phase 8b load-bearing — B2 re-dreaming: during one long desktop-off span,
-    the controller re-enters dreaming (a `metabolic_replenished` transition) and
-    runs ≥2 four-axis sessions, each gated by the content-blind ledger (budget
-    room), not by desktop state or anything Io-derived; the rhythm is
-    dream→dormant→dream; and `desktop_on` still preempts to waking."""
-    # A larger budget (1.5 s) leaves room for a second ~1.0 s session before the
-    # rolling window fills — so the loop cycles dream→dormant→dream within the
-    # test, then rests, then resumes on desktop_on.
-    config = _dream_cycle_config(tmp_path, compute_budget_seconds_per_hour=1.5)
-    total_env_steps = 18
-    # Desktop on for 9 waking steps, then off for a long span (≥2 re-dreams +
-    # rest), then sticks on True so waking resumes and finishes the budget.
-    desktop = ScriptedDesktop([True] * 9 + [False] * 9 + [True])
+def _longest_small_run(gaps: list[int], rest_ms: int) -> int:
+    """Longest run of consecutive within-burst (small) re-entry gaps — the size
+    (minus 1) of the largest dream burst. A token bucket bounds this by capacity;
+    the 8b rolling-window pacer front-loaded it to ~100."""
+    longest = 0
+    run = 0
+    for g in gaps:
+        if g < rest_ms:
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    return longest
+
+
+def test_metabolic_rhythm_shape_periodic_bursts_no_trickle(tmp_path: Path) -> None:
+    """Phase 8 load-bearing — the token-bucket rhythm SHAPE (catches burst/trickle).
+
+    Over a long absence the metabolic loop must produce **periodic** dream-bursts
+    and dormant rests, every session **full** (no 1-rollout trickle), each burst
+    **bounded** (not all sessions front-loaded). This is the test 8b's session-
+    count-only assertion could not make — it cannot see the burst/rest/trickle
+    pathology the rolling-window pacer produced; this asserts the shape."""
+    # C=3 s ⇒ a burst of a few ~1 s sessions; R=0.5 ⇒ rests of a few ticks while
+    # tokens refill — several cycles over a long off-span.
+    config = _dream_cycle_config(
+        tmp_path, metabolic_capacity_seconds=2.5, metabolic_refill_rate=0.1
+    )
+    total_env_steps = 12
+    desktop = ScriptedDesktop([True] * 6 + [False] * 60 + [True])
 
     with _transport_pair() as (client, _server, env_server, _thread):
         runner = Runner(
@@ -219,39 +240,61 @@ def test_metabolic_redream_cycle(tmp_path: Path) -> None:
             runner.close()
 
     telem = config.telemetry_dir
-    session_rows = _read_jsonl_records(telem / "dream_session.jsonl")
-    world_events = _read_jsonl_records(telem / "world_event.jsonl")
+    session_rows = [
+        r for r in _read_jsonl_records(telem / "dream_session.jsonl")
+        if r["ended_at_env_step"] is not None  # end records (one per session)
+    ]
     transitions = [
         (e["payload"]["from_state"], e["payload"]["to_state"], e["payload"]["trigger"])
-        for e in world_events
+        for e in _read_jsonl_records(telem / "world_event.jsonl")
         if e["event_type"] == "state_transition"
     ]
+    # Re-entry rhythm: the dormant duration before each metabolic re-entry. Small
+    # gaps (≈1 tick) are *within a burst* (the bucket still affords a session
+    # back-to-back); large gaps are *rests* (the bucket depleted and refilled over
+    # several dormant ticks — which emit no transitions, so rests are visible only
+    # here, not in the transition log). The token bucket produces a clean rhythm:
+    # an initial capacity-bounded burst, then regular full sessions separated by
+    # refill rests — e.g. gaps [1000, 1000, 7000, 7000, …].
+    reentry_gaps = [
+        e["payload"]["wallclock_ms_in_prev_state"]
+        for e in _read_jsonl_records(telem / "world_event.jsonl")
+        if e["event_type"] == "state_transition"
+        and e["payload"]["trigger"] == "metabolic_replenished"
+    ]
+    _REST_MS = 2500  # gap ≥ this ⇒ a rest (bucket refilled); below ⇒ within-burst
 
-    # ≥2 distinct four-axis sessions within the one absence.
-    session_ids = {r["dream_session_id"] for r in session_rows}
-    assert len(session_ids) >= 2, f"expected ≥2 sessions per absence, got {session_ids}"
-    assert len(_read_parquet_records(telem / "agent_step")) == total_env_steps
+    # (1) NO TRICKLE — every session ran a FULL session (the rollout-count cap),
+    # never a 1-rollout degenerate. Structural: the compute cap is gone (so no
+    # mid-session compute truncation), and the full-session re-entry hysteresis
+    # only fires with room for a real session. (The 8b rolling-window pacer
+    # produced rollout_count==1 trickle sessions here.)
+    assert len(session_rows) >= 4, f"expected several sessions, got {len(session_rows)}"
+    assert all(r["rollout_count"] == 3 for r in session_rows), (
+        f"trickle: not every session is full — {[r['rollout_count'] for r in session_rows]}"
+    )
+    assert all(r["end_trigger"] == "hard_cap_rollout_count" for r in session_rows)
 
-    # ≥1 re-entry, and every re-entry is the ledger-gated metabolic edge from
-    # dormant (not desktop, not Io-derived).
+    # (2) PERIODIC — ≥2 rests (the rhythm repeats: dream → rest → dream → rest),
+    # not one front-loaded burst followed by a single long rest. Every re-entry is
+    # the content-blind metabolic edge from dormant.
+    rests = [g for g in reentry_gaps if g >= _REST_MS]
+    assert len(rests) >= 2, f"not periodic (rests={rests}) gaps={reentry_gaps}"
     reentries = [t for t in transitions if t[2] == "metabolic_replenished"]
-    assert len(reentries) >= 1, f"expected ≥1 metabolic re-entry, got {transitions}"
-    for from_state, to_state, _trigger in reentries:
-        assert (from_state, to_state) == ("dormant", "dreaming")
+    assert all((f, to) == ("dormant", "dreaming") for f, to, _ in reentries)
 
-    # The rhythm contains dream→dormant→dream: a dreaming→dormant immediately
-    # followed by a dormant→dreaming (metabolic) re-entry.
-    pairs = list(zip(transitions, transitions[1:]))
-    assert any(
-        a[:2] == ("dreaming", "dormant")
-        and b == ("dormant", "dreaming", "metabolic_replenished")
-        for a, b in pairs
-    ), f"no dream→dormant→dream rhythm in {transitions}"
+    # (3) BOUNDED BURST — the longest run of back-to-back (within-burst) sessions
+    # is bounded by capacity, NOT front-loading all sessions at the absence start
+    # (the 8b pathology: ~100 sessions back-to-back). Longest run of consecutive
+    # small (within-burst) gaps:
+    longest_burst_run = _longest_small_run(reentry_gaps, _REST_MS)
+    assert longest_burst_run <= 5, (
+        f"unbounded front-loaded burst (run={longest_burst_run}) gaps={reentry_gaps}"
+    )
 
-    # desktop_on preempts: the final transition resumes waking (from dormant or
-    # from a mid-cycle dreaming state — desktop return wins from either).
-    assert transitions[-1][1] == "waking", transitions
-    assert transitions[-1][2] == "desktop_on", transitions
+    # desktop_on preempts to waking, and the waking budget completed.
+    assert transitions[-1][1] == "waking" and transitions[-1][2] == "desktop_on"
+    assert len(_read_parquet_records(telem / "agent_step")) == total_env_steps
 
 
 def test_desktop_on_throughout_runs_pure_waking(tmp_path: Path) -> None:

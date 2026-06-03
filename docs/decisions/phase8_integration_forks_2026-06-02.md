@@ -354,6 +354,33 @@ metabolic budget (``compute_budget_seconds_per_hour``) is now the dream/rest
 charter's capacity-over-exercise / dormant-≠-failure lean) and flagged as **the
 builder's knob to tune by observation**, not a settled value.
 
+### Metabolic-semantics correction (amended Phase 8 token-bucket pass)
+
+Two corrections to the earlier framing, made when the pacer mechanism was
+redesigned from a rolling-hour budget to a **token bucket** (the rolling window
+front-loaded a burst then trickled; the bucket gives clean periodic cycles —
+see `kind/training/protection.py` and the Phase 8 journal entry):
+
+1. **The model is time-replenished, a *deliberate departure* from the design
+   notes' framing.** The design notes' metabolic-pressure idea is "offline
+   processing depletes a resource that *environmental interaction* replenishes."
+   The B2 pacer replenishes on **wall-clock time** (continuous refill at rate
+   `R`), not on waking/environmental interaction — *because B2 re-dreams through a
+   desktop-off absence*, when environmental interaction is by definition
+   unavailable. So the earlier wording "realizes the charter's named
+   metabolic-pressure mechanism" is corrected to: **implements a time-replenished
+   metabolic model, a deliberate departure from the design-notes'
+   waking-replenished framing, forced by B2.** (B2 itself still stands on
+   dream-as-foundational; this corrects only the *mechanism's provenance* — the
+   replenishment source — not the decision to re-dream.)
+
+2. **The ledger's "cross-session window earns its keep" point now reads as the
+   token bucket.** The rolling-hour `RollingComputeLedger` / `ComputeBudgetCap`
+   are *removed* for pacing; the cross-session metabolic bound is the
+   `MetabolicBudget` token bucket (`capacity` C bounds the burst; `refill_rate` R
+   sets the duty). The per-session caps (rollout-count, wallclock, checkpoint)
+   are unchanged.
+
 ### Downstream wiring implication (and the coupling that makes this matter)
 
 - **B1:** Phase 8 wires dreaming → dormant → (`desktop_on`) → waking only; no

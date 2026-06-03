@@ -790,3 +790,59 @@ Amended the decision doc's Fork B (`docs/decisions/phase8_integration_forks_2026
 - **Per-rollout ledger granularity** — recording is session-level (option (a) keeps `run_dream_session` one-shot); if finer pacing is ever needed, per-rollout recording requires reopening the session (option (b)), gated on the interruptibility revisit-trigger.
 - **The duty-cycle knob** (`compute_budget_seconds_per_hour` = 600 s) wants tuning against *real* observed absences — the charter's "build to understand" applied to the rhythm itself.
 - **Device choice for dreaming** — the MPS-slower-than-CPU finding at Probe-1.5 scale; whether the Mac dreams on CPU or MPS (and at what model scale MPS wins) is an open deployment question.
+
+## Phase 8 — Metabolic pacer redesign (token-bucket)
+
+A focused mechanism fix between 8b and 8c: 8b correctly built the ratified B2 spec (re-entry as the exact complement of the rolling-hour budget cap), but the rolling-hour window is a poor *pacer*. This replaces the pacing mechanism with a continuous-refill **token bucket** so the metabolic loop produces clean periodic cycles. **B2 stays** (re-dream during absence); **the exogenous-trigger commitment stays** (the bucket state is content-blind; the structural guard transfers). Pacer-mechanism swap, not a re-decision. Not in this pass: offline-period checkpointing (still 8c); interruptibility (option (a) holds, `run_dream_session` one-shot).
+
+### What was wrong (the dynamics this fixes)
+
+The rolling-hour window holds spent compute for a full hour. With the 8b budget (600 s) huge relative to a session (~5.5 s), Io dreamed ~109 sessions **back-to-back** at the start of an absence (a ~12-min burst, window filling), then **couldn't re-dream for ~48 min** (window full), then **trickled 1-rollout "dreams"** during the drain (re-entry-at-room-for-one-rollout fired the instant a single rollout's worth freed up). Shape: **burst → long rest → degenerate trickle**, ~17% duty on average but no clean cycles. Root cause: the window *returns all spent compute at once an hour later* instead of replenishing continuously.
+
+### The token-bucket model (as built)
+
+`MetabolicBudget` (`kind/training/protection.py`) replaces `RollingComputeLedger` + `ComputeBudgetCap` for pacing: `tokens` (compute-seconds), `capacity` C (max tokens — bounds the burst), `refill_rate` R (compute-s per wall-s — continuous, time-based). Dreaming a session **spends** tokens = the session's real compute (`record_session`, the actuals 8b wired); tokens **refill continuously** at R toward C as wall-time passes (`_refill` credits `R × elapsed`, clamped to C). The bucket also owns the per-rollout estimate (all-time average, seeded with the 110 ms `DEFAULT_ROLLOUT_DURATION_MS`) for the look-ahead projection. The loop: dream consecutive sessions spending tokens until the bucket can't afford a full session → dormant → tokens refill → re-dream when affordable → repeat. **Continuous refill** (vs the window's all-at-once-an-hour-later return) is what yields clean periodic cycles; **C** bounds the burst.
+
+### Re-entry — full-session hysteresis (kills the trickle)
+
+`metabolic_reentry` re-enters iff `tokens ≥ projected_FULL_session` (`hard_cap_rollout_count × rollout_duration_estimate`, **not** one rollout). The full-session threshold is the hysteresis: re-entry fires only with room for a *real* session, so every re-dream runs to the rollout-count cap — never a 1-rollout degenerate. And with `ComputeBudgetCap` removed, no cap truncates a session mid-compute, so every session is structurally full. The per-session caps kept (rollout-count, wallclock, checkpoint) end *each* session; the bucket gates *between* sessions and never interrupts one (option (a) holds). The waking→dreaming *first* session of an absence is **not** gated (the bucket refills to full during waking, so it is always affordable — over-draw is impossible there; gating it would also wrongly force the stub policy, whose `metabolic_reentry` is always `False`, to never dream). *(Minor deviation-with-rationale from the prompt's "gate the first session too": the only genuinely-gateable "first session of a burst" is the dormant→dreaming re-entry, which IS gated; the waking entry is provably always affordable.)*
+
+### Parameters — the rhythm knobs (defaults + implied cycle)
+
+`DreamEnvelopeConfig` (Phase 7 surface) drops `compute_budget_seconds_per_hour`; adds **`metabolic_capacity_seconds` (C) = 150.0** and **`metabolic_refill_rate` (R) = 0.17**. Cycle the defaults imply (dreaming consumes ~1 compute-s/wall-s, so steady-state **duty ≈ R**; a full bucket drains over ≈ C/(1−R) wall-s of dreaming): **R = 0.17 ⇒ ~17% duty**; **C = 150 ⇒ a ~3-min dream burst**, then (at 17% duty) a **~15-min rest** — a **~3-min-dream / ~15-min-rest cycle**. Order-of-magnitude; **C (burst length / cycle grain) and R (duty) are flagged as the builder's knobs, to tune against real observed absences.** The cross-probe `DreamEnvelopeDelta` mirrors the new fields (the Phase 7 no-hidden-state guard transfers — delta fields == config fields).
+
+### The structural guard transferred
+
+`MetabolicState` now carries `tokens`, `capacity`, `refill_rate`, `projected_session_seconds`, `wallclock_ms` — all content-blind primitives (compute-units + time, no Io state). The Phase 8b content-blindness guard (`tests/test_metabolic_reentry.py`) transfers unchanged: both belts (forbidden-types + Io-derived-name) and the meta-test that trips the checker on an injected `latent_norm: float` / `intrinsic_signal: float` / `latents: torch.Tensor`. "Nothing Io-derived gates dreaming" stays unrepresentable-to-violate.
+
+### The rhythm-shape smoke (load-bearing — asserts the SHAPE, not session count)
+
+`tests/test_probe3_integration_smoke.py::test_metabolic_rhythm_shape_periodic_bursts_no_trickle` drives a long desktop-off span (C=2.5, R=0.1 — tuned to cycle several times in-test) and asserts the shape the 8b session-count test could not see. The observed rhythm: re-entry dormant-gaps `[1000, 1000, 7000, 7000, 7000, …]` — an initial capacity-bounded burst (1-tick gaps) then **regular full sessions separated by 7-tick refill rests**. (Rests are *silent* in the transition log — declined re-entries emit nothing — so the smoke asserts on the dormant-gap-before-each-re-entry, not the transition log.) The three load-bearing assertions, each catching a pathology:
+- **(1) No trickle** — every session `rollout_count == 3` (full), `end_trigger == hard_cap_rollout_count`. *(The 8b rolling-window pacer produced `rollout_count == 1` trickle sessions here.)*
+- **(2) Periodic** — ≥2 rests (gaps ≥ 2.5 s): the rhythm repeats (dream→rest→dream→rest), not one front-loaded burst + a single rest. *(8b had one big rest then trickle.)*
+- **(3) Bounded burst** — the longest run of within-burst (small-gap) sessions ≤ 5: capacity-bounded, not front-loading all sessions at the start. *(8b front-loaded ~100 back-to-back.)*
+
+The single-session cycle test (`test_full_waking_dreaming_dormant_waking_cycle`) is now the *bucket-depleted → rest* case (C=1.2, R=0); `test_desktop_on_throughout_runs_pure_waking` still asserts supervisor transparency.
+
+### What was verified
+
+- **Full `tests/` suite green** — **1210 passed, 6 skipped, 1 xfailed/xpassed** (net 0 over 8b: removed the rolling-ledger/compute-cap tests, added token-bucket + rhythm-shape tests; the known `test_transport` flake's accepted disposition). `mypy --strict` clean across **64** `kind/` source files.
+- **The waking path is unchanged** — all 24 integration smokes green and behaviorally identical (the redesign touches only the pacer + the re-entry condition + the smoke + the doc; nothing in the waking branch).
+- **All prior structural guards green** — Phase 4 HostSignals/tick, Phase 5 mirror one-way, Phase 6 content-blindness, Phase 7 no-hidden-state-write, **plus the 8b re-entry content-blindness guard now reading the bucket**.
+
+### Deviations / flags
+
+- **No deviation from the ratified B2.** B2 (re-dream during absence) and the exogenous-trigger commitment (content-blind token state; guard transferred) both stand — a pacer-mechanism swap, as scoped.
+- **One minor prompt deviation-with-rationale:** the waking→dreaming *first* session is not metabolically gated (provably always affordable after waking refill; gating it breaks the stub). All gateable "first sessions of bursts" (the dormant re-entries) are gated.
+- **`RollingComputeLedger` / `ComputeBudgetCap` removed** (the "remove" option of the prompt's "remove or stop using for pacing") — clean, not carried as dead code; their unit tests were replaced by token-bucket tests. The per-session caps (rollout-count, wallclock, checkpoint) are unchanged.
+- **Settled surfaces untouched:** the four-axis dream regime, the frozen criteria, `kind/mirror/*`, `kind/observer/schemas.py`. `run_dream_session` stays one-shot.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []`. The token bucket's state is compute-units and time; the re-entry reads only the content-blind `MetabolicState`. Io observes none of it (the bucket, the tokens, the `metabolic_replenished` transitions are all off `PolicyView`). The mechanism swap changed *how* the runtime paces dreaming; it added no Io-readable surface and installs no Io-authored dream schedule.
+
+### What is newly open
+
+- **Phase 8c** — offline-period checkpointing (the `CheckpointWindowCap` going live for crash-safe long absences); unchanged from the 8b open list.
+- **C / R tuning against real absences** — the deployment defaults (150 s / 0.17) imply a ~3-min-dream / ~15-min-rest cycle; the charter's "build to understand" applied to the rhythm, to revise by watching.
+- **Across-pause bucket persistence** — the bucket resets to full on restart (in-process); whether the metabolic state should survive pauses is a refinement (it pairs with 8c's persistence).

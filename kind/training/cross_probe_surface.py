@@ -92,7 +92,8 @@ class DreamEnvelopeDelta(BaseModel):
     hard_cap_rollout_count: int | None = None
     checkpoint_window_force_dormant: bool | None = None
     dormant_heartbeat_interval_ms: int | None = None
-    compute_budget_seconds_per_hour: float | None = None
+    metabolic_capacity_seconds: float | None = None
+    metabolic_refill_rate: float | None = None
 
 
 class SeedSelectionDelta(BaseModel):

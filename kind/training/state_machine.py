@@ -245,29 +245,45 @@ class StateTransition:
     wallclock_ms_at_transition: int
 
 
+# Phase 8 token-bucket pacer defaults (the metabolic-pacer redesign superseding
+# 8b's rolling-hour budget). The bucket holds ``tokens`` (compute-seconds), spent
+# by dreaming and refilled continuously at ``R`` toward ``C``.
+#:  - **R (refill rate)** sets the long-run duty: dreaming consumes ~1 compute-s
+#:    per wall-s, so in steady state duty ≈ R. 0.17 ⇒ ~17% wall-clock duty cycle
+#:    (rest-majority, the charter's capacity-over-exercise / dormant-≠-failure
+#:    lean).
+#:  - **C (capacity)** bounds the burst: a full bucket drains (net rate 1−R)
+#:    over ≈ C/(1−R) wall-s of dreaming. 150 compute-s ⇒ a ~3-min dream burst,
+#:    then (at 17% duty) a ~15-min rest — i.e. a ~3-min-dream / ~15-min-rest
+#:    cycle. Order-of-magnitude; **C (burst length / cycle grain) and R (duty)
+#:    are the builder's knobs, to tune against real observed absences.**
+DEFAULT_METABOLIC_CAPACITY_SECONDS: float = 150.0
+DEFAULT_METABOLIC_REFILL_RATE: float = 0.17
+
+
 @dataclass(frozen=True)
 class DreamEnvelopeConfig:
     """The Probe-4-perturbable *when* / *how-long* of dreaming (plan §2.4 / §7).
 
     Phase 4 consumes these as the parameters the protection hooks read; Phase 6
-    implements the content-blind policies that enforce them. All are
-    content-blind quantities (wallclock, rollout counts, a checkpoint boolean, a
-    compute ledger budget) — none reads ``DreamRollout`` content.
+    implements the content-blind per-session caps; Phase 8 the cross-session
+    metabolic token-bucket pacer. All are content-blind quantities (wallclock,
+    rollout counts, a checkpoint boolean, the token-bucket capacity/refill) —
+    none reads ``DreamRollout`` content.
     """
 
     hard_cap_wallclock_ms: int = 30 * 60 * 1000  # 30 minutes per dream session
     hard_cap_rollout_count: int = 50  # max DreamRollouts per session
     checkpoint_window_force_dormant: bool = True  # checkpoint boundary → dormant
     dormant_heartbeat_interval_ms: int = 60_000  # one heartbeat per minute
-    # Phase 8b (Fork B = B2): this is no longer only a Phase-6 *protection cap* —
-    # it is now the dream/rest **duty cycle** during an absence (the metabolic
-    # pacer). 600 s/hour ⇒ ≤10 min dreaming / ≥50 min rest per rolling hour ⇒ a
-    # ~17% wall-clock duty cycle, the rest-majority lean closer to the charter's
-    # capacity-over-exercise / dormant-≠-failure stance than the Phase-6
-    # protection default's 50% (1800 s). **This is the builder's knob — the
-    # rhythm parameter that sets how much Io dreams while the desktop is off — to
-    # tune by observation, NOT a settled value.**
-    compute_budget_seconds_per_hour: float = 600.0  # ~17% dream duty cycle
+    # Phase 8 token-bucket pacer (replaces 8b's ``compute_budget_seconds_per_hour``
+    # rolling-hour budget — that mechanism front-loaded a burst then trickled).
+    # ``metabolic_capacity_seconds`` (C) bounds the dream burst;
+    # ``metabolic_refill_rate`` (R, compute-s per wall-s) sets the long-run duty.
+    # See the module constants above for the cycle the defaults imply. **Both are
+    # the builder's rhythm knobs — tune by observation, NOT settled.**
+    metabolic_capacity_seconds: float = DEFAULT_METABOLIC_CAPACITY_SECONDS
+    metabolic_refill_rate: float = DEFAULT_METABOLIC_REFILL_RATE
 
 
 @dataclass(frozen=True)
@@ -685,6 +701,13 @@ class StateController:
         """
         if self._state == "waking":
             if not host_signals.desktop_alive:
+                # Phase 8: the first session of an absence is NOT metabolically
+                # gated — the token bucket refills to full during waking, so a
+                # session is always affordable at absence start (over-draw is
+                # impossible here). The gateable "first session of a burst" after
+                # a rest is the dormant→dreaming re-entry below, which IS gated.
+                # (Gating here would also wrongly force the stub policy — whose
+                # metabolic_reentry is always False — to never dream.)
                 return self._enter_dreaming(
                     env_step,
                     wallclock_ms,
