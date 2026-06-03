@@ -19,6 +19,21 @@ synthesis settled (``docs/decisions/synthesis_probe3_dream_foundational_2026-05-
      not in Io's observation/PolicyView, so the state machine never reads Io to
      decide what Io does.
 
+     **Refined reading (Phase 8b, Fork B = B2; decision-doc Fork B amendment).**
+     "Io does not decide whether to dream from its own state" is read as
+     *"whether-to-dream is gated by nothing Io-state-derived"* — not as
+     "whether-to-dream is gated by HostSignals only." The B2 dormant→dreaming
+     re-entry edge is gated by a **content-blind compute ledger** (durations and
+     timestamps; no Io latents, policy, or dream content), which is not Io's
+     state but a metabolic/resource constraint — the same *category* as the
+     desktop being off. The commitment's load-bearing purpose (forbid an
+     installed self-continuation drive — Io's own state deciding to keep itself
+     dreaming) is preserved; the trigger surface extends from HostSignals-only to
+     {HostSignals, content-blind runtime pacer}. The structural guarantee is made
+     unrepresentable-to-violate by the re-entry input type (:class:`MetabolicState`
+     in ``kind.training.protection``, all content-blind primitives) and its
+     type-level test, exactly as ``HostSignals`` is guarded here.
+
   2. **Dormant ≠ failure (synthesis §10; plan §2.5).** A dream session that
      hits a content-blind cap transitions to *dormant* — a legitimate rest, the
      capacity-over-exercise stance applied to dreaming — not to an error path.
@@ -110,6 +125,10 @@ Trigger = Literal[
     "hard_cap_rollout_count",
     "checkpoint_window",
     "compute_budget",
+    # Phase 8b — the dormant→dreaming re-entry edge (Fork B = B2). Not a cap
+    # (it is not in CapTrigger): it is the *complement* of the compute-budget
+    # cap, fired by the content-blind metabolic pacer while the desktop is off.
+    "metabolic_replenished",
 ]
 
 # The subset of triggers a content-blind protection cap may raise (the Phase 4
@@ -240,7 +259,15 @@ class DreamEnvelopeConfig:
     hard_cap_rollout_count: int = 50  # max DreamRollouts per session
     checkpoint_window_force_dormant: bool = True  # checkpoint boundary → dormant
     dormant_heartbeat_interval_ms: int = 60_000  # one heartbeat per minute
-    compute_budget_seconds_per_hour: float = 1800.0  # 30 min/hour dream compute
+    # Phase 8b (Fork B = B2): this is no longer only a Phase-6 *protection cap* —
+    # it is now the dream/rest **duty cycle** during an absence (the metabolic
+    # pacer). 600 s/hour ⇒ ≤10 min dreaming / ≥50 min rest per rolling hour ⇒ a
+    # ~17% wall-clock duty cycle, the rest-majority lean closer to the charter's
+    # capacity-over-exercise / dormant-≠-failure stance than the Phase-6
+    # protection default's 50% (1800 s). **This is the builder's knob — the
+    # rhythm parameter that sets how much Io dreams while the desktop is off — to
+    # tune by observation, NOT a settled value.**
+    compute_budget_seconds_per_hour: float = 600.0  # ~17% dream duty cycle
 
 
 @dataclass(frozen=True)
@@ -286,34 +313,58 @@ class ProtectionVerdict:
 
 
 class ProtectionPolicy(Protocol):
-    """The protection-hook interface — the exit condition for the four caps.
+    """The protection-hook interface — the dreaming-state exit + (8b) re-entry.
 
     Phase 4 defines this surface and where it plugs into the dreaming-state
     exit check; Phase 6 implements the policies (wallclock, rollout-count,
     checkpoint-window, and the rolling one-hour compute ledger) behind it.
     ``should_stop`` returns the cap that should end the session, or ``None`` to
-    continue. The answer *logic* is Phase 6; only the surface is Phase 4.
+    continue. Phase 8b adds two methods for the metabolic loop:
+    ``record_session`` (the controller reports a completed session's real compute
+    so the rolling-hour ledger accumulates actuals) and ``metabolic_reentry``
+    (the content-blind dormant→dreaming re-entry decision — the complement of the
+    compute-budget cap). The stub no-ops both (it never re-dreams); the Phase 6
+    composite implements them against its ledger.
     """
 
     def should_stop(self, ctx: DreamSessionContext) -> ProtectionVerdict | None: ...
 
+    def record_session(
+        self, *, num_rollouts: int, session_wallclock_ms: int, now_ms: int
+    ) -> None: ...
+
+    def metabolic_reentry(
+        self, envelope: DreamEnvelopeConfig, *, now_ms: int
+    ) -> bool: ...
+
 
 class StubRolloutCountProtection:
-    """Phase 4 stub policy — caps on rollout count only.
+    """Phase 4 stub policy — caps on rollout count only; never re-dreams.
 
     A trivial content-blind policy so the hook surface is exercised end-to-end
     (deliverable 6: "a trivial/stub policy is fine for Phase 4 as long as the
     hook surface is what Phase 6 fills"). It reads only
     ``envelope.hard_cap_rollout_count`` and the rollout count so far — no
-    content. Phase 6 replaces it with the real four-cap policy (including the
-    wallclock cap, the checkpoint-window forced transition, and the rolling
-    compute-budget ledger).
+    content. Phase 6 replaces it with the real four-cap policy. The Phase 8b
+    metabolic methods are no-ops: the stub keeps no ledger, so it records no
+    compute and never grants metabolic re-entry (single-session-per-absence,
+    the pre-8b behavior — used by the transition-coverage and type-level tests).
     """
 
     def should_stop(self, ctx: DreamSessionContext) -> ProtectionVerdict | None:
         if ctx.rollouts_completed >= ctx.envelope.hard_cap_rollout_count:
             return ProtectionVerdict(trigger="hard_cap_rollout_count")
         return None
+
+    def record_session(
+        self, *, num_rollouts: int, session_wallclock_ms: int, now_ms: int
+    ) -> None:
+        return None
+
+    def metabolic_reentry(
+        self, envelope: DreamEnvelopeConfig, *, now_ms: int
+    ) -> bool:
+        return False
 
 
 @dataclass(frozen=True)
@@ -574,6 +625,7 @@ class StateController:
         run_id: str = "state-machine",
         checkpoint_id: str | None = None,
         dream_session_id_factory: Callable[[], str] | None = None,
+        clock: Callable[[], int] | None = None,
         initial_state: State = "waking",
     ) -> None:
         self._envelope = envelope
@@ -585,6 +637,12 @@ class StateController:
         self._emit = world_event_emit
         self._run_id = run_id
         self._checkpoint_id = checkpoint_id
+        # Phase 8b: clock used to *measure* each dream session's wall-time (two
+        # reads around the synchronous driver call) so the real compute can be
+        # recorded into the metabolic ledger. Injectable for deterministic tests;
+        # default monotonic. Distinct from the ``wallclock_ms`` passed to tick
+        # (a single snapshot, which cannot measure a duration).
+        self._clock: Callable[[], int] = clock if clock is not None else _default_clock_ms
         self._id_factory: Callable[[], str] = (
             dream_session_id_factory
             if dream_session_id_factory is not None
@@ -666,9 +724,28 @@ class StateController:
             return None
 
         if self._state == "dormant":
+            # desktop_on takes priority over re-entry: the builder came back.
             if host_signals.desktop_alive:
                 return self._transition(
                     "dormant", "waking", "desktop_on", env_step, wallclock_ms
+                )
+            # Phase 8b (Fork B = B2): the metabolic re-entry edge. While the
+            # desktop is off, re-dream when the content-blind ledger says a
+            # projected session fits within the rolling-hour budget (the
+            # complement of the compute-budget cap). The re-entry decision reads
+            # *nothing Io-derived* — its input is the typed content-blind
+            # ``MetabolicState`` (structurally enforced). This extends the trigger
+            # surface from HostSignals-only to {HostSignals, content-blind runtime
+            # pacer}; the exogenous-trigger commitment's load-bearing sense — no
+            # Io-authored dream schedule — is preserved (decision-doc Fork B, the
+            # ratified reinterpretation).
+            if self._protection.metabolic_reentry(self._envelope, now_ms=wallclock_ms):
+                return self._enter_dreaming(
+                    env_step,
+                    wallclock_ms,
+                    checkpoint_in_progress=host_signals.checkpoint_in_progress,
+                    from_state="dormant",
+                    trigger="metabolic_replenished",
                 )
             self._heartbeat.poll(wallclock_ms)
             return None
@@ -714,17 +791,28 @@ class StateController:
         wallclock_ms: int,
         *,
         checkpoint_in_progress: bool = False,
+        from_state: State = "waking",
+        trigger: Trigger = "desktop_off",
     ) -> StateTransition:
+        """Enter a dream session. ``from_state`` / ``trigger`` distinguish the
+        two entry edges: ``waking``/``desktop_off`` (8a) and (8b)
+        ``dormant``/``metabolic_replenished`` (the re-entry edge); the body is
+        identical — the session runs synchronously here."""
         session_id = str(self._id_factory())
         transition = self._transition(
-            "waking", "dreaming", "desktop_off", env_step, wallclock_ms, session_id
+            from_state, "dreaming", trigger, env_step, wallclock_ms, session_id
         )
-        # Drive the session (the first real wiring of run_dream_session). The
-        # driver consults the protection hook to decide where the session stops
-        # and reports the realized cap, which the next tick uses to transition
-        # dreaming → dormant. With dream_driver=None no rollouts run — the
-        # transition logic is exercised on its own.
+        # Drive the session. The driver consults the protection hook to decide
+        # where the session stops and reports the realized cap, which the next
+        # tick uses to transition dreaming → dormant. With dream_driver=None no
+        # rollouts run — the transition logic is exercised on its own.
         if self._dream_driver is not None:
+            # Phase 8b: measure the session's real wall-time (two clock reads
+            # around the synchronous driver call) and record it into the
+            # metabolic ledger via the protection hook, so the rolling-hour
+            # budget accumulates actuals — the prerequisite that makes B2's
+            # re-entry pacing non-fiction.
+            t0 = self._clock()
             outcome = self._dream_driver.run_session(
                 dream_session_id=session_id,
                 started_at_env_step=env_step,
@@ -733,7 +821,13 @@ class StateController:
                 envelope=self._envelope,
                 checkpoint_in_progress=checkpoint_in_progress,
             )
+            t1 = self._clock()
             self._pending_dormant_trigger = outcome.end_trigger
+            self._protection.record_session(
+                num_rollouts=outcome.rollout_count,
+                session_wallclock_ms=max(0, t1 - t0),
+                now_ms=t1,
+            )
         return transition
 
     def _transition(

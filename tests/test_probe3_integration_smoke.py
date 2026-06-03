@@ -36,9 +36,15 @@ from tests.test_integration_smoke import (
 )
 
 _HEARTBEAT_MS = 100
+# The deterministic clock advances this much per supervisor tick; the controller
+# measures each dream session at exactly one step (two consecutive clock reads
+# around the synchronous driver call). 1000 ms/session keeps the recorded session
+# comfortably above the cold-ledger seed projection (rollout_count × the ~110 ms
+# DEFAULT seed = 0.33 s), so the rollout-count cap fires cleanly on session 1.
+_SESSION_STEP_MS = 1000
 
 
-def _stepping_clock(step_ms: int = _HEARTBEAT_MS) -> Callable[[], int]:
+def _stepping_clock(step_ms: int = _SESSION_STEP_MS) -> Callable[[], int]:
     """A monotonic clock advancing ``step_ms`` per call (one call per supervisor
     tick), so dormant heartbeats fire deterministically."""
     state = {"t": 0}
@@ -51,7 +57,14 @@ def _stepping_clock(step_ms: int = _HEARTBEAT_MS) -> Callable[[], int]:
     return clock
 
 
-def _dream_cycle_config(tmp_path: Path) -> RunnerConfig:
+def _dream_cycle_config(
+    tmp_path: Path, *, compute_budget_seconds_per_hour: float = 0.5
+) -> RunnerConfig:
+    # The controller measures each dream session at one clock step = 1.0 s and
+    # records it into the metabolic ledger. So compute_budget is the dream/rest
+    # pacer for these tests: 0.5 s leaves room for a single 3-rollout session
+    # (window 1.0 s afterwards ⇒ no re-entry — the "budget-spent, rest" case);
+    # a larger budget (≥ ~0.67 s) leaves room for ≥1 re-entry.
     return RunnerConfig(
         world_model_config=_tiny_world_model_config(),
         run_id="probe3-cycle",
@@ -78,7 +91,7 @@ def _dream_cycle_config(tmp_path: Path) -> RunnerConfig:
         dream_envelope=DreamEnvelopeConfig(
             hard_cap_rollout_count=3,
             hard_cap_wallclock_ms=10**12,
-            compute_budget_seconds_per_hour=10**9,
+            compute_budget_seconds_per_hour=compute_budget_seconds_per_hour,
             dormant_heartbeat_interval_ms=_HEARTBEAT_MS,
         ),
         seed_selection=SeedSelectionConfig(
@@ -93,6 +106,10 @@ def _dream_cycle_config(tmp_path: Path) -> RunnerConfig:
 
 
 def test_full_waking_dreaming_dormant_waking_cycle(tmp_path: Path) -> None:
+    # Under 8b this is the *budget-spent → rest* case: the default 0.5 s budget
+    # leaves no room after one 3-rollout session (window 1.0 s), so no metabolic
+    # re-entry fires and the absence stays single-session — exactly the 8a cycle,
+    # now with the B2 pacer present but exhausted. (The re-entry case is next.)
     config = _dream_cycle_config(tmp_path)
     total_env_steps = 24
 
@@ -171,6 +188,70 @@ def test_full_waking_dreaming_dormant_waking_cycle(tmp_path: Path) -> None:
     heartbeats = [e for e in world_events if e["event_type"] == "dormant_heartbeat"]
     assert len(heartbeats) >= 1, "dormant emitted no heartbeats"
     assert all(e["payload"]["mac_alive"] is True for e in heartbeats)
+
+
+def test_metabolic_redream_cycle(tmp_path: Path) -> None:
+    """Phase 8b load-bearing — B2 re-dreaming: during one long desktop-off span,
+    the controller re-enters dreaming (a `metabolic_replenished` transition) and
+    runs ≥2 four-axis sessions, each gated by the content-blind ledger (budget
+    room), not by desktop state or anything Io-derived; the rhythm is
+    dream→dormant→dream; and `desktop_on` still preempts to waking."""
+    # A larger budget (1.5 s) leaves room for a second ~1.0 s session before the
+    # rolling window fills — so the loop cycles dream→dormant→dream within the
+    # test, then rests, then resumes on desktop_on.
+    config = _dream_cycle_config(tmp_path, compute_budget_seconds_per_hour=1.5)
+    total_env_steps = 18
+    # Desktop on for 9 waking steps, then off for a long span (≥2 re-dreams +
+    # rest), then sticks on True so waking resumes and finishes the budget.
+    desktop = ScriptedDesktop([True] * 9 + [False] * 9 + [True])
+
+    with _transport_pair() as (client, _server, env_server, _thread):
+        runner = Runner(
+            config,
+            client,
+            env_server=env_server,
+            host_signal_source=desktop,
+            host_clock_ms=_stepping_clock(),
+        )
+        try:
+            runner.run(total_env_steps=total_env_steps)
+        finally:
+            runner.close()
+
+    telem = config.telemetry_dir
+    session_rows = _read_jsonl_records(telem / "dream_session.jsonl")
+    world_events = _read_jsonl_records(telem / "world_event.jsonl")
+    transitions = [
+        (e["payload"]["from_state"], e["payload"]["to_state"], e["payload"]["trigger"])
+        for e in world_events
+        if e["event_type"] == "state_transition"
+    ]
+
+    # ≥2 distinct four-axis sessions within the one absence.
+    session_ids = {r["dream_session_id"] for r in session_rows}
+    assert len(session_ids) >= 2, f"expected ≥2 sessions per absence, got {session_ids}"
+    assert len(_read_parquet_records(telem / "agent_step")) == total_env_steps
+
+    # ≥1 re-entry, and every re-entry is the ledger-gated metabolic edge from
+    # dormant (not desktop, not Io-derived).
+    reentries = [t for t in transitions if t[2] == "metabolic_replenished"]
+    assert len(reentries) >= 1, f"expected ≥1 metabolic re-entry, got {transitions}"
+    for from_state, to_state, _trigger in reentries:
+        assert (from_state, to_state) == ("dormant", "dreaming")
+
+    # The rhythm contains dream→dormant→dream: a dreaming→dormant immediately
+    # followed by a dormant→dreaming (metabolic) re-entry.
+    pairs = list(zip(transitions, transitions[1:]))
+    assert any(
+        a[:2] == ("dreaming", "dormant")
+        and b == ("dormant", "dreaming", "metabolic_replenished")
+        for a, b in pairs
+    ), f"no dream→dormant→dream rhythm in {transitions}"
+
+    # desktop_on preempts: the final transition resumes waking (from dormant or
+    # from a mid-cycle dreaming state — desktop return wins from either).
+    assert transitions[-1][1] == "waking", transitions
+    assert transitions[-1][2] == "desktop_on", transitions
 
 
 def test_desktop_on_throughout_runs_pure_waking(tmp_path: Path) -> None:

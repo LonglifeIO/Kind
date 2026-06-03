@@ -361,7 +361,11 @@ def test_composition_wallclock_wins_when_estimate_is_large() -> None:
     ledger = RollingComputeLedger(default_rollout_duration_ms=60_000.0)  # 60 s/rollout
     composite = DreamProtectionPolicy(ledger=ledger)
     env = DreamEnvelopeConfig(
-        hard_cap_rollout_count=50, hard_cap_wallclock_ms=30 * 60 * 1000
+        hard_cap_rollout_count=50,
+        hard_cap_wallclock_ms=30 * 60 * 1000,
+        # High budget so the (8b) pacer default (600 s) doesn't fire first — this
+        # test isolates the wallclock cap winning over rollout-count.
+        compute_budget_seconds_per_hour=10**6,
     )  # 30 min ⇒ projection hits the budget at 30 rollouts < 50
     count, trigger = _plan_session_rollouts(composite, env)
     assert (count, trigger) == (30, "hard_cap_wallclock")
@@ -442,7 +446,11 @@ def test_controller_rollout_count_cap_to_dormant() -> None:
 def test_controller_wallclock_cap_to_dormant() -> None:
     ledger = RollingComputeLedger(default_rollout_duration_ms=60_000.0)
     composite = DreamProtectionPolicy(ledger=ledger)
-    env = DreamEnvelopeConfig(hard_cap_rollout_count=50, hard_cap_wallclock_ms=30 * 60 * 1000)
+    env = DreamEnvelopeConfig(
+        hard_cap_rollout_count=50,
+        hard_cap_wallclock_ms=30 * 60 * 1000,
+        compute_budget_seconds_per_hour=10**6,  # high so the pacer doesn't fire first
+    )
     c = _controller(envelope=env, protection=composite, driver=_PlanningDriver())
     c.tick(_OFF, 1, 100)  # → dreaming, driver plans via the composite
     t = c.tick(_OFF, 2, 200)  # → dormant
@@ -503,10 +511,14 @@ def test_envelope_defaults_match_plan_2_4() -> None:
     assert env.hard_cap_wallclock_ms == 30 * 60 * 1000
     assert env.hard_cap_rollout_count == 50
     assert env.checkpoint_window_force_dormant is True
-    assert env.compute_budget_seconds_per_hour == 1800.0
-    # Phase 8a un-seeded the 1000.0 placeholder with the measured ~11.4 ms/rollout
-    # (Probe-1.5 checkpoint, CPU), rounded up to 15.0 for a conservative margin.
-    assert DEFAULT_ROLLOUT_DURATION_MS == 15.0
+    # Phase 8b (Fork B = B2): compute_budget became the dream/rest pacer; the
+    # default dropped from the Phase-6 protection value (1800 s) to a rest-
+    # majority ~17%-duty-cycle pacer (600 s). The builder's knob to tune.
+    assert env.compute_budget_seconds_per_hour == 600.0
+    # Phase 8b re-tuned the seed to the MPS (deployment-device) per-rollout cost
+    # (~108 ms on the Probe-1.5 checkpoint — ~9.5× the CPU figure, MPS dispatch
+    # overhead dominating at this small scale), rounded up to 110.0.
+    assert DEFAULT_ROLLOUT_DURATION_MS == 110.0
 
 
 def test_dataclasses_replace_round_trips_new_context_fields() -> None:

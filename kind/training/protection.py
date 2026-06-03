@@ -54,10 +54,11 @@ from __future__ import annotations
 import time
 from collections import deque
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Final
 
 from kind.training.state_machine import (
+    DreamEnvelopeConfig,
     DreamSessionContext,
     ProtectionVerdict,
 )
@@ -65,6 +66,8 @@ from kind.training.state_machine import (
 __all__ = [
     "ONE_HOUR_MS",
     "DEFAULT_ROLLOUT_DURATION_MS",
+    "MetabolicState",
+    "has_metabolic_room",
     "RollingComputeLedger",
     "RolloutCountCap",
     "WallclockCap",
@@ -83,25 +86,80 @@ ONE_HOUR_MS: Final[int] = 60 * 60 * 1000
 #: compute, 30 min/session wallclock) but not a per-rollout duration; §2.7's
 #: reference is a *compute* figure (~150 K=5 head evals/rollout), not a time.
 #:
-#: **Phase 8a measurement (un-seeds the prior 1000.0 placeholder).** A real
-#: four-axis dream session run against the Probe-1.5 checkpoint
-#: (``runs/probe1_5_phase7_5-20260507-101800/``, h=200 z=16 K=5, horizon=30, CPU)
-#: measured ~11.4 ms/rollout — including the per-rollout replay seed re-encoding.
-#: Seeded here at 15.0 ms (the measured figure rounded up for a small conservative
-#: margin and device-variance headroom; the real deployment is MPS). The ordering
-#: §2.4 intends is preserved: the rollout-count ceiling (default 50) still binds
-#: long before the wallclock cap (default 30 min ⇒ ~120k rollouts at 15 ms),
-#: rollout-count being the working bound and wallclock the slow-rollout backstop.
-#: NB: the live driver does not yet feed measured durations back into the ledger
-#: (it stays cold, so this seed is the operative estimate); wiring
-#: ``record_rollout`` into the session loop is a flagged refinement (and, under the
-#: as-built single-session-per-absence model, the ledger's cross-session role is
-#: dormant until Fork B's re-dreaming edge — Phase 8b).
-DEFAULT_ROLLOUT_DURATION_MS: Final[float] = 15.0
+#: **Measurement (un-seeds the prior 1000.0 placeholder).** Real four-axis dream
+#: sessions run against the Probe-1.5 checkpoint
+#: (``runs/probe1_5_phase7_5-20260507-101800/``, h=200 z=16 K=5, horizon=30),
+#: including the per-rollout replay seed re-encoding:
+#:   - Phase 8a, **CPU**: ~11.4 ms/rollout.
+#:   - Phase 8b, **MPS** (the deployment device — the mind lives on the Mac):
+#:     ~108 ms/rollout — *~9.5× slower than CPU*. At this small scale (h=200,
+#:     z=16) the per-kernel MPS dispatch overhead dominates the tiny-tensor
+#:     compute, so the GPU loses to CPU. (Worth noting for the deployment: at
+#:     this scale, dreaming on CPU is faster; the seed below reflects MPS, the
+#:     conservative direction.)
+#: Seeded at 110.0 ms (the MPS figure rounded up). This is a *bootstrap* estimate
+#: only: Phase 8b wires the ledger to record real session durations
+#: (``record_session``), so after the first session the window and the per-rollout
+#: estimate self-correct to actuals — the seed matters only for the first
+#: session's (and the first re-entry's) look-ahead projection. Over-estimating is
+#: the safe direction (caps/the metabolic projection fire earlier). The §2.4
+#: ordering holds: the rollout-count ceiling (50) still binds long before the
+#: wallclock cap (30 min ⇒ ~16k rollouts at 110 ms).
+DEFAULT_ROLLOUT_DURATION_MS: Final[float] = 110.0
 
 
 def _default_clock_ms() -> int:
     return time.monotonic_ns() // 1_000_000
+
+
+# ---------------------------------------------------------------------------
+# The B2 metabolic re-entry decision (Phase 8b) — content-blind by construction.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MetabolicState:
+    """Content-blind inputs to the dormant→dreaming re-entry decision (8b).
+
+    Every field is a content-blind primitive — the rolling-hour windowed compute,
+    a projected session's compute, the per-hour budget, and wall-clock. There is
+    **no** tensor, latent, policy, dream-content, or Io-state-derived field, and
+    (the structural guard) there *can be* none: the re-entry decision cannot read
+    Io's state because its input type cannot carry it. This is the Phase 8b analog
+    of Phase 4's ``HostSignals`` type-test and Phase 6's ``DreamSessionContext``
+    content-blindness — "nothing Io-derived gates dreaming" made unrepresentable-
+    to-violate rather than conventional. The type-level test in
+    ``tests/test_metabolic_reentry.py`` enforces it and is pinned with a positive
+    control.
+
+    **Premise (shared with Phase 6).** The ledger's durations are a legitimate
+    content-blind compute measure because the four-axis rollout's compute is
+    data-independent — a fixed horizon × K-ensemble forward, the same regardless
+    of *what* Io dreams. This holds only while rollouts stay fixed-compute; a
+    future variable-compute rollout would reopen the question.
+    """
+
+    window_compute_seconds: float
+    projected_session_seconds: float
+    compute_budget_seconds_per_hour: float
+    wallclock_ms: int
+
+
+def has_metabolic_room(state: MetabolicState) -> bool:
+    """True iff a projected session fits within the rolling-hour budget.
+
+    The **exact complement of the ``ComputeBudgetCap`` stop condition**: the cap
+    stops a session when ``window + projected > budget``; re-entry fires when
+    ``window + projected <= budget`` — the rolling-hour window has drained enough
+    that another (here: one-rollout-minimum) session's compute fits. The ledger is
+    the shared state for both stop (the cap ended the prior session) and restart
+    (this complement), which is the metabolic loop: dream until the budget is
+    spent, rest while the window drains, re-dream when it has room.
+    """
+    return (
+        state.window_compute_seconds + state.projected_session_seconds
+        <= state.compute_budget_seconds_per_hour
+    )
 
 
 class RollingComputeLedger:
@@ -158,6 +216,34 @@ class RollingComputeLedger:
         self._entries.append((now, float(duration_ms)))
         self._alltime_sum_ms += float(duration_ms)
         self._alltime_count += 1
+        self._evict(now)
+
+    def record_session(
+        self,
+        *,
+        session_wallclock_ms: float,
+        num_rollouts: int,
+        now_ms: int | None = None,
+    ) -> None:
+        """Record a completed session's *real* compute (Phase 8b).
+
+        The rolling-hour window gets the session total (so the metabolic budget
+        reflects actual dream wall-time, not the seed estimate), and the all-time
+        per-rollout estimate is refined by ``total / num_rollouts``. Content-blind:
+        a duration and a count, never any dream content. A zero-rollout session
+        contributes nothing to the estimate (no division) but its (zero) duration
+        is still windowed."""
+        if session_wallclock_ms < 0:
+            raise ValueError(
+                f"session_wallclock_ms must be non-negative, got {session_wallclock_ms}"
+            )
+        if num_rollouts < 0:
+            raise ValueError(f"num_rollouts must be non-negative, got {num_rollouts}")
+        now = now_ms if now_ms is not None else self._clock()
+        self._entries.append((now, float(session_wallclock_ms)))
+        if num_rollouts > 0:
+            self._alltime_sum_ms += float(session_wallclock_ms)
+            self._alltime_count += num_rollouts
         self._evict(now)
 
     def _evict(self, now_ms: int) -> None:
@@ -299,6 +385,38 @@ class DreamProtectionPolicy:
     @property
     def ledger(self) -> RollingComputeLedger:
         return self._ledger
+
+    def record_session(
+        self, *, num_rollouts: int, session_wallclock_ms: int, now_ms: int
+    ) -> None:
+        """Record a completed session's real compute into the rolling ledger
+        (Phase 8b) — the actuals that make the metabolic budget non-fiction."""
+        self._ledger.record_session(
+            session_wallclock_ms=session_wallclock_ms,
+            num_rollouts=num_rollouts,
+            now_ms=now_ms,
+        )
+
+    def metabolic_reentry(
+        self, envelope: DreamEnvelopeConfig, *, now_ms: int
+    ) -> bool:
+        """Decide dormant→dreaming re-entry (Phase 8b) — content-blind, the
+        complement of the ``ComputeBudgetCap``.
+
+        Projects a one-rollout-minimum session (``rollout_duration_estimate_ms``)
+        against the drained rolling-hour window: re-enter iff that fits within
+        ``compute_budget_seconds_per_hour``. Reads *only* content-blind ledger
+        scalars and the envelope budget — assembled into the typed
+        :class:`MetabolicState`, whose content-blindness is structurally
+        enforced. Nothing Io-state-derived can enter this decision."""
+        estimate_ms = self._ledger.rollout_duration_estimate_ms()
+        state = MetabolicState(
+            window_compute_seconds=self._ledger.window_compute_seconds(now_ms=now_ms),
+            projected_session_seconds=estimate_ms / 1000.0,
+            compute_budget_seconds_per_hour=envelope.compute_budget_seconds_per_hour,
+            wallclock_ms=now_ms,
+        )
+        return has_metabolic_room(state)
 
     def should_stop(self, ctx: DreamSessionContext) -> ProtectionVerdict | None:
         enriched = replace(

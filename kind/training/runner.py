@@ -682,6 +682,10 @@ class Runner:
             run_id=self._config.run_id,
             checkpoint_id=self._checkpoint_id,
             dream_session_id_factory=lambda: str(uuid.uuid4()),
+            # Phase 8b: the same host clock the supervisor ticks with, so the
+            # controller measures each dream session's real wall-time and records
+            # it into the metabolic ledger (the B2 re-entry pacer's actuals).
+            clock=self._host_clock_ms,
         )
 
     def _current_host_signals(self) -> HostSignals:

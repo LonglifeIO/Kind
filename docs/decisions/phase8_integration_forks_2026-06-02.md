@@ -323,6 +323,37 @@ the safe default** — keep dreaming purely desktop-gated, watch real absences, 
 revisit B2 once there is something to observe (which is itself the charter's
 "build to understand" stance).
 
+### Ratified resolution (amended 2026-06-02, Phase 8b) — B2, with the exogenous-trigger commitment refined
+
+**Ratified: Fork B = B2.** Phase 8b builds the dormant→dreaming re-entry edge,
+ledger-paced. The exogenous-trigger commitment is **refined** (not weakened):
+
+> "Io does not decide whether to dream from its own state" is read as
+> **"whether-to-dream is gated by nothing Io-state-derived"** — *not* as
+> "whether-to-dream is gated by HostSignals only." Rationale: the commitment's
+> load-bearing purpose is to forbid an installed self-continuation drive — Io's
+> own state/content deciding to keep itself dreaming. A content-blind compute
+> ledger (durations and timestamps; no Io latents, policy, or dream content) is
+> not Io's state; it is a metabolic/resource constraint, the same *category* as
+> the desktop being off. A ledger-paced re-entry preserves the deep intent (no
+> Io-authored dream schedule) while extending the trigger surface from
+> HostSignals-only to {HostSignals, content-blind runtime pacer}. The honest
+> cost: whether-to-dream is no longer purely the builder's-life rhythm — a
+> runtime metabolic rhythm now co-paces it within an absence. Ratified
+> deliberately, not as a side effect of the mechanism, and **made structural by
+> the re-entry content-blindness guard** (the re-entry input is the typed
+> ``MetabolicState`` in ``kind.training.protection``, all content-blind
+> primitives; the type-level test ``tests/test_metabolic_reentry.py`` — with a
+> positive control — makes "nothing Io-derived gates dreaming" unrepresentable to
+> violate, the analog of the Phase 4 ``HostSignals`` guard).
+
+This is the deliberate commitment-move B2 requires; it is recorded here, and the
+``state_machine.py`` commitment-1 docstring references this amendment. The
+metabolic budget (``compute_budget_seconds_per_hour``) is now the dream/rest
+**duty-cycle pacer**, defaulted to 600 s/hour (~17% — rest-majority, the
+charter's capacity-over-exercise / dormant-≠-failure lean) and flagged as **the
+builder's knob to tune by observation**, not a settled value.
+
 ### Downstream wiring implication (and the coupling that makes this matter)
 
 - **B1:** Phase 8 wires dreaming → dormant → (`desktop_on`) → waking only; no
