@@ -762,7 +762,16 @@ class StateController:
             # pacer}; the exogenous-trigger commitment's load-bearing sense — no
             # Io-authored dream schedule — is preserved (decision-doc Fork B, the
             # ratified reinterpretation).
-            if self._protection.metabolic_reentry(self._envelope, now_ms=wallclock_ms):
+            # Phase 8c: a pending/in-progress offline checkpoint gates re-entry —
+            # do not *start* a new session until the checkpoint completes, so it
+            # lands at a clean between-sessions boundary (the persistence design's
+            # atomic state-sync). This is the `CheckpointWindowCap` made live at
+            # the re-entry point (the cap is the planning-poll backstop). The
+            # session in flight, if any, is never interrupted (option (a)): the
+            # checkpoint waits at most one session for the dormant boundary.
+            if not host_signals.checkpoint_in_progress and self._protection.metabolic_reentry(
+                self._envelope, now_ms=wallclock_ms
+            ):
                 return self._enter_dreaming(
                     env_step,
                     wallclock_ms,
@@ -805,6 +814,27 @@ class StateController:
         """
         target: State = "waking" if host_signals.desktop_alive else "dormant"
         return self._transition("paused", target, "mac_on", env_step, wallclock_ms)
+
+    # ---- offline-checkpoint resume (Phase 8c) -----------------------------
+
+    def restore_resume_state(self, state: State, *, now_ms: int) -> None:
+        """Restore the resume state from an offline-period checkpoint (Phase 8c).
+
+        Only the state *name* is needed: at a checkpoint boundary there is no
+        in-flight session (sessions run synchronously inside a tick, and offline
+        checkpoints land while dormant), so the session id and the pending-cap
+        trigger are always ``None``. Resuming into dormant restarts the heartbeat
+        baseline at the resume time (so the "resting, not paused" signal resumes);
+        any other state stops it. The metabolic bucket is restored separately by
+        the runner (frozen across the pause)."""
+        self._state = state
+        self._current_session_id = None
+        self._pending_dormant_trigger = None
+        self._state_entered_wallclock_ms = now_ms
+        if state == "dormant":
+            self._heartbeat.start(now_ms)
+        else:
+            self._heartbeat.stop()
 
     # ---- internals --------------------------------------------------------
 

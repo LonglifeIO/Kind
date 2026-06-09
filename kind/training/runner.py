@@ -316,6 +316,14 @@ class RunnerConfig:
     # dormant branch sleeps; the waking branch ticks once per ``_step_once``.
     dormant_tick_interval_s: float = 1.0
 
+    # Phase 8c — offline-period checkpoint cadence (the *minimum* wall-clock gap
+    # between offline checkpoints, evaluated at dormant between-sessions
+    # boundaries). A crash during a long absence loses at most one such interval
+    # of dreaming. Default 5 minutes. Offline checkpoints are barrier-free (the
+    # env is off) and capture the full resumable state incl. the metabolic bucket
+    # + controller state.
+    offline_checkpoint_interval_ms: int = 5 * 60 * 1000
+
     # Pickled extra fields are stored as a Tensor-friendly dict via the
     # rng_state pickle so checkpoint resume can restore them.
     _checkpoint_id_zero_pad: int = field(default=6, repr=False)
@@ -389,6 +397,12 @@ class Runner:
         self._controller: StateController | None = None
         self._dream_session_sink: DreamSessionSink | None = None
         self._dream_rng: torch.Generator | None = None
+        # Phase 8c offline-period checkpointing. The metabolic bucket reference
+        # (for snapshotting); the pending offline-state to restore on resume; and
+        # the wall-clock of the last offline checkpoint (cadence throttle).
+        self._metabolic_budget: MetabolicBudget | None = None
+        self._pending_offline_state: dict[str, Any] | None = None
+        self._last_offline_checkpoint_ms: int | None = None
 
         # ---- models on device -----------------------------------------
         # RunnerConfig is authoritative for the four Probe 1.5 self-
@@ -604,16 +618,41 @@ class Runner:
         controller = self._controller
         assert controller is not None
         waking_steps_done = 0
+        interval_ms = self._config.offline_checkpoint_interval_ms
         while waking_steps_done < total_env_steps:
+            now_ms = self._host_clock_ms()
+            # Phase 8c: an offline-period checkpoint is *due* when we are offline
+            # (dreaming/dormant) and a full interval has elapsed since the last
+            # one (or the offline-period start). Setting ``checkpoint_in_progress``
+            # gates a dream re-entry so the save lands at a clean dormant
+            # between-sessions boundary, never mid-session — the
+            # ``CheckpointWindowCap`` made live. A session in flight is never
+            # interrupted (option a); the checkpoint waits at most one session.
+            prev_state = controller.current_state
+            offline_ckpt_due = (
+                prev_state in ("dreaming", "dormant")
+                and self._last_offline_checkpoint_ms is not None
+                and now_ms - self._last_offline_checkpoint_ms >= interval_ms
+            )
+            self._checkpoint_in_progress = offline_ckpt_due
             host = self._current_host_signals()
             env_step_now = (
                 self._env_step_meta.env_step
                 if self._env_step_meta is not None
                 else self._iteration
             )
-            controller.tick(host, env_step_now, self._host_clock_ms())
+            transition = controller.tick(host, env_step_now, now_ms)
             state: State = controller.current_state
+            # Mark the offline-period start so the cadence counts from when the
+            # desktop went off (not from process start / the previous absence).
+            if (
+                transition is not None
+                and transition.from_state == "waking"
+                and state in ("dreaming", "dormant")
+            ):
+                self._last_offline_checkpoint_ms = now_ms
             if state == "waking":
+                self._checkpoint_in_progress = False  # waking owns its own flag
                 self._step_once()
                 waking_steps_done += 1
             elif state == "dreaming":
@@ -623,10 +662,15 @@ class Runner:
                 # on the pending cap. Nothing to do here.
                 continue
             elif state == "dormant":
-                # Heartbeat-idle: poll at the ratified ~1 Hz dormant cadence,
-                # responsive to desktop_on. The heartbeat itself fires inside
-                # tick() (dormant branch) off the injected clock.
-                if self._config.dormant_tick_interval_s > 0:
+                if offline_ckpt_due:
+                    # Clean between-sessions boundary: commit the offline
+                    # checkpoint (barrier-free; full resumable state incl. bucket).
+                    self._commit_offline_checkpoint()
+                    self._last_offline_checkpoint_ms = now_ms
+                    self._checkpoint_in_progress = False
+                elif self._config.dormant_tick_interval_s > 0:
+                    # Heartbeat-idle: poll at the ratified ~1 Hz dormant cadence,
+                    # responsive to desktop_on. The heartbeat fires inside tick().
                     time.sleep(self._config.dormant_tick_interval_s)
             else:  # "paused" — supervisor-mediated; not entered by this loop.
                 break
@@ -679,6 +723,7 @@ class Runner:
             capacity_seconds=self._config.dream_envelope.metabolic_capacity_seconds,
             refill_rate=self._config.dream_envelope.metabolic_refill_rate,
         )
+        self._metabolic_budget = metabolic_budget
         self._controller = StateController(
             self._config.dream_envelope,
             self._config.seed_selection,
@@ -693,6 +738,19 @@ class Runner:
             # it into the metabolic ledger (the B2 re-entry pacer's actuals).
             clock=self._host_clock_ms,
         )
+        # Phase 8c: resume from an offline-period checkpoint, if one was loaded.
+        # The bucket is restored *frozen across the pause* (its refill clock
+        # resets — see MetabolicBudget.restore); the controller resumes into its
+        # checkpointed state (waking/dormant). Resuming from a waking checkpoint
+        # (no offline_state) correctly keeps the defaults: waking + full bucket.
+        if self._pending_offline_state is not None:
+            now_ms = self._host_clock_ms()
+            metabolic_budget.restore(self._pending_offline_state["metabolic_budget"])
+            self._controller.restore_resume_state(
+                self._pending_offline_state["controller_state"], now_ms=now_ms
+            )
+            self._last_offline_checkpoint_ms = now_ms
+            self._pending_offline_state = None
 
     def _current_host_signals(self) -> HostSignals:
         """Assemble the exogenous ``HostSignals`` for one supervisor tick.
@@ -844,6 +902,19 @@ class Runner:
         with open(contents.rng_state_path, "rb") as fh:
             rng_blob: dict[str, Any] = pickle.load(fh)
         self._load_rng_state(rng_blob)
+
+        # ---- Phase 8c: offline-period state (bucket + controller resume) ----
+        # Present only on offline checkpoints; stashed here and applied by
+        # _build_state_controller (which builds the bucket + controller). A waking
+        # checkpoint has no offline_state → resume keeps the defaults (waking +
+        # full bucket), which is exactly the waking state.
+        if (
+            contents.offline_state_path is not None
+            and contents.offline_state_path.is_file()
+        ):
+            self._pending_offline_state = json.loads(
+                contents.offline_state_path.read_text()
+            )
 
         # ---- checkpoint id (for envelope on subsequent records) ----
         self._checkpoint_id = checkpoint_id
@@ -1607,10 +1678,65 @@ class Runner:
         finally:
             self._checkpoint_in_progress = False
 
+    def _commit_offline_checkpoint(self) -> None:
+        """Commit an offline-period checkpoint (Phase 8c) — barrier-free, with the
+        full resumable state incl. the metabolic bucket + controller state.
+
+        Called from the supervisor loop's dormant branch at a clean between-
+        sessions boundary. The env is off, so no env-server barrier (the canonical
+        *mind* state is all that needs saving); the write is atomic temp-then-
+        rename so a crash mid-write cannot corrupt the committed checkpoint.
+        """
+        self._checkpoint_counter += 1
+        checkpoint_id = self._format_checkpoint_id(self._checkpoint_counter)
+        with tempfile.TemporaryDirectory(prefix="kind_ckpt_stage_") as staging_str:
+            staging = Path(staging_str)
+            contents = self._build_checkpoint_contents(
+                staging, include_offline_state=True
+            )
+            self._checkpoint_manager.commit_offline(checkpoint_id, contents)
+        self._after_commit(checkpoint_id)
+
+    def _offline_state_dict(self) -> dict[str, Any]:
+        """The offline-period resume state: the metabolic bucket snapshot (frozen-
+        across-pause on restore) + the controller's current state. Both content-
+        blind (numbers + a state name)."""
+        assert self._metabolic_budget is not None
+        assert self._controller is not None
+        return {
+            "metabolic_budget": self._metabolic_budget.snapshot(),
+            "controller_state": self._controller.current_state,
+        }
+
+    def _after_commit(self, checkpoint_id: str) -> None:
+        """Post-commit: propagate the new checkpoint id into envelope producers."""
+        self._checkpoint_id = checkpoint_id
+        self._replay.set_checkpoint_id(checkpoint_id)
+        if self._env_server is not None:
+            self._env_server.set_checkpoint_id(checkpoint_id)
+
     def _commit_checkpoint_inner(self, checkpoint_id: str, env_step: int) -> None:
         with tempfile.TemporaryDirectory(prefix="kind_ckpt_stage_") as staging_str:
             staging = Path(staging_str)
+            contents = self._build_checkpoint_contents(
+                staging, include_offline_state=False
+            )
+            self._checkpoint_manager.commit(checkpoint_id, contents)
+        self._after_commit(checkpoint_id)
+        # `env_step` is a Probe 1 informational input to the journal / eyeball
+        # helpers; the runner doesn't persist it separately.
+        _ = env_step
 
+    def _build_checkpoint_contents(
+        self, staging: Path, *, include_offline_state: bool
+    ) -> CheckpointContents:
+        """Stage all checkpoint artifacts into ``staging`` and return the contents.
+
+        Shared by the waking commit (``include_offline_state=False`` — resuming
+        from waking correctly uses the defaults: waking + full bucket) and the
+        offline commit (``include_offline_state=True`` — captures the metabolic
+        bucket + controller state so the offline rhythm survives a pause)."""
+        if True:
             # Combined weights file: one prefix per module so load_checkpoint
             # can split back into three state dicts.
             combined: dict[str, Tensor] = {}
@@ -1671,25 +1797,24 @@ class Runner:
                 json.dumps(self._replay_snapshot(), indent=2) + "\n"
             )
 
-            contents = CheckpointContents(
+            # Phase 8c — the optional offline-period state (bucket + controller
+            # state), captured only on offline checkpoints.
+            offline_state_path: Path | None = None
+            if include_offline_state:
+                offline_state_path = staging / "offline_state.json"
+                offline_state_path.write_text(
+                    json.dumps(self._offline_state_dict(), indent=2) + "\n"
+                )
+
+            return CheckpointContents(
                 weights_path=weights_path,
                 replay_meta_path=replay_meta_path,
                 optimizer_state_path=optimizer_state_path,
                 rng_state_path=rng_state_path,
                 telemetry_offsets_path=telemetry_offsets_path,
                 schema_version_path=schema_version_path,
+                offline_state_path=offline_state_path,
             )
-            self._checkpoint_manager.commit(checkpoint_id, contents)
-
-        # Post-commit: propagate the new checkpoint id into all envelope
-        # producers so subsequent records carry it.
-        self._checkpoint_id = checkpoint_id
-        self._replay.set_checkpoint_id(checkpoint_id)
-        if self._env_server is not None:
-            self._env_server.set_checkpoint_id(checkpoint_id)
-        # `env_step` is a Probe 1 informational input to the journal /
-        # eyeball helpers; the runner doesn't persist it separately.
-        _ = env_step
 
     # ---- runtime helpers -----------------------------------------------
 

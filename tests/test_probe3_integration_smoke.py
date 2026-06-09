@@ -20,13 +20,23 @@ coverage the waking-only smokes lack:
 
 from __future__ import annotations
 
+import dataclasses
+import json
 from collections.abc import Callable
 from pathlib import Path
+
+import pytest
+import torch
+from safetensors.torch import load_file
 
 from kind.training.dream import DreamRolloutConfig
 from kind.training.dream_seed import SeedSelectionConfig
 from kind.training.runner import Runner, RunnerConfig
-from kind.training.state_machine import DreamEnvelopeConfig, ScriptedDesktop
+from kind.training.state_machine import (
+    AlwaysAwakeDesktop,
+    DreamEnvelopeConfig,
+    ScriptedDesktop,
+)
 from tests.test_integration_smoke import (
     _quiet_grid_world_config,  # noqa: F401  (imported for parity / fixtures)
     _read_jsonl_records,
@@ -318,3 +328,100 @@ def test_desktop_on_throughout_runs_pure_waking(tmp_path: Path) -> None:
         if e["event_type"] == "state_transition"
     ]
     assert transitions == []
+
+
+def test_offline_checkpoint_crash_and_resume(tmp_path: Path) -> None:
+    """Phase 8c load-bearing — crash-safe long absences. Drive an offline period
+    with offline checkpoints, simulate a crash (discard the live process), resume
+    from the last offline checkpoint, and assert the FULL state is restored
+    (bucket, controller state, weights identity), the loss is bounded, the
+    checkpoint landed at a between-sessions boundary, and the metabolic rhythm
+    continues frozen across the gap (no spurious refill credit for the pause)."""
+    config = dataclasses.replace(
+        _dream_cycle_config(
+            tmp_path, metabolic_capacity_seconds=3.0, metabolic_refill_rate=0.1
+        ),
+        # Small offline-checkpoint interval so checkpoints fire during the test.
+        offline_checkpoint_interval_ms=5000,
+        # No waking checkpoints in this short run (so every checkpoint is offline).
+        checkpoint_every_n_env_steps=10_000,
+    )
+    total_env_steps = 12
+    # Waking (populate buffer), a long off-span (dreaming + offline checkpoints),
+    # then on so the run terminates.
+    desktop = ScriptedDesktop([True] * 6 + [False] * 40 + [True])
+
+    with _transport_pair() as (client, _server, env_server, _thread):
+        runner_a = Runner(
+            config,
+            client,
+            env_server=env_server,
+            host_signal_source=desktop,
+            host_clock_ms=_stepping_clock(),
+        )
+        try:
+            runner_a.run(total_env_steps=total_env_steps)
+        finally:
+            runner_a.close()
+
+    # The last offline checkpoint = the latest checkpoint dir carrying an
+    # offline_state.json (waking checkpoints don't write one).
+    ckpts_dir = config.checkpoints_dir
+    offline_ckpts = sorted(
+        d.name
+        for d in ckpts_dir.iterdir()
+        if d.is_dir() and (d / "offline_state.json").is_file()
+    )
+    assert len(offline_ckpts) >= 1, "no offline checkpoint was written"
+    last_offline = offline_ckpts[-1]
+    saved = json.loads((ckpts_dir / last_offline / "offline_state.json").read_text())
+    saved_tokens = saved["metabolic_budget"]["tokens"]
+    capacity = config.dream_envelope.metabolic_capacity_seconds
+
+    # Boundary yield: the offline checkpoint landed at a between-sessions boundary
+    # (dormant), never mid-session — the CheckpointWindowCap held.
+    assert saved["controller_state"] == "dormant"
+    # The bucket was depleted by dreaming (so the frozen-pause assertion is
+    # meaningful — a credited pause would have refilled it to capacity).
+    assert saved_tokens < capacity
+
+    # --- "Crash": runner_a is gone; the on-disk checkpoint is behind the live
+    # state. Resume runner_b from the last offline checkpoint. ---
+    with _transport_pair() as (client2, _s2, env_server2, _t2):
+        runner_b = Runner(
+            config,
+            client2,
+            env_server=env_server2,
+            host_signal_source=AlwaysAwakeDesktop(),
+            host_clock_ms=_stepping_clock(),
+        )
+        try:
+            runner_b.load_checkpoint(last_offline)
+            runner_b._build_state_controller()  # applies the offline-state restore
+
+            # Controller state restored (the resuming mind is the same mind).
+            assert runner_b._controller is not None
+            assert runner_b._controller.current_state == "dormant"
+
+            # Weights identity: runner_b's world model == the checkpoint's weights.
+            disk = load_file(str(ckpts_dir / last_offline / "weights.safetensors"))
+            live_wm = runner_b._world_model.state_dict()
+            sample_key = next(iter(live_wm))
+            assert torch.equal(
+                live_wm[sample_key].cpu(), disk[f"world_model.{sample_key}"].cpu()
+            )
+
+            # Bucket restored FROZEN across the pause: the first observation after
+            # resume returns exactly the saved tokens (the pause — checkpoint→resume
+            # — credited NO refill), not capacity.
+            assert runner_b._metabolic_budget is not None
+            resumed = runner_b._metabolic_budget.current_tokens(now_ms=1_000_000)
+            assert resumed == pytest.approx(saved_tokens)
+            assert resumed < capacity  # a credited pause would have filled it
+
+            # The rhythm continues from the restored bucket: refill resumes from
+            # the resume time forward (here a long post-resume span fills it).
+            later = runner_b._metabolic_budget.current_tokens(now_ms=1_000_000 + 10**8)
+            assert later > resumed
+        finally:
+            runner_b.close()

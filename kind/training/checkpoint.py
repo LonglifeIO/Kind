@@ -62,6 +62,10 @@ _CANONICAL_FILE_NAMES: Final[dict[str, str]] = {
 
 _REPLAY_SUBDIR: Final[str] = "replay"
 _STAGING_SUFFIX: Final[str] = ".staging"
+#: Phase 8c — the optional offline-period state file (metabolic bucket +
+#: StateController resume state). Present only on offline checkpoints; waking
+#: checkpoints resume from defaults (waking + full bucket).
+_OFFLINE_STATE_FILE: Final[str] = "offline_state.json"
 
 
 # ---- contents ------------------------------------------------------------
@@ -86,6 +90,9 @@ class CheckpointContents:
     telemetry_offsets_path: Path
     schema_version_path: Path
     replay_parquet_shards: tuple[Path, ...] = ()
+    #: Phase 8c — additive, optional. The offline-period state (metabolic bucket +
+    #: controller resume state); set on offline checkpoints, ``None`` on waking.
+    offline_state_path: Path | None = None
 
 
 # ---- manager -------------------------------------------------------------
@@ -115,7 +122,7 @@ class CheckpointManager:
     def commit(
         self, checkpoint_id: str, contents: CheckpointContents
     ) -> None:
-        """Run the five-step barrier-and-commit protocol.
+        """Run the five-step barrier-and-commit protocol (waking checkpoint).
 
         Raises :class:`FileExistsError` if a checkpoint with this ID
         already exists (checked before the barrier so the env-server is
@@ -125,6 +132,25 @@ class CheckpointManager:
         sent so the env-server resumes; the original exception then
         propagates to the caller.
         """
+        self._commit_impl(checkpoint_id, contents, use_barrier=True)
+
+    def commit_offline(
+        self, checkpoint_id: str, contents: CheckpointContents
+    ) -> None:
+        """Commit during the *offline* period (dreaming / dormant) — Phase 8c.
+
+        **No env-server barrier.** The desktop/env is off during the offline
+        period, so there is no env state to coordinate and no transport to
+        barrier with — only the canonical *mind* state to save. Same atomic
+        temp-then-rename as :meth:`commit` (a crash mid-write can't corrupt the
+        committed checkpoint), which keeps it split-ready. (The full Mac/desktop
+        two-machine atomic sync is real-deployment infrastructure, out of scope.)
+        """
+        self._commit_impl(checkpoint_id, contents, use_barrier=False)
+
+    def _commit_impl(
+        self, checkpoint_id: str, contents: CheckpointContents, *, use_barrier: bool
+    ) -> None:
         self._validate_id(checkpoint_id)
         target_dir = self._checkpoints_dir / checkpoint_id
         if target_dir.exists():
@@ -137,7 +163,8 @@ class CheckpointManager:
             # mkdir below succeeds.
             shutil.rmtree(staging_dir)
 
-        self._transport_client.barrier_begin(checkpoint_id)
+        if use_barrier:
+            self._transport_client.barrier_begin(checkpoint_id)
         try:
             self._stage_and_rename(staging_dir, target_dir, contents)
         except BaseException:
@@ -147,12 +174,14 @@ class CheckpointManager:
             # the original commit error is what the caller sees.
             if staging_dir.exists():
                 shutil.rmtree(staging_dir, ignore_errors=True)
-            try:
-                self._transport_client.barrier_end(checkpoint_id)
-            except Exception:
-                pass
+            if use_barrier:
+                try:
+                    self._transport_client.barrier_end(checkpoint_id)
+                except Exception:
+                    pass
             raise
-        self._transport_client.barrier_end(checkpoint_id)
+        if use_barrier:
+            self._transport_client.barrier_end(checkpoint_id)
 
     def latest(self) -> str | None:
         """Return the lexicographically greatest committed checkpoint ID.
@@ -189,6 +218,7 @@ class CheckpointManager:
             shards = tuple(sorted(replay_dir.iterdir()))
         else:
             shards = ()
+        offline_state = target_dir / _OFFLINE_STATE_FILE
         return CheckpointContents(
             weights_path=target_dir / _CANONICAL_FILE_NAMES["weights_path"],
             replay_meta_path=target_dir
@@ -202,6 +232,7 @@ class CheckpointManager:
             schema_version_path=target_dir
             / _CANONICAL_FILE_NAMES["schema_version_path"],
             replay_parquet_shards=shards,
+            offline_state_path=offline_state if offline_state.is_file() else None,
         )
 
     # ---- internals -------------------------------------------------------
@@ -255,6 +286,16 @@ class CheckpointManager:
                 shutil.copy2(shard, dest)
                 self._fsync_file(dest)
             self._fsync_dir(replay_dir)
+
+        # Phase 8c — the optional offline-period state file (additive).
+        if contents.offline_state_path is not None:
+            if not contents.offline_state_path.exists():
+                raise FileNotFoundError(
+                    f"offline_state source missing: {contents.offline_state_path}"
+                )
+            dest = staging_dir / _OFFLINE_STATE_FILE
+            shutil.copy2(contents.offline_state_path, dest)
+            self._fsync_file(dest)
 
         # fsync the staging directory itself so the directory entries are
         # durable, then atomic rename, then fsync the parent so the

@@ -241,6 +241,37 @@ class MetabolicBudget:
             self._alltime_sum_ms += float(session_wallclock_ms)
             self._alltime_count += num_rollouts
 
+    def snapshot(self) -> dict[str, float | int]:
+        """A JSON-serializable snapshot of the bucket state (Phase 8c — for the
+        offline-period checkpoint). Content-blind: tokens, capacity, refill rate,
+        and the estimate accumulators — numbers only."""
+        return {
+            "tokens": self._tokens,
+            "capacity_seconds": self._capacity,
+            "refill_rate": self._refill_rate,
+            "seed_rollout_duration_ms": self._seed_ms,
+            "alltime_sum_ms": self._alltime_sum_ms,
+            "alltime_count": self._alltime_count,
+        }
+
+    def restore(self, snapshot: dict[str, float | int]) -> None:
+        """Restore from a :meth:`snapshot`, **frozen across the pause**.
+
+        The token balance and estimate are restored exactly, but the refill clock
+        is reset (``_last_ms = None``) so the pause duration credits **no** refill:
+        a pause is frozen storage, not rest — the runtime was off, so the bucket
+        neither drained nor refilled. The next refill baselines at the resume
+        time, so Io picks up mid-cycle where it paused rather than waking from a
+        week-long pause with a full bucket and an immediate burst. (Design choice;
+        tunable to treat a pause as rest by crediting elapsed time instead.)"""
+        self._tokens = float(snapshot["tokens"])
+        self._capacity = float(snapshot["capacity_seconds"])
+        self._refill_rate = float(snapshot["refill_rate"])
+        self._seed_ms = float(snapshot["seed_rollout_duration_ms"])
+        self._alltime_sum_ms = float(snapshot["alltime_sum_ms"])
+        self._alltime_count = int(snapshot["alltime_count"])
+        self._last_ms = None  # frozen-pause: next refill baselines at resume time
+
     def affords_session(self, projected_session_seconds: float, *, now_ms: int) -> bool:
         """True iff a full projected session fits in the (refilled) bucket."""
         return has_metabolic_room(

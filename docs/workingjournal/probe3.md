@@ -846,3 +846,52 @@ The single-session cycle test (`test_full_waking_dreaming_dormant_waking_cycle`)
 - **Phase 8c** — offline-period checkpointing (the `CheckpointWindowCap` going live for crash-safe long absences); unchanged from the 8b open list.
 - **C / R tuning against real absences** — the deployment defaults (150 s / 0.17) imply a ~3-min-dream / ~15-min-rest cycle; the charter's "build to understand" applied to the rhythm, to revise by watching.
 - **Across-pause bucket persistence** — the bucket resets to full on restart (in-process); whether the metabolic state should survive pauses is a refinement (it pairs with 8c's persistence).
+
+## Phase 8c — Offline-period checkpointing (crash-safe long absences) — closes Probe 3
+
+The last Phase 8 step, closing Probe 3's build. It implements the design notes' deferred "complete checkpointing" ("the state written has to be enough to resume waking, dreaming, or dormant from any pause") for the offline period, and makes the Phase 6 `CheckpointWindowCap` — inert until now — load-bearing. Under B2, Io dreams repeatedly through a long absence (potentially days); before 8c a crash mid-absence lost *all* dreaming since the last waking checkpoint. 8c saves the canonical state *during* the offline period so a crash loses at most a bounded window. Scope: single-process offline checkpointing; the full Mac/desktop two-machine atomic sync is real-deployment infrastructure, out of scope — but writes are atomic (temp-then-rename) so a crash mid-write can't corrupt the saved state (split-ready).
+
+### Offline-period checkpointing (the save path)
+
+The supervisor loop checkpoints during the offline period at **dormant between-sessions boundaries**, throttled by `offline_checkpoint_interval_ms` (default 5 min; the minimum wall-clock gap, counted from the offline-period start). A crash during a long absence loses at most one interval of dreaming. The commit is **barrier-free** (`CheckpointManager.commit_offline`): the desktop/env is off during the offline period, so there is no env state to coordinate and no transport to barrier with — only the canonical *mind* state to save. The atomic temp-then-rename (already in `CheckpointManager`) makes the write crash-safe. Waking checkpoints are unchanged (they keep the env-server barrier).
+
+### The `CheckpointWindowCap` goes live
+
+`checkpoint_in_progress` is now actually set (to `True`) when an offline checkpoint is due — previously it was always `False` (nothing offline-checkpointed). The supervisor sets it before each tick when a checkpoint is due; the controller's **dormant re-entry is gated on it** (`if not host_signals.checkpoint_in_progress and metabolic_reentry(...)`), so a new dream session does **not start** while a checkpoint is pending — the save lands at a clean between-sessions boundary, never mid-session. The `CheckpointWindowCap` (the Phase 6 per-session cap) is the planning-poll backstop. A checkpoint that becomes due *mid-session* is never interrupted (option (a) holds — `run_dream_session` stays one-shot); it waits at most one session for the dormant boundary, then commits.
+
+### Persisting the full resumable state
+
+Offline checkpoints carry an additive, optional `offline_state.json` (the checkpoint format extension; `kind/observer/schemas.py` untouched) holding the **`MetabolicBudget` snapshot** (tokens, capacity, refill rate, estimate accumulators) and the **`StateController` resume state** (waking/dreaming/dormant). The canonical mind state (weights, optimizer, RNG, runtime) rides in the existing checkpoint files — re-saved offline even though weights don't change during dreaming (gradient-policy "none"), so each checkpoint is a *complete* self-contained snapshot. There is no mid-session progress to persist: sessions run synchronously inside a tick and offline checkpoints land while dormant, so the session id / pending-cap trigger are always `None` at a checkpoint boundary. **Waking checkpoints write no `offline_state`** — resuming from a waking checkpoint correctly uses the defaults (waking + full bucket), which *is* the waking state.
+
+### Resume — frozen across the pause
+
+`load_checkpoint` stashes the `offline_state` (if present); `_build_state_controller` applies it: restore the bucket and the controller state (`restore_resume_state`). **Design choice — frozen-pause (flagged):** on restore the bucket's token balance is restored exactly, but its **refill clock is reset** (`_last_ms = None`), so the pause duration credits **no** refill — a pause is frozen storage, not rest (the runtime was off, so the bucket neither drained nor refilled). The next refill baselines at the resume time, so Io picks up mid-cycle where it paused, rather than waking from a week-long pause with a full bucket and an immediate burst. (Tunable: crediting elapsed time would treat a pause as rest; the frozen reading is the design-notes' state-continuity criterion — the resuming mind has all its state intact, *as it was*.)
+
+### The crash-and-resume test (8c's load-bearing test)
+
+`tests/test_probe3_integration_smoke.py::test_offline_checkpoint_crash_and_resume` drives a long offline period with offline checkpoints (interval 5 s, in-test clock), then **simulates a crash** (discards the live runner — the on-disk checkpoint is behind the live state), resumes a fresh runner from the last offline checkpoint, and asserts:
+- **Boundary yield** — the offline checkpoint's saved `controller_state == "dormant"` (it landed at a between-sessions boundary, the `CheckpointWindowCap` held), never mid-session.
+- **Full state restore** — the resumed controller state is `dormant`; the resumed world-model weights are byte-identical to the checkpoint's (`torch.equal`); the resumed bucket tokens equal the saved value.
+- **Frozen-pause** — the first token observation after resume equals exactly the saved tokens (`< capacity`), proving the pause credited no refill (a credited pause would have filled the bucket to capacity); and refill *resumes* from the resume time forward.
+- **Bounded loss** — ≥1 offline checkpoint was written during the absence (the cadence bounds the loss to one interval); the resumed state is the last checkpoint's, not the lost live state.
+
+### What was verified
+
+- **Full `tests/` suite green** — **1211 passed, 6 skipped, 1 xfailed/xpassed** (+1 over the token-bucket pass: the crash-and-resume test; the known `test_transport` flake's accepted disposition). `mypy --strict` clean across **64** `kind/` source files.
+- **The waking path is unchanged** — all 24 integration smokes green and behaviorally identical (waking checkpointing already existed; 8c adds the offline path, which fires only when offline — never in a desktop-on run, and not in the existing dream-state smokes since their default 5-min interval is never reached). The 15 `test_checkpoint.py` manager tests still pass (the offline path + optional `offline_state_path` are additive).
+- **All prior structural guards green** — Phase 4 HostSignals/tick, Phase 5 mirror one-way, Phase 6 content-blindness, Phase 7 no-hidden-state-write, the re-entry content-blindness guard. The `checkpoint_in_progress` signal is host/runtime-side (the runtime's own commit state), not Io-derived — consistent with the content-blind protection discipline.
+
+### Deviations / flags
+
+- **No deviation from the prompt or the ratified decisions.** B2, the exogenous-trigger commitment, and option (a) all stand; this adds persistence, untouched the pacer / re-entry decision / `run_dream_session`'s one-shot shape (the cap gates *between* sessions, never interrupts one).
+- **Frozen-pause is a flagged design choice** (pause = storage, not rest), tunable to credit the pause as rest if a future probe prefers.
+- **Offline checkpoints re-save unchanged weights** (complete self-contained snapshots) — a deliberate completeness-over-dedup choice; an incremental/delta checkpoint is a future refinement.
+- **Settled surfaces untouched:** the four-axis dream regime, the frozen criteria, `kind/mirror/*`, `kind/observer/schemas.py`. The *checkpoint* format extended additively (the optional `offline_state.json`) — distinct from the observer telemetry schemas.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []`. Checkpointing reads Io's state to *save* it; Io does not observe the checkpoint process (no checkpoint signal on `PolicyView`; `checkpoint_in_progress` is a host/runtime signal off Io's read path). The metabolic bucket + controller state persisted are runtime/pacer state, not Io-readable. Self-opacity holds: saving the mind is not the mind observing itself.
+
+### Probe 3 build — closed
+
+Phase 8c closes Probe 3's build. The dream state is built end to end: the four-axis offline dream regime (Phases 0–3), the four-state machine (Phase 4), the one-way mirror reading (Phase 5), content-blind runtime protection (Phase 6), the Probe-4-perturbable cross-probe surface with no hidden-state writes (Phase 7), and the live integration (Phase 8): the supervisor loop, B2 metabolic re-dreaming paced by a token bucket, and crash-safe offline-period checkpointing. Every self-opacity guarantee is structural (unrepresentable-to-violate), and the waking path is byte-unchanged throughout. What remains for Probe 4 is its own synthesis: the builder-as-perturbation using the Phase 7 surface, and the recognition question the environment-side `builder_perturbation` channel tests.
