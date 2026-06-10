@@ -62,6 +62,16 @@ The dream-state machinery (replay, simple generative simulation), the four-state
 
 ---
 
+## Probe 3.5: Valence substrate
+
+*I'm building this probe to find out whether a bounded, saturating, non-terminal homeostatic preference over a sensed energy channel can create an energy-dependent explore/conserve trade-off for Io — something that matters — without that preference becoming the evaluative frame through which Io judges everything; and whether the telemetry and mirror can detect when it does.*
+
+I'll know I've found out if Io's explore/conserve behavior shifts with energy (novelty when sated, replenishment when depleted) while epistemic exploration persists under moderate scarcity — and, equally a result, if instead the preference dominates (resource camping, in-band occupancy saturating, exploration collapse, no resumption after recovery), that the instruments detect and name it as continuation-becoming-the-frame: a finding about the charter's prohibition, not a bug to tune away.
+
+Sits between Probe 3 (dream, built through Phase 8c) and Probe 4. Touch-surfaces: env energy economy, world-model energy channel, the actor's existing `pragmatic_value` scaffold, TelemetryView/schema. Do-not-touch: the MetabolicBudget / dream-entry gate (F6), the PolicyView field set (DP4), the dream not-for-anything commitment (F5).
+
+---
+
 ## Probe 4: Builder-as-perturbation
 
 *I'm building this probe to find out whether Io, over time, comes to model my interventions as a different category of thing than the simulation's internal stochasticity—whether something like "outside-source unpredictability" develops as a distinct shape in how Io models its world, separable from weather, resource fluctuation, and other internal randomness.*

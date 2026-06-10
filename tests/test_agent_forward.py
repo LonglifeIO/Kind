@@ -62,7 +62,11 @@ def test_gate_world_model_step_and_loss_and_backward() -> None:
     batch = 3
     obs, h, z, a = fresh_inputs(config, batch=batch)
 
-    step = wm.step(obs, h, z, a)
+    # Probe 3.5: exercise the energy channel too — fuse a sensed scalar so the
+    # energy encoder/decoder are in the graph and the gate's backward populates
+    # their gradients alongside the rest of the substrate.
+    sensed_energy = torch.rand(batch, 1)
+    step = wm.step(obs, h, z, a, sensed_energy=sensed_energy)
 
     # All eight WorldModelStep fields, with the shapes the plan specifies.
     # Probe 1.5 added ``self_prediction`` as field eight.
@@ -110,13 +114,16 @@ def test_gate_world_model_step_and_loss_and_backward() -> None:
     # ``compute_self_prediction_target`` so the gate exercises the full
     # Phase 1 path.
     target_h = wm.compute_self_prediction_target(obs, h, z, a)
-    loss = wm.loss(step, obs, target_h_next=target_h)
+    loss = wm.loss(
+        step, obs, target_h_next=target_h, sensed_energy_target=sensed_energy
+    )
     expected_keys = {
         "total",
         "recon",
         "kl",
         "kl_aggregate_unclipped",
         "self_prediction_loss",
+        "energy_recon_loss",
     }
     assert set(loss.keys()) == expected_keys
     for key, value in loss.items():
@@ -235,6 +242,7 @@ def test_free_bits_floor_applied_per_dim_below_threshold() -> None:
         recon=fake_obs.clone(),  # recon == obs_target → recon_loss = 0
         embed=torch.zeros(1, config.embed_dim),
         self_prediction=torch.zeros(1, config.h_dim),
+        energy_pred=torch.zeros(1, 1),
     )
 
     loss = wm.loss(fake_step, fake_obs)
@@ -268,6 +276,7 @@ def test_free_bits_floor_does_not_clip_when_kl_above_floor() -> None:
         recon=fake_obs.clone(),
         embed=torch.zeros(1, config.embed_dim),
         self_prediction=torch.zeros(1, config.h_dim),
+        energy_pred=torch.zeros(1, 1),
     )
     loss = wm.loss(fake_step, fake_obs)
     # All values are above the floor; unclipped == clipped.

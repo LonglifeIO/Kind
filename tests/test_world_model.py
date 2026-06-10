@@ -186,6 +186,7 @@ def test_gate_self_prediction_forward_shape() -> None:
         self_prediction=torch.tensor(
             [[1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]] * 2
         ),
+        energy_pred=torch.zeros(2, 1),
     )
     target_orth = torch.tensor([[0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]] * 2)
     loss_dict = cosine_wm.loss(
@@ -224,6 +225,7 @@ def test_gate_self_prediction_forward_shape() -> None:
         recon=torch.zeros(2, 1, 32, 32),
         embed=torch.zeros(2, mse_wm.config.embed_dim),
         self_prediction=pred,
+        energy_pred=torch.zeros(2, 1),
     )
     loss_mse = mse_wm.loss(
         fake_step_mse, torch.zeros(2, 1, 32, 32), target_h_next=target
@@ -468,6 +470,20 @@ def test_probe_1_path_still_passes_at_target_mode_online() -> None:
                 f"unexpected gradient on {name}: when self_prediction_loss "
                 f"is zero, the head's MLP should not be visited by backward "
                 f"through total"
+            )
+            continue
+        # Probe 3.5: the energy branch is analogous to the head — with no
+        # ``sensed_energy_target`` the energy reconstruction term is excluded
+        # from ``total``, so the energy decoder is not visited by backward, and
+        # with no ``sensed_energy`` fused the energy encoder is not in the graph
+        # at all. Both are correctly grad-free on this Probe-1-shaped path.
+        if name.startswith("energy_encoder.") or name.startswith(
+            "energy_decoder."
+        ):
+            assert param.grad is None, (
+                f"unexpected gradient on {name}: with no sensed_energy / "
+                f"sensed_energy_target, the energy branch should not be visited "
+                f"by backward through total"
             )
             continue
         assert param.grad is not None, f"no gradient on {name}"

@@ -72,6 +72,7 @@ from kind.env.grid_world import EnvStep
 from kind.env.transport import EnvTransportClient
 from kind.observer.schemas import (
     PROBE_1_SCHEMA_VERSION,
+    PROBE_3_5_TELEMETRY_SCHEMA_VERSION,
     SCHEMA_VERSION,
     AgentStep,
     DreamRollout,
@@ -227,6 +228,17 @@ class RunnerConfig:
     # init so RunnerConfig is the single source of truth.
     lambda_self: float = 0.1
     ema_decay: float = 0.99
+
+    # Probe 3.5 (implementation plan §S-TEL). When True, AgentStep records are
+    # stamped at ``PROBE_3_5_TELEMETRY_SCHEMA_VERSION`` ("0.4.0") and carry the
+    # four energy fields (sensed/true/pred/recon-error); requires a co-located
+    # ``env_server`` so ``true_energy`` is reachable. When False (the default),
+    # records stay at the legacy ``SCHEMA_VERSION`` ("0.2.0") with the energy
+    # fields None — byte-identical to pre-3.5 telemetry, so every existing
+    # runner / smoke is unchanged. The Phase-1 baseline run sets this True. The
+    # ``sensed_energy`` scalar is fused into the world model on every step
+    # regardless of this flag — it governs telemetry emission, not the substrate.
+    energy_telemetry: bool = False
     self_prediction_target_mode: Literal[
         "online", "frozen", "environmental"
     ] = "online"
@@ -563,6 +575,20 @@ class Runner:
             if config.lesion_kind == "zero_or_randomize_scalar"
             else None
         )
+
+        # Probe 3.5: energy telemetry is an explicit opt-in (default off →
+        # existing runners emit "0.2.0" byte-identically). When on, it requires
+        # the mirror-side ground truth (``true_energy`` on ``GridState``),
+        # reachable only through a co-located ``env_server`` (the loopback
+        # Phase-1 deployment) — so an env_server-less runner with the flag on is
+        # a misconfiguration. ``sensed_energy`` is fused into the world model on
+        # every step regardless of this flag.
+        if config.energy_telemetry and env_server is None:
+            raise ValueError(
+                "RunnerConfig.energy_telemetry=True requires a co-located "
+                "env_server (true_energy is read from GridState); got None."
+            )
+        self._energy_telemetry_enabled: bool = config.energy_telemetry
 
         self._closed: bool = False
 
@@ -1083,6 +1109,20 @@ class Runner:
         obs_t_cpu = self._obs_curr  # (1, 32, 32) float32 on CPU
         obs_t_dev = obs_t_cpu.unsqueeze(0).to(self._device, non_blocking=True)
 
+        # Probe 3.5: the energy paired with the *from* observation. ``sensed`` is
+        # what Io observes (carried over the wire on the EnvStep); ``true`` is the
+        # GridState ground truth, read here (before stepping the env, so it
+        # matches the from-state) and used for telemetry only — never fused, never
+        # a training target. The sensed scalar is fused into the world model below.
+        sensed_energy_from = float(env_step_meta.sensed_energy)
+        true_energy_from: float | None = None
+        if self._energy_telemetry_enabled:
+            assert self._env_server is not None
+            true_energy_from = float(self._env_server.grid_world_state.true_energy)
+        sensed_energy_t = torch.tensor(
+            [[sensed_energy_from]], device=self._device, dtype=torch.float32
+        )
+
         # 1. World model forward. ``next_obs`` is consumed only by
         #    ``compute_self_prediction_target`` in environmental mode;
         #    for online / frozen modes the kwarg is ignored. Per plan
@@ -1101,6 +1141,7 @@ class Runner:
             self._z_prev,
             self._a_prev,
             next_obs=next_obs_for_target,
+            sensed_energy=sensed_energy_t,
         )
 
         # 2. Compute intrinsic from (h_prev, z_prev, a_prev). This is
@@ -1207,6 +1248,9 @@ class Runner:
             env_step=env_step_meta.env_step,
             episode_id=env_step_meta.episode_id,
             step_in_episode=env_step_meta.step_in_episode,
+            # Probe 3.5: the from-step sensed energy, so the world model can
+            # train its energy reconstruction on replayed sequences.
+            sensed_energy=sensed_energy_from,
         )
         self._replay.insert(transition)
 
@@ -1232,6 +1276,8 @@ class Runner:
             self_prediction_error_masked=(
                 telemetry_view.self_prediction_error_masked
             ),
+            sensed_energy_value=sensed_energy_from,
+            true_energy_value=true_energy_from,
         )
 
         # 7. Update runtime state for next iteration.
@@ -1324,6 +1370,9 @@ class Runner:
 
         obs_seq = batch.obs.to(device, non_blocking=True)  # (B, L, 1, 32, 32)
         action_seq = batch.action.to(device, non_blocking=True)  # (B, L) long
+        # Probe 3.5: per-step sensed energy (B, L) — fused into the posterior
+        # and the energy reconstruction target at each step below.
+        sensed_energy_seq = batch.sensed_energy.to(device, non_blocking=True)
         B = obs_seq.shape[0]
 
         h = torch.zeros(B, wm_cfg.h_dim, device=device)
@@ -1353,8 +1402,14 @@ class Runner:
                     next_obs_for_target_b = obs_t
             else:
                 next_obs_for_target_b = None
+            sensed_energy_t_b = sensed_energy_seq[:, t]  # (B,)
             wm_step = self._world_model.step(
-                obs_t, h, z, a_prev, next_obs=next_obs_for_target_b
+                obs_t,
+                h,
+                z,
+                a_prev,
+                next_obs=next_obs_for_target_b,
+                sensed_energy=sensed_energy_t_b,
             )
             target_h_next_b = self._world_model.compute_self_prediction_target(
                 obs_t, h, z, a_prev, next_obs=next_obs_for_target_b
@@ -1367,7 +1422,10 @@ class Runner:
             # PolicyView scalar only. Phase 3 journal records the
             # decision and its rationale.
             loss_dict = self._world_model.loss(
-                wm_step, obs_target=obs_t, target_h_next=target_h_next_b
+                wm_step,
+                obs_target=obs_t,
+                target_h_next=target_h_next_b,
+                sensed_energy_target=sensed_energy_t_b,
             )
             wm_total = (
                 wm_total
@@ -1586,6 +1644,8 @@ class Runner:
         obs_hash: str,
         self_prediction_error: Tensor,
         self_prediction_error_masked: bool,
+        sensed_energy_value: float,
+        true_energy_value: float | None,
     ) -> AgentStep:
         """Build and write one AgentStep record. Returns the record so
         :meth:`_step_once` can feed scalar fields into ``step_callback``
@@ -1630,8 +1690,30 @@ class Runner:
             self_prediction_error.detach().cpu().reshape(-1)[0].item()
         )
 
+        # Probe 3.5 energy telemetry. When enabled (a co-located env_server is
+        # present so ``true_energy`` is reachable), stamp the new record version
+        # and populate all four energy fields; otherwise emit the legacy
+        # "0.2.0" record with the energy fields None (byte-identical to pre-3.5).
+        # ``energy_pred_t`` is the world model's decoded scalar; the recon error
+        # is the per-step squared error against the *sensed* target (never true).
+        energy_pred_t: float | None = None
+        energy_recon_error_t: float | None = None
+        sensed_energy_t: float | None = None
+        true_energy_t: float | None = None
+        schema_version = SCHEMA_VERSION
+        if self._energy_telemetry_enabled:
+            assert true_energy_value is not None
+            energy_pred_val = float(
+                wm_step.energy_pred.detach().cpu().reshape(-1)[0].item()
+            )
+            sensed_energy_t = sensed_energy_value
+            true_energy_t = true_energy_value
+            energy_pred_t = energy_pred_val
+            energy_recon_error_t = (energy_pred_val - sensed_energy_value) ** 2
+            schema_version = PROBE_3_5_TELEMETRY_SCHEMA_VERSION
+
         record = AgentStep(
-            schema_version=SCHEMA_VERSION,
+            schema_version=schema_version,
             run_id=self._config.run_id,
             checkpoint_id=self._checkpoint_id,
             t=env_step_meta.env_step,
@@ -1654,6 +1736,10 @@ class Runner:
             self_prediction_t=self_prediction_t,
             self_prediction_error_t=self_prediction_error_t,
             self_prediction_error_masked_t=bool(self_prediction_error_masked),
+            sensed_energy_t=sensed_energy_t,
+            true_energy_t=true_energy_t,
+            energy_pred_t=energy_pred_t,
+            energy_recon_error_t=energy_recon_error_t,
         )
         self._agent_step_sink.write(record)
         return record
@@ -1987,6 +2073,7 @@ class Runner:
             "episode_id": self._env_step_meta.episode_id,
             "step_in_episode": self._env_step_meta.step_in_episode,
             "wallclock_ms": self._env_step_meta.wallclock_ms,
+            "sensed_energy": self._env_step_meta.sensed_energy,
         }
 
     @staticmethod
@@ -2000,6 +2087,7 @@ class Runner:
             episode_id=int(d["episode_id"]),
             step_in_episode=int(d["step_in_episode"]),
             wallclock_ms=int(d["wallclock_ms"]),
+            sensed_energy=float(d.get("sensed_energy", 0.0)),
         )
 
     # ---- bookkeeping ---------------------------------------------------

@@ -640,7 +640,31 @@ def load_checkpoint(checkpoint_dir: Path, device: torch.device) -> LoadedCheckpo
     ensemble = LatentDisagreementEnsemble(
         wm_cfg.h_dim, wm_cfg.z_dim, wm_cfg.num_actions
     ).to(device)
-    world_model.load_state_dict(sub("world_model."))
+
+    # Probe 3.5 migration: a pre-3.5 ("0.2.0") checkpoint lacks the energy
+    # encoder/decoder and has the narrower posterior_head input (h+embed, no
+    # fused energy embedding). Zero-expand the posterior's trailing energy
+    # columns — so the loaded model behaves as if energy contributes nothing
+    # (pre-3.5 behavior preserved; the energy_embed input is also zero on the
+    # energy-free dream paths) — and load non-strict so the fresh-initialized
+    # energy modules are kept. The actor is unchanged (energy never enters
+    # PolicyView, DP4) and the ensemble is unchanged, so both load strictly.
+    wm_disk = sub("world_model.")
+    posterior_key = "posterior_head.fc1.weight"
+    if posterior_key in wm_disk:
+        disk_w = wm_disk[posterior_key]
+        want_in = wm_cfg.h_dim + wm_cfg.embed_dim + wm_cfg.energy_embed_dim
+        if disk_w.shape[-1] != want_in:
+            expanded = torch.zeros(
+                disk_w.shape[0], want_in, dtype=disk_w.dtype, device=disk_w.device
+            )
+            expanded[:, : disk_w.shape[-1]] = disk_w
+            wm_disk[posterior_key] = expanded
+    missing, unexpected = world_model.load_state_dict(wm_disk, strict=False)
+    assert not unexpected, f"unexpected world_model keys: {unexpected}"
+    assert all(
+        m.startswith(("energy_encoder.", "energy_decoder.")) for m in missing
+    ), f"unexpected missing world_model keys (not the energy branch): {missing}"
     actor.load_state_dict(sub("actor."))
     ensemble.load_state_dict(sub("ensemble."))
     world_model.eval()

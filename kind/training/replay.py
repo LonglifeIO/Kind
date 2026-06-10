@@ -77,6 +77,11 @@ class Transition:
     env_step: int
     episode_id: int
     step_in_episode: int
+    # Probe 3.5: the sensed energy scalar at the *from* observation (in
+    # [0, 1]). Stored so the world model can train its energy reconstruction
+    # on replayed sequences. Defaults to 0.0 so pre-3.5 construction sites
+    # (and dream-mechanics tests that don't exercise energy) keep working.
+    sensed_energy: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -92,6 +97,8 @@ class Batch:
     obs: Tensor
     action: Tensor
     next_obs: Tensor
+    # Probe 3.5: per-step sensed energy, shape ``(B, L)`` float32.
+    sensed_energy: Tensor
 
 
 class SequenceReplayBuffer:
@@ -238,6 +245,7 @@ class SequenceReplayBuffer:
         obs_seqs: list[Tensor] = []
         next_obs_seqs: list[Tensor] = []
         action_seqs: list[Tensor] = []
+        sensed_energy_seqs: list[Tensor] = []
         for s in chosen:
             window = snapshot[s : s + L]
             obs_seqs.append(torch.stack([t.obs for t in window], dim=0))
@@ -245,11 +253,17 @@ class SequenceReplayBuffer:
             action_seqs.append(
                 torch.tensor([t.action for t in window], dtype=torch.long)
             )
+            sensed_energy_seqs.append(
+                torch.tensor(
+                    [t.sensed_energy for t in window], dtype=torch.float32
+                )
+            )
 
         batch = Batch(
             obs=torch.stack(obs_seqs, dim=0),
             action=torch.stack(action_seqs, dim=0),
             next_obs=torch.stack(next_obs_seqs, dim=0),
+            sensed_energy=torch.stack(sensed_energy_seqs, dim=0),
         )
 
         starts_env = [snapshot[s].env_step for s in chosen]

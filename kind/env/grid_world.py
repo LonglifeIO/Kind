@@ -23,6 +23,7 @@ reflect the journal's documented defaults.
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Final
@@ -113,6 +114,48 @@ class GridWorldConfig:
     start_cell: tuple[int, int] | None = None
     walls: tuple[tuple[int, int], ...] = ()
 
+    # Probe 3.5 energy economy (implementation plan §S-ENV; pre-registration
+    # 2026-06-10 §"Energy units"). Energy is **Io's own homeostatic variable**,
+    # distinct from the world: it depletes per step (a base decay plus an
+    # action-magnitude cost — movement costs more than ``stay``) and replenishes
+    # on resource *entry* (reusing the existing entry-triggered consumption). It
+    # floors at ``energy_norm_min`` and caps at ``energy_norm_max`` and **never
+    # terminates the episode** — there is no death, no absorbing state. Energy
+    # *carries across* the soft 200-step episode boundary (it is Io's internal
+    # state, not the world's; resampling it would make the boundary a stealth
+    # survival refill). Only ``reset()`` re-initialises it.
+    #
+    # Raw energy lives in ``[energy_norm_min, energy_norm_max]``; ``true_energy``
+    # and ``sensed_energy`` are the **normalized** value in ``[0, 1]`` via these
+    # fixed config constants (not data-dependent rescaling). The setpoint 0.6 of
+    # the frozen pre-registration is in this normalized 0–1 space; ``energy_init``
+    # defaults to ``0.6 * energy_norm_max`` so the run starts at setpoint.
+    #
+    # ``sensed_energy`` is the **coarse, noisy, lagged** scalar Io observes (T2:
+    # "like hunger, not introspection" — noise forces inference, protecting
+    # opacity): the normalized true value ``energy_obs_lag`` steps ago, plus
+    # additive Gaussian noise (σ = ``energy_obs_noise_sigma``), clipped to [0, 1]
+    # and lightly quantized to ``energy_obs_quantization_levels`` levels. A third
+    # RNG stream (spawned from the env ``SeedSequence``) drives the sensing noise
+    # so determinism is preserved. ``true_energy`` (the un-noised normalized
+    # value) goes only to ``GridState`` — mirror/telemetry ground truth — and
+    # **never enters any training loss** (plan S-ENV rule; the WM reconstruction
+    # trains on ``sensed_energy``).
+    #
+    # Defaults are build-time fixed structural choices (journaled, not swept);
+    # only σ / lag are swept (Phase 4). The decay/replenish balance is chosen so
+    # energy *varies* over an episode (a dead, floored channel would be
+    # unlearnable) while staying non-terminal.
+    energy_norm_min: float = 0.0
+    energy_norm_max: float = 10.0
+    energy_init: float = 6.0
+    energy_base_decay: float = 0.08
+    energy_move_cost: float = 0.04
+    energy_replenish_per_resource: float = 0.8
+    energy_obs_noise_sigma: float = 0.05
+    energy_obs_lag: int = 1
+    energy_obs_quantization_levels: int = 16
+
 
 @dataclass(frozen=True)
 class EnvStep:
@@ -129,6 +172,9 @@ class EnvStep:
     episode_id: int
     step_in_episode: int
     wallclock_ms: int
+    # Probe 3.5: the coarse, noisy, lagged, normalized energy scalar Io
+    # observes (in [0, 1]). This is the *sensed* value — never the true one.
+    sensed_energy: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -144,6 +190,10 @@ class GridState:
     grid: NDArray[np.uint8]
     agent_pos: tuple[int, int]
     regrowth_p: float
+    # Probe 3.5: the normalized true energy in [0, 1] — mirror/telemetry
+    # ground truth only. Io never sees this; it never enters any training
+    # loss (eval probes use it, but as targets, never as training inputs).
+    true_energy: float = 0.0
 
 
 # ---- the environment ------------------------------------------------------
@@ -170,13 +220,19 @@ class GridWorld:
         self.config = config
         self._validate_config()
 
-        # Two independent streams from a single integer seed.
+        # Three independent streams from a single integer seed. The third
+        # (sensing) stream is the Probe 3.5 addition — spawned from the same
+        # ``SeedSequence`` so two ``GridWorld`` instances with the same seed and
+        # action sequence produce identical ``sensed_energy`` trajectories.
         seed_sequence = np.random.SeedSequence(seed)
-        regrowth_seq, drift_seq = seed_sequence.spawn(2)
+        regrowth_seq, drift_seq, sensing_seq = seed_sequence.spawn(3)
         self._regrowth_rng: np.random.Generator = np.random.default_rng(
             regrowth_seq
         )
         self._drift_rng: np.random.Generator = np.random.default_rng(drift_seq)
+        self._sensing_rng: np.random.Generator = np.random.default_rng(
+            sensing_seq
+        )
 
         # Mutable state (initialized by reset()).
         self._grid: NDArray[np.uint8] = np.zeros(
@@ -188,6 +244,12 @@ class GridWorld:
         self._episode_id: int = 0
         self._step_in_episode: int = 0
         self._initialized: bool = False
+
+        # Probe 3.5 energy state (raw, in [energy_norm_min, energy_norm_max]).
+        # ``_norm_history`` buffers recent *normalized* true-energy values so the
+        # sensed scalar can read the value ``energy_obs_lag`` steps in the past.
+        self._energy: float = config.energy_init
+        self._norm_history: deque[float] = deque(maxlen=config.energy_obs_lag + 1)
 
     # ---- public API -------------------------------------------------------
 
@@ -202,6 +264,12 @@ class GridWorld:
         self._env_step = 0
         self._episode_id = 0
         self._step_in_episode = 0
+        # Energy is re-initialised here — this is the *only* path that resets
+        # it. The soft 200-step episode boundary (in ``step``) carries it.
+        # The sensing history is cleared; ``_compute_sensed_energy`` (called by
+        # ``_make_env_step`` below) seeds it with the first normalized value.
+        self._energy = self.config.energy_init
+        self._norm_history.clear()
         self._reset_episode_world()
         self._initialized = True
         return self._make_env_step()
@@ -223,7 +291,8 @@ class GridWorld:
                 f"action must be in [0, {NUM_ACTIONS}); got {action}"
             )
 
-        self._apply_action(action)
+        consumed_resource = self._apply_action(action)
+        self._update_energy(action, consumed_resource)
         self._update_drift()
         self._update_regrowth()
 
@@ -250,6 +319,7 @@ class GridWorld:
             grid=grid_copy,
             agent_pos=self._agent_pos,
             regrowth_p=self._regrowth_p,
+            true_energy=self._normalize_energy(self._energy),
         )
 
     # ---- validation -------------------------------------------------------
@@ -290,6 +360,45 @@ class GridWorld:
             raise ValueError(
                 f"n_initial_resources must be non-negative, got "
                 f"{c.n_initial_resources}"
+            )
+
+        # Probe 3.5 energy economy validation.
+        if not c.energy_norm_min < c.energy_norm_max:
+            raise ValueError(
+                "must satisfy energy_norm_min < energy_norm_max; got "
+                f"({c.energy_norm_min}, {c.energy_norm_max})"
+            )
+        if not c.energy_norm_min <= c.energy_init <= c.energy_norm_max:
+            raise ValueError(
+                f"energy_init={c.energy_init} must be in "
+                f"[{c.energy_norm_min}, {c.energy_norm_max}]"
+            )
+        if c.energy_base_decay < 0.0:
+            raise ValueError(
+                f"energy_base_decay must be non-negative, got {c.energy_base_decay}"
+            )
+        if c.energy_move_cost < 0.0:
+            raise ValueError(
+                f"energy_move_cost must be non-negative, got {c.energy_move_cost}"
+            )
+        if c.energy_replenish_per_resource < 0.0:
+            raise ValueError(
+                "energy_replenish_per_resource must be non-negative, got "
+                f"{c.energy_replenish_per_resource}"
+            )
+        if c.energy_obs_noise_sigma < 0.0:
+            raise ValueError(
+                "energy_obs_noise_sigma must be non-negative, got "
+                f"{c.energy_obs_noise_sigma}"
+            )
+        if c.energy_obs_lag < 0:
+            raise ValueError(
+                f"energy_obs_lag must be non-negative, got {c.energy_obs_lag}"
+            )
+        if c.energy_obs_quantization_levels < 1:
+            raise ValueError(
+                "energy_obs_quantization_levels must be >= 1, got "
+                f"{c.energy_obs_quantization_levels}"
             )
 
         wall_set: set[tuple[int, int]] = set()
@@ -381,7 +490,14 @@ class GridWorld:
     def _is_wall(self, r: int, c: int) -> bool:
         return bool(self._grid[r, c] == CellType.WALL.value)
 
-    def _apply_action(self, action: int) -> None:
+    def _apply_action(self, action: int) -> bool:
+        """Apply the action; return whether a resource was *entered* this step.
+
+        The return value drives Probe 3.5 energy replenishment — replenishment
+        is triggered by *entering* a resource cell (the same event that flips
+        RESOURCE→EMPTY), so a ``stay`` over a resource (or a resource that
+        regrew under a stationary agent) does not replenish.
+        """
         dr, dc = _ACTION_DELTAS[action]
         # Stay action is a true no-op for position. Resource consumption is
         # *triggered by entering* (synthesis §Q2), so a stay over a resource
@@ -389,7 +505,7 @@ class GridWorld:
         # not consume. Returning early here also ensures no consumption
         # logic runs against the agent's own cell.
         if dr == 0 and dc == 0:
-            return
+            return False
 
         r, c = self._agent_pos
         new_r, new_c = r + dr, c + dc
@@ -399,13 +515,87 @@ class GridWorld:
         # caller's ordering.
         gs = self.config.grid_size
         if not (0 <= new_r < gs and 0 <= new_c < gs):
-            return
+            return False
         if self._is_wall(new_r, new_c):
-            return
+            return False
 
         self._agent_pos = (new_r, new_c)
         if self._grid[new_r, new_c] == CellType.RESOURCE.value:
             self._grid[new_r, new_c] = CellType.EMPTY.value
+            return True
+        return False
+
+    def _update_energy(self, action: int, consumed_resource: bool) -> None:
+        """Advance Io's homeostatic energy for one step (Probe 3.5).
+
+        Depletion = per-step base decay + an action-magnitude cost (movement,
+        actions 0–3, costs more than ``stay``, action 4). Replenishment is
+        added on resource *entry* (``consumed_resource``). The result is
+        clamped to ``[energy_norm_min, energy_norm_max]`` — it floors at the
+        minimum and **never terminates the episode**. There is no death and no
+        absorbing state; depletion just bottoms out and the env keeps running.
+        """
+        delta = -self.config.energy_base_decay
+        is_move = _ACTION_DELTAS[action] != (0, 0)
+        if is_move:
+            delta -= self.config.energy_move_cost
+        if consumed_resource:
+            delta += self.config.energy_replenish_per_resource
+        self._energy = float(
+            np.clip(
+                self._energy + delta,
+                self.config.energy_norm_min,
+                self.config.energy_norm_max,
+            )
+        )
+
+    def _normalize_energy(self, raw: float) -> float:
+        """Map raw energy → normalized [0, 1] via the fixed config constants.
+
+        Not data-dependent rescaling — ``energy_norm_min`` / ``energy_norm_max``
+        are fixed structural choices, so ``true_energy`` and ``sensed_energy``
+        share one stable scale across runs and across the sweep.
+        """
+        span = self.config.energy_norm_max - self.config.energy_norm_min
+        if span <= 0.0:
+            return 0.0
+        return float(
+            np.clip((raw - self.config.energy_norm_min) / span, 0.0, 1.0)
+        )
+
+    def _quantize_unit(self, value: float) -> float:
+        """Light quantization of a [0, 1] value to a fixed number of levels.
+
+        Coarse interoception (T2): the sensed scalar is not a high-resolution
+        readout. ``energy_obs_quantization_levels <= 1`` disables quantization.
+        """
+        levels = self.config.energy_obs_quantization_levels
+        if levels <= 1:
+            return value
+        step = round(value * (levels - 1))
+        return float(step) / float(levels - 1)
+
+    def _compute_sensed_energy(self) -> float:
+        """Produce the coarse, noisy, lagged sensed scalar for emission.
+
+        Appends the current normalized true energy to the lag buffer, reads the
+        value ``energy_obs_lag`` steps in the past (the oldest in the
+        ``maxlen = lag + 1`` deque; during the lag-length warm-up it is the
+        earliest available), adds one Gaussian noise draw from the dedicated
+        sensing RNG, clips to [0, 1], and quantizes. Called exactly once per
+        emitted ``EnvStep`` (one noise draw per env step → determinism).
+        """
+        norm = self._normalize_energy(self._energy)
+        self._norm_history.append(norm)
+        lagged = self._norm_history[0]
+        sigma = self.config.energy_obs_noise_sigma
+        noise = (
+            float(self._sensing_rng.normal(loc=0.0, scale=sigma))
+            if sigma > 0.0
+            else 0.0
+        )
+        noisy = float(np.clip(lagged + noise, 0.0, 1.0))
+        return self._quantize_unit(noisy)
 
     def _update_drift(self) -> None:
         """Bounded random walk on the regrowth rate parameter ``p``.
@@ -508,6 +698,7 @@ class GridWorld:
             episode_id=self._episode_id,
             step_in_episode=self._step_in_episode,
             wallclock_ms=int(time.time() * 1000),
+            sensed_energy=self._compute_sensed_energy(),
         )
 
 

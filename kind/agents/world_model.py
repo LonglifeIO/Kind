@@ -76,6 +76,35 @@ class WorldModelConfig:
     ema_decay: float = 0.99
     self_prediction_target_mode: Literal["online", "frozen", "environmental"] = "online"
     self_prediction_loss_form: Literal["cosine", "mse"] = "cosine"
+    # Probe 3.5 energy channel (implementation plan §S-WM; grounding fact 1).
+    # Because the observation is a 32×32 image, energy cannot be "a scalar
+    # appended to the observation vector"; it is realized as a dedicated
+    # low-dimensional **fused proprioceptive branch** (Becker et al. 2022
+    # fusion-RSSM, cited under Q6): a small encoder lifts the sensed scalar
+    # into ``energy_embed_dim`` and the result is concatenated with the conv
+    # embedding before the posterior head (so energy enters ``h, z`` — DP4
+    # observation-channel-only — and the actor reads it only implicitly).
+    # A small decoder reads ``(h, z)`` back to a scalar prediction with its
+    # own reconstruction loss, **up-weighted** by ``energy_recon_weight`` so a
+    # 1-D channel is not "mathematically dwarfed" beside the 1024-pixel image
+    # term (T6). These are build-time fixed structural choices (resolved
+    # decision #7), journaled; only precision/σ/lag are swept (Phase 4).
+    energy_embed_dim: int = 16
+    energy_encoder_hidden: int = 64
+    energy_decoder_hidden: int = 64
+    energy_recon_weight: float = 10.0
+    # DP9 escalation (synthesis DP9; pre-registration §6). 0 = the plan's default
+    # decoder (reads ``h_dim + z_dim``). When > 0, the escalation is taken: the
+    # energy decoder reads **only the last ``energy_dedicated_dims`` dimensions of
+    # the stochastic latent ``z``** (a *weaker* decoder forced to rely on the
+    # latent), and those dims carry a raised free-bits floor
+    # (``energy_dedicated_free_bits``) so they are not penalized into collapse.
+    # This forces the energy observation *through* the stochastic channel instead
+    # of riding the deterministic ``h`` — the fix for the per-dim-KL collapse the
+    # pre-registered DP9 trigger names. Phase 1 escalates to this only on the
+    # trigger (battery D failing), journaled.
+    energy_dedicated_dims: int = 0
+    energy_dedicated_free_bits: float = 1.5
     # Probe 2 v2 lesion plumbing (plan §2.5; synthesis §2.4 element 4).
     # Only ``"disable_self_prediction"`` affects WorldModel behavior; the
     # other Probe 2 lesion kinds operate at views.split (zero_or_randomize_
@@ -120,6 +149,12 @@ class WorldModelStep:
     recon: Tensor
     embed: Tensor
     self_prediction: Tensor
+    # Probe 3.5: the energy decoder's scalar prediction from ``(h, z)``, shape
+    # ``(B, 1)``. A passive emission like ``self_prediction`` — the recon loss
+    # against ``sensed_energy`` lives in ``WorldModel.loss``. ``embed`` above
+    # remains the *image* (conv) embedding; the fused energy embedding is a
+    # transient internal to ``step`` and is not surfaced here.
+    energy_pred: Tensor
 
 
 class _ConvEncoder(nn.Module):
@@ -219,6 +254,46 @@ class SelfPredictionHead(nn.Module):
         return cast(Tensor, self.head(x))
 
 
+class _EnergyEncoder(nn.Module):
+    """Probe 3.5 proprioceptive encoder — scalar ``sensed_energy`` → embedding.
+
+    A small ELU MLP ``1 → hidden → energy_embed_dim``. Its output is fused
+    (concatenated) with the conv embedding before the posterior head so the
+    sensed energy enters the inferred latent ``z`` (and, through recurrence,
+    ``h``). Kept deliberately small and separate from the image encoder so the
+    EMA-tracked image encoder / GRU / self-prediction head are untouched.
+    """
+
+    def __init__(self, embed_dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(1, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, embed_dim)
+
+    def forward(self, sensed_energy: Tensor) -> Tensor:
+        x = F.elu(self.fc1(sensed_energy))
+        return F.elu(self.fc2(x))
+
+
+class _EnergyDecoder(nn.Module):
+    """Probe 3.5 proprioceptive decoder — ``(h, z)`` → scalar energy prediction.
+
+    A small ELU MLP ``(h_dim + z_dim) → hidden → 1``. The final layer has no
+    activation — the raw scalar is the prediction, paired against
+    ``sensed_energy`` by an MSE reconstruction term (never ``true_energy``;
+    plan S-ENV rule). ``WorldModel.decode_energy`` is the public entry the
+    actor's Phase-2 pragmatic term and the Phase-1 interventional eval read.
+    """
+
+    def __init__(self, latent_dim: int, hidden_dim: int) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(latent_dim, hidden_dim)
+        self.head = nn.Linear(hidden_dim, 1)
+
+    def forward(self, latent: Tensor) -> Tensor:
+        x = F.elu(self.fc1(latent))
+        return cast(Tensor, self.head(x))
+
+
 class WorldModel(nn.Module):
     """The minimal RSSM, extended with the Probe 1.5 self-prediction head
     and EMA-tracked target sibling.
@@ -267,10 +342,34 @@ class WorldModel(nn.Module):
             hidden_dim=config.mlp_hidden,
             output_dim=config.z_dim,
         )
+        # Probe 3.5: the posterior conditions on ``h``, the conv embedding,
+        # *and* the fused energy embedding (grounding fact 1 — energy enters
+        # ``h, z`` as a fused proprioceptive branch). The image encoder, GRU,
+        # prior, decoder, and self-prediction head are otherwise unchanged.
         self.posterior_head = _GaussianHead(
-            input_dim=config.h_dim + config.embed_dim,
+            input_dim=config.h_dim + config.embed_dim + config.energy_embed_dim,
             hidden_dim=config.mlp_hidden,
             output_dim=config.z_dim,
+        )
+        self.energy_encoder = _EnergyEncoder(
+            embed_dim=config.energy_embed_dim,
+            hidden_dim=config.energy_encoder_hidden,
+        )
+        if not 0 <= config.energy_dedicated_dims <= config.z_dim:
+            raise ValueError(
+                f"energy_dedicated_dims must be in [0, z_dim={config.z_dim}], "
+                f"got {config.energy_dedicated_dims}"
+            )
+        # DP9: a weaker decoder reading only the dedicated z-dims (when
+        # escalated) vs the plan's h+z decoder (default).
+        energy_decoder_latent_dim = (
+            config.energy_dedicated_dims
+            if config.energy_dedicated_dims > 0
+            else config.h_dim + config.z_dim
+        )
+        self.energy_decoder = _EnergyDecoder(
+            latent_dim=energy_decoder_latent_dim,
+            hidden_dim=config.energy_decoder_hidden,
         )
 
         # Probe 1.5: self-prediction head + EMA-tracked target siblings.
@@ -338,10 +437,38 @@ class WorldModel(nn.Module):
     def prior(self, h: Tensor) -> tuple[Tensor, Tensor]:
         return cast("tuple[Tensor, Tensor]", self.prior_head(h))
 
-    def posterior(self, h: Tensor, embed: Tensor) -> tuple[Tensor, Tensor]:
+    def encode_energy(self, sensed_energy: Tensor) -> Tensor:
+        """Lift the sensed energy scalar into the fused energy embedding.
+
+        Accepts shape ``(B,)`` or ``(B, 1)``; returns ``(B, energy_embed_dim)``.
+        Probe 3.5 (grounding fact 1).
+        """
+        if sensed_energy.dim() == 1:
+            sensed_energy = sensed_energy.unsqueeze(-1)
+        return cast(Tensor, self.energy_encoder(sensed_energy))
+
+    def posterior(
+        self, h: Tensor, embed: Tensor, energy_embed: Tensor | None = None
+    ) -> tuple[Tensor, Tensor]:
+        """Posterior over ``z`` from ``h``, the conv embedding, and the fused
+        energy embedding (Probe 3.5).
+
+        ``energy_embed`` is the output of :meth:`encode_energy`. When ``None``
+        (e.g. the dream-seeding path, which is preference-free and does not
+        carry a sensed-energy reading), a zero energy embedding is used — the
+        posterior input width is fixed, so the channel contributes nothing
+        rather than changing shape.
+        """
+        if energy_embed is None:
+            energy_embed = torch.zeros(
+                h.shape[0],
+                self.config.energy_embed_dim,
+                device=h.device,
+                dtype=h.dtype,
+            )
         return cast(
             "tuple[Tensor, Tensor]",
-            self.posterior_head(torch.cat([h, embed], dim=-1)),
+            self.posterior_head(torch.cat([h, embed, energy_embed], dim=-1)),
         )
 
     def recurrence(self, h: Tensor, z: Tensor, a: Tensor) -> Tensor:
@@ -351,6 +478,24 @@ class WorldModel(nn.Module):
 
     def decode(self, h: Tensor, z: Tensor) -> Tensor:
         return cast(Tensor, self.decoder(torch.cat([h, z], dim=-1)))
+
+    def decode_energy(self, h: Tensor, z: Tensor) -> Tensor:
+        """Decode the energy prediction from ``(h, z)`` — shape ``(B, 1)``.
+
+        Probe 3.5: the actor's Phase-2 pragmatic term reads this along imagined
+        rollouts (differentiable through the decoder); the Phase-1 interventional
+        eval reads it under forced resource-coincidence. A passive read here —
+        no side effects, no gradient discipline of its own.
+
+        DP9: under the escalation (``energy_dedicated_dims > 0``) the decoder
+        reads only the last ``energy_dedicated_dims`` dimensions of ``z`` — a
+        weaker decoder forced to rely on the stochastic latent. Otherwise it
+        reads the plan's ``concat([h, z])``.
+        """
+        k = self.config.energy_dedicated_dims
+        if k > 0:
+            return cast(Tensor, self.energy_decoder(z[..., -k:]))
+        return cast(Tensor, self.energy_decoder(torch.cat([h, z], dim=-1)))
 
     # ---- Probe 1.5 EMA target machinery -----------------------------------
 
@@ -484,6 +629,7 @@ class WorldModel(nn.Module):
         a_prev: Tensor,
         *,
         next_obs: Tensor | None = None,
+        sensed_energy: Tensor | None = None,
     ) -> WorldModelStep:
         """One forward step.
 
@@ -512,7 +658,15 @@ class WorldModel(nn.Module):
         h = self.recurrence(h_prev, z_prev, a_prev)
         p_params = self.prior(h)
         embed = self.encode(obs)
-        q_params = self.posterior(h, embed)
+        # Probe 3.5: fuse the sensed energy into the posterior (grounding fact
+        # 1). When ``sensed_energy`` is None (non-energy call paths / shape
+        # tests) a zero energy embedding is used — the channel contributes
+        # nothing rather than being absent. The real runner path always passes
+        # the value from the env's ``sensed_energy``.
+        energy_embed = (
+            self.encode_energy(sensed_energy) if sensed_energy is not None else None
+        )
+        q_params = self.posterior(h, embed, energy_embed)
 
         mu_q, log_sigma_q = q_params
         sigma_q = torch.exp(log_sigma_q)
@@ -520,6 +674,9 @@ class WorldModel(nn.Module):
         z = q_dist.rsample()
 
         recon = self.decode(h, z)
+        # Probe 3.5: passive energy prediction from the inferred latent. The
+        # reconstruction loss against ``sensed_energy`` lives in ``loss``.
+        energy_pred = self.decode_energy(h, z)
 
         mu_p, log_sigma_p = p_params
         sigma_p = torch.exp(log_sigma_p)
@@ -551,6 +708,7 @@ class WorldModel(nn.Module):
             recon=recon,
             embed=embed,
             self_prediction=self_prediction,
+            energy_pred=energy_pred,
         )
 
     def loss(
@@ -559,6 +717,7 @@ class WorldModel(nn.Module):
         obs_target: Tensor,
         *,
         target_h_next: Tensor | None = None,
+        sensed_energy_target: Tensor | None = None,
     ) -> dict[str, Tensor]:
         """ELBO with per-dimension free-bits floor on the KL term, plus the
         Probe 1.5 self-prediction auxiliary.
@@ -595,10 +754,44 @@ class WorldModel(nn.Module):
 
         kl_aggregate_unclipped = step.kl_per_dim.sum(dim=-1).mean()
 
-        kl_clipped = torch.clamp(step.kl_per_dim, min=self._free_bits_per_dim)
+        # Free-bits floor. DP9: when energy dims are dedicated, they carry a
+        # raised floor (``energy_dedicated_free_bits``) so the channel can use
+        # that KL budget freely (no penalty) without collapse pressure — the
+        # weaker z-only decoder is what forces the energy info into them.
+        k = self.config.energy_dedicated_dims
+        if k > 0 and self.config.energy_dedicated_free_bits != self._free_bits_per_dim:
+            floor = torch.full(
+                (step.kl_per_dim.shape[-1],),
+                self._free_bits_per_dim,
+                device=step.kl_per_dim.device,
+                dtype=step.kl_per_dim.dtype,
+            )
+            floor[-k:] = self.config.energy_dedicated_free_bits
+            kl_clipped = torch.maximum(step.kl_per_dim, floor)
+        else:
+            kl_clipped = torch.clamp(step.kl_per_dim, min=self._free_bits_per_dim)
         kl_loss = kl_clipped.sum(dim=-1).mean()
 
         total = recon_loss + kl_loss
+
+        # Probe 3.5 energy reconstruction. MSE of ``energy_pred`` against
+        # ``sensed_energy`` — **never** ``true_energy`` (plan S-ENV rule: true
+        # energy enters no training loss; it exists only in GridState telemetry
+        # and the observer-side eval probes). Up-weighted by
+        # ``energy_recon_weight`` so the 1-D channel's gradient is comparable to
+        # the 1024-pixel image term (T6) and folded into ``total`` (it is a
+        # reconstruction term, belongs in the ELBO). The *raw* (unweighted) MSE
+        # is returned separately for telemetry / the energy-recon-error stream.
+        if sensed_energy_target is None:
+            energy_recon_loss = torch.zeros(
+                (), device=step.energy_pred.device, dtype=step.energy_pred.dtype
+            )
+        else:
+            energy_target = sensed_energy_target
+            if energy_target.dim() == 1:
+                energy_target = energy_target.unsqueeze(-1)
+            energy_recon_loss = F.mse_loss(step.energy_pred, energy_target)
+            total = total + self.config.energy_recon_weight * energy_recon_loss
 
         if target_h_next is None:
             self_prediction_loss = torch.zeros(
@@ -634,6 +827,7 @@ class WorldModel(nn.Module):
             "kl": kl_loss,
             "kl_aggregate_unclipped": kl_aggregate_unclipped,
             "self_prediction_loss": self_prediction_loss,
+            "energy_recon_loss": energy_recon_loss,
         }
 
 

@@ -143,6 +143,13 @@ from pydantic import BaseModel, ConfigDict, model_validator
 SCHEMA_VERSION: str = "0.2.0"
 PROBE_1_SCHEMA_VERSION: str = "0.1.0"
 PROBE_3_TELEMETRY_SCHEMA_VERSION: str = "0.3.0"
+# Probe 3.5 record-level AgentStep version (the energy-channel generation).
+# Distinct from DreamRollout/WorldEvent's "0.3.0" — AgentStep was never bumped
+# to 0.3.0 (Probe 3 left it untouched), so 0.4.0 is the natural next AgentStep
+# record version. The matching export-file is ``schemas/v0.5.0.json``
+# (:data:`PROBE_3_5_EXPORT_VERSION`), preserving the existing +1 offset between
+# record-level and export-file versions (Probe 3: record 0.3.0 / export 0.4.0).
+PROBE_3_5_TELEMETRY_SCHEMA_VERSION: str = "0.4.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -202,6 +209,19 @@ class AgentStep(RecordEnvelope):
     self_prediction_error_t: float | None = None
     self_prediction_error_masked_t: bool | None = None
 
+    # Probe 3.5 energy channel (implementation plan §S-TEL). Optional so older
+    # shards ("0.1.0" / "0.2.0") deserialize cleanly (absent → None); required
+    # non-None on Probe-3.5 records (the ``_enforce_probe_3_5_required_fields``
+    # validator gates on the new record version). ``sensed_energy_t`` is what Io
+    # observes (noisy/lagged); ``true_energy_t`` is the GridState ground truth
+    # (observer-side only — never a training input); ``energy_pred_t`` is the
+    # world model's decoded prediction; ``energy_recon_error_t`` is the per-step
+    # squared error ``(energy_pred − sensed_energy)²`` (computed observer-side).
+    sensed_energy_t: float | None = None
+    true_energy_t: float | None = None
+    energy_pred_t: float | None = None
+    energy_recon_error_t: float | None = None
+
     @model_validator(mode="after")
     def _enforce_v2_required_fields(self) -> "AgentStep":
         if self.schema_version == SCHEMA_VERSION:
@@ -226,6 +246,46 @@ class AgentStep(RecordEnvelope):
                     f"Probe 1 records use schema_version={PROBE_1_SCHEMA_VERSION!r} and "
                     f"leave the three fields None."
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_probe_3_5_required_fields(self) -> "AgentStep":
+        """Probe 3.5 writer-side discipline (implementation plan §S-TEL).
+
+        Records stamped :data:`PROBE_3_5_TELEMETRY_SCHEMA_VERSION` must carry
+        non-None values for *both* the Probe 1.5 self-prediction fields **and**
+        the four energy fields — the Probe 3.5 runner is the sole writer and
+        populates all of them on every emission. Records at older versions
+        ("0.1.0" / "0.2.0") bypass this check by their version literal, so
+        Probe 1 / 1.5 / 3 shards stay backward-readable (the new fields surface
+        as None).
+        """
+        if self.schema_version != PROBE_3_5_TELEMETRY_SCHEMA_VERSION:
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("self_prediction_t", self.self_prediction_t),
+                ("self_prediction_error_t", self.self_prediction_error_t),
+                (
+                    "self_prediction_error_masked_t",
+                    self.self_prediction_error_masked_t,
+                ),
+                ("sensed_energy_t", self.sensed_energy_t),
+                ("true_energy_t", self.true_energy_t),
+                ("energy_pred_t", self.energy_pred_t),
+                ("energy_recon_error_t", self.energy_recon_error_t),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                f"AgentStep with schema_version=="
+                f"{PROBE_3_5_TELEMETRY_SCHEMA_VERSION!r} requires non-None "
+                f"values for {missing}. Probe 3.5 writers populate the "
+                f"self-prediction and energy fields on every emission "
+                f"(implementation plan §S-TEL)."
+            )
         return self
 
 
@@ -401,6 +461,7 @@ def export_json_schema() -> bytes:
 
 PROBE_2_EXPORT_VERSION: str = "0.3.0"
 PROBE_3_EXPORT_VERSION: str = "0.4.0"
+PROBE_3_5_EXPORT_VERSION: str = "0.5.0"
 
 
 def export_json_schema_v0_3_0() -> bytes:
@@ -415,14 +476,35 @@ def export_json_schema_v0_3_0() -> bytes:
 
 
 def export_json_schema_v0_4_0() -> bytes:
-    """Return a byte-stable JSON Schema export covering Probe 3's schema surface."""
+    """Return the frozen Probe 3 multi-family export (``schemas/v0.4.0.json``).
+
+    Probe 3.5 widens the live telemetry models (AgentStep gains energy fields),
+    so — exactly as the v0.2.0 / v0.3.0 exports already do — the Probe 3 export
+    is now treated as a **frozen historical artifact**: reading the checked-in
+    bytes keeps it byte-stable rather than regenerating it from the now-wider
+    models. Probe 3.5's live export is :func:`export_json_schema_v0_5_0`.
+    """
+
+    return _read_frozen_schema("v0.4.0.json")
+
+
+def export_json_schema_v0_5_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 3.5's surface.
+
+    Builds on the frozen v0.4.0 export and refreshes the telemetry models (the
+    AgentStep energy fields + the Probe-3.5 record version). The mirror-side,
+    conditioning, and dream models are carried unchanged from v0.4.0. The
+    export-file version is :data:`PROBE_3_5_EXPORT_VERSION` (``"0.5.0"``); the
+    record-level telemetry version it advertises is
+    :data:`PROBE_3_5_TELEMETRY_SCHEMA_VERSION` (``"0.4.0"``).
+    """
 
     from kind.observer.dream_session import DreamSessionMeta
 
-    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.3.0.json"))
-    base_document["title"] = "Kind Probe 3 Schemas"
-    base_document["schema_version"] = PROBE_3_EXPORT_VERSION
-    base_document["telemetry_schema_version"] = PROBE_3_TELEMETRY_SCHEMA_VERSION
+    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.4.0.json"))
+    base_document["title"] = "Kind Probe 3.5 Schemas"
+    base_document["schema_version"] = PROBE_3_5_EXPORT_VERSION
+    base_document["telemetry_schema_version"] = PROBE_3_5_TELEMETRY_SCHEMA_VERSION
     base_document["dream_schema_version"] = "0.1.0"
     base_document["models"]["telemetry"] = {
         model.__name__: model.model_json_schema() for model in RECORD_MODELS
@@ -438,8 +520,10 @@ __all__ = [
     "SCHEMA_VERSION",
     "PROBE_1_SCHEMA_VERSION",
     "PROBE_3_TELEMETRY_SCHEMA_VERSION",
+    "PROBE_3_5_TELEMETRY_SCHEMA_VERSION",
     "PROBE_2_EXPORT_VERSION",
     "PROBE_3_EXPORT_VERSION",
+    "PROBE_3_5_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -450,4 +534,5 @@ __all__ = [
     "export_json_schema",
     "export_json_schema_v0_3_0",
     "export_json_schema_v0_4_0",
+    "export_json_schema_v0_5_0",
 ]

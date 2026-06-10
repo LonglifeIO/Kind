@@ -51,6 +51,7 @@ def make_world_model_step(
         recon=torch.randn(batch, 1, obs_size, obs_size),
         embed=torch.randn(batch, embed_dim),
         self_prediction=torch.randn(batch, h_dim),
+        energy_pred=torch.randn(batch, 1),
     )
 
 
@@ -106,7 +107,8 @@ def test_gate_split_produces_correct_views() -> None:
     assert torch.equal(policy.z, step.z)
     assert torch.equal(policy.self_prediction_error, sp_error)
 
-    # TelemetryView: exactly the ten fields the v2 synthesis names.
+    # TelemetryView: exactly the v2 fields plus the Probe 3.5 ``energy_pred``
+    # (the world model's decoded energy prediction — mirror-side only).
     telemetry_field_names = {f.name for f in dataclasses.fields(telemetry)}
     assert telemetry_field_names == {
         "h",
@@ -119,6 +121,7 @@ def test_gate_split_produces_correct_views() -> None:
         "intrinsic_signal",
         "self_prediction",
         "self_prediction_error_masked",
+        "energy_pred",
     }
 
     # Values: each TelemetryView field carries the corresponding input value.
@@ -136,6 +139,7 @@ def test_gate_split_produces_correct_views() -> None:
     assert torch.equal(telemetry.intrinsic_signal, intrinsic)
     assert torch.equal(telemetry.self_prediction, step.self_prediction)
     assert telemetry.self_prediction_error_masked is False
+    assert torch.equal(telemetry.energy_pred, step.energy_pred)
 
 
 # ---- return-order contract -----------------------------------------------
@@ -219,6 +223,11 @@ def test_policy_view_does_not_carry_any_telemetry_only_fields() -> None:
         "intrinsic_signal",
         "self_prediction",
         "self_prediction_error_masked",
+        # Probe 3.5: energy enters the actor only implicitly through h, z (DP4);
+        # none of the energy quantities may appear on PolicyView.
+        "energy_pred",
+        "sensed_energy",
+        "true_energy",
     }
     leaked = field_names & forbidden
     assert leaked == set(), (
@@ -251,6 +260,7 @@ def test_telemetry_view_carries_full_substrate_surface() -> None:
         "intrinsic_signal",
         "self_prediction",
         "self_prediction_error_masked",
+        "energy_pred",
     }
     assert field_names == expected
 
@@ -288,6 +298,7 @@ def test_split_does_not_copy_tensors() -> None:
     assert telemetry.embed is step.embed
     assert telemetry.intrinsic_signal is intrinsic
     assert telemetry.self_prediction is step.self_prediction
+    assert telemetry.energy_pred is step.energy_pred
 
 
 def test_split_preserves_gradient_chain() -> None:
@@ -308,6 +319,7 @@ def test_split_preserves_gradient_chain() -> None:
         recon=torch.randn(2, 1, 32, 32),
         embed=torch.randn(2, 16),
         self_prediction=sp,
+        energy_pred=torch.randn(2, 1),
     )
     sp_error = torch.tensor(0.5, requires_grad=True)
     policy, telemetry = split(

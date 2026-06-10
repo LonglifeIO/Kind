@@ -1,0 +1,1818 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "conditioning_schema_version": "0.1.0",
+  "dream_schema_version": "0.1.0",
+  "mirror_schema_version": "0.2.0",
+  "models": {
+    "conditioning": {
+      "ConditioningResult": {
+        "$defs": {
+          "RegimeBucket": {
+            "additionalProperties": false,
+            "description": "One bucket in :attr:`ConditioningResult.per_regime_per_perturbation`.\n\nCarries the regime label, the perturbation distribution label, and the\nsummary :class:`RegimeStats`. The implementation plan §2.6 names this\nstructure as a tuple-keyed dict; this list-of-buckets shape is the\nJSON-roundtrip-friendly alternative. Phase 6 adds ``find_bucket``\nhelpers on :class:`ConditioningResult` for tuple-keyed access.",
+            "properties": {
+              "perturbation": {
+                "enum": [
+                  "gaussian",
+                  "zero",
+                  "uniform"
+                ],
+                "title": "Perturbation",
+                "type": "string"
+              },
+              "regime": {
+                "enum": [
+                  "perturbation_window",
+                  "high_disagreement",
+                  "high_kl",
+                  "steady_state"
+                ],
+                "title": "Regime",
+                "type": "string"
+              },
+              "stats": {
+                "$ref": "#/$defs/RegimeStats"
+              }
+            },
+            "required": [
+              "regime",
+              "perturbation",
+              "stats"
+            ],
+            "title": "RegimeBucket",
+            "type": "object"
+          },
+          "RegimeStats": {
+            "additionalProperties": false,
+            "description": "Per-(regime, perturbation) summary statistics on the\naction-distribution KL between unperturbed and perturbed PolicyView.\n\nFields:\n\n- ``n_states``: number of states sampled into this bucket.\n- ``kl_mean``, ``kl_std``: mean and standard deviation of the per-state\n  action-distribution KL (between unperturbed and perturbed forward\n  passes through the actor at the sampled states).\n- ``kl_p50``, ``kl_p90``: 50th and 90th percentile of the same.",
+            "properties": {
+              "kl_mean": {
+                "title": "Kl Mean",
+                "type": "number"
+              },
+              "kl_p50": {
+                "title": "Kl P50",
+                "type": "number"
+              },
+              "kl_p90": {
+                "title": "Kl P90",
+                "type": "number"
+              },
+              "kl_std": {
+                "title": "Kl Std",
+                "type": "number"
+              },
+              "n_states": {
+                "title": "N States",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "n_states",
+              "kl_mean",
+              "kl_std",
+              "kl_p50",
+              "kl_p90"
+            ],
+            "title": "RegimeStats",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One conditioning-analysis run's structured output.\n\nProduced by :func:`compute_conditioning` and written to\n``runs/{run_id}/conditioning/conditioning.jsonl`` (one record per\ninvocation, append-only across multiple invocations on the same run;\neach record tagged by ``checkpoint_id`` and ``timestamp_ms``).\n\nThe faithfulness verifier resolves a behavior-side claim like\n``\"behavior-side conditioning at high_disagreement under gaussian\nperturbation has KL_p90 = 7.4e-8\"`` by finding the matching\n:class:`ConditioningResult` (by ``run_id`` and ``checkpoint_id``),\nfinding the matching :class:`RegimeBucket` for\n``(\"high_disagreement\", \"gaussian\")``, and comparing the cited\n``kl_p90`` against the actual ``kl_p90`` within tolerance.",
+        "properties": {
+          "checkpoint_id": {
+            "title": "Checkpoint Id",
+            "type": "string"
+          },
+          "empirical_scalar_mean": {
+            "title": "Empirical Scalar Mean",
+            "type": "number"
+          },
+          "empirical_scalar_range": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Empirical Scalar Range",
+            "type": "array"
+          },
+          "empirical_scalar_sigma": {
+            "title": "Empirical Scalar Sigma",
+            "type": "number"
+          },
+          "masked_steps_excluded": {
+            "title": "Masked Steps Excluded",
+            "type": "integer"
+          },
+          "n_states_sampled": {
+            "title": "N States Sampled",
+            "type": "integer"
+          },
+          "per_regime_per_perturbation": {
+            "items": {
+              "$ref": "#/$defs/RegimeBucket"
+            },
+            "title": "Per Regime Per Perturbation",
+            "type": "array"
+          },
+          "perturbation_distributions": {
+            "items": {
+              "enum": [
+                "gaussian",
+                "zero",
+                "uniform"
+              ],
+              "type": "string"
+            },
+            "title": "Perturbation Distributions",
+            "type": "array"
+          },
+          "regimes": {
+            "items": {
+              "enum": [
+                "perturbation_window",
+                "high_disagreement",
+                "high_kl",
+                "steady_state"
+              ],
+              "type": "string"
+            },
+            "title": "Regimes",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "0.1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "timestamp_ms": {
+            "title": "Timestamp Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "checkpoint_id",
+          "timestamp_ms",
+          "n_states_sampled",
+          "perturbation_distributions",
+          "regimes",
+          "empirical_scalar_mean",
+          "empirical_scalar_sigma",
+          "empirical_scalar_range",
+          "per_regime_per_perturbation",
+          "masked_steps_excluded"
+        ],
+        "title": "ConditioningResult",
+        "type": "object"
+      },
+      "RegimeBucket": {
+        "$defs": {
+          "RegimeStats": {
+            "additionalProperties": false,
+            "description": "Per-(regime, perturbation) summary statistics on the\naction-distribution KL between unperturbed and perturbed PolicyView.\n\nFields:\n\n- ``n_states``: number of states sampled into this bucket.\n- ``kl_mean``, ``kl_std``: mean and standard deviation of the per-state\n  action-distribution KL (between unperturbed and perturbed forward\n  passes through the actor at the sampled states).\n- ``kl_p50``, ``kl_p90``: 50th and 90th percentile of the same.",
+            "properties": {
+              "kl_mean": {
+                "title": "Kl Mean",
+                "type": "number"
+              },
+              "kl_p50": {
+                "title": "Kl P50",
+                "type": "number"
+              },
+              "kl_p90": {
+                "title": "Kl P90",
+                "type": "number"
+              },
+              "kl_std": {
+                "title": "Kl Std",
+                "type": "number"
+              },
+              "n_states": {
+                "title": "N States",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "n_states",
+              "kl_mean",
+              "kl_std",
+              "kl_p50",
+              "kl_p90"
+            ],
+            "title": "RegimeStats",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One bucket in :attr:`ConditioningResult.per_regime_per_perturbation`.\n\nCarries the regime label, the perturbation distribution label, and the\nsummary :class:`RegimeStats`. The implementation plan §2.6 names this\nstructure as a tuple-keyed dict; this list-of-buckets shape is the\nJSON-roundtrip-friendly alternative. Phase 6 adds ``find_bucket``\nhelpers on :class:`ConditioningResult` for tuple-keyed access.",
+        "properties": {
+          "perturbation": {
+            "enum": [
+              "gaussian",
+              "zero",
+              "uniform"
+            ],
+            "title": "Perturbation",
+            "type": "string"
+          },
+          "regime": {
+            "enum": [
+              "perturbation_window",
+              "high_disagreement",
+              "high_kl",
+              "steady_state"
+            ],
+            "title": "Regime",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/$defs/RegimeStats"
+          }
+        },
+        "required": [
+          "regime",
+          "perturbation",
+          "stats"
+        ],
+        "title": "RegimeBucket",
+        "type": "object"
+      },
+      "RegimeStats": {
+        "additionalProperties": false,
+        "description": "Per-(regime, perturbation) summary statistics on the\naction-distribution KL between unperturbed and perturbed PolicyView.\n\nFields:\n\n- ``n_states``: number of states sampled into this bucket.\n- ``kl_mean``, ``kl_std``: mean and standard deviation of the per-state\n  action-distribution KL (between unperturbed and perturbed forward\n  passes through the actor at the sampled states).\n- ``kl_p50``, ``kl_p90``: 50th and 90th percentile of the same.",
+        "properties": {
+          "kl_mean": {
+            "title": "Kl Mean",
+            "type": "number"
+          },
+          "kl_p50": {
+            "title": "Kl P50",
+            "type": "number"
+          },
+          "kl_p90": {
+            "title": "Kl P90",
+            "type": "number"
+          },
+          "kl_std": {
+            "title": "Kl Std",
+            "type": "number"
+          },
+          "n_states": {
+            "title": "N States",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "n_states",
+          "kl_mean",
+          "kl_std",
+          "kl_p50",
+          "kl_p90"
+        ],
+        "title": "RegimeStats",
+        "type": "object"
+      }
+    },
+    "dream": {
+      "DreamSessionMeta": {
+        "additionalProperties": false,
+        "description": "One record per dream-session lifecycle edge (start, then end).",
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "dream_session_id": {
+            "title": "Dream Session Id",
+            "type": "string"
+          },
+          "end_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Trigger"
+          },
+          "ended_at_env_step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At Env Step"
+          },
+          "ended_at_wallclock_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At Wallclock Ms"
+          },
+          "envelope_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Envelope Config Snapshot",
+            "type": "object"
+          },
+          "rollout_count": {
+            "title": "Rollout Count",
+            "type": "integer"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": "0.1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "seed_selection_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Seed Selection Config Snapshot",
+            "type": "object"
+          },
+          "started_at_env_step": {
+            "title": "Started At Env Step",
+            "type": "integer"
+          },
+          "started_at_wallclock_ms": {
+            "title": "Started At Wallclock Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "checkpoint_id",
+          "dream_session_id",
+          "started_at_env_step",
+          "started_at_wallclock_ms",
+          "ended_at_env_step",
+          "ended_at_wallclock_ms",
+          "end_trigger",
+          "rollout_count",
+          "envelope_config_snapshot",
+          "seed_selection_config_snapshot"
+        ],
+        "title": "DreamSessionMeta",
+        "type": "object"
+      }
+    },
+    "mirror": {
+      "JudgeRuling": {
+        "additionalProperties": false,
+        "description": "The Judge's per-claim per-surface verdict on a paired reading.\n\nThe ``rulings`` field is a list of ``(claim_index, reading_surface,\nruling, ground_text)`` tuples — one tuple per Advocate claim per\nsurface. The Judge sees both the Advocate's and the Skeptic's\nreadings plus the digest, and rules on each Advocate claim at its\ndeclared surface.\n\n``agreement_without_evidence_unresolved`` lists claim indices that\nboth readers agreed on but where neither's citation resolved under\nthe faithfulness check; the Judge's mandate is to flag these as\n``\"unresolved\"`` rather than treating cross-reader agreement as\nadditional evidence.",
+        "properties": {
+          "advocate_id": {
+            "title": "Advocate Id",
+            "type": "string"
+          },
+          "agreement_without_evidence_unresolved": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Agreement Without Evidence Unresolved",
+            "type": "array"
+          },
+          "digest_run_id": {
+            "title": "Digest Run Id",
+            "type": "string"
+          },
+          "paired_reading_id": {
+            "title": "Paired Reading Id",
+            "type": "string"
+          },
+          "rulings": {
+            "items": {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "enum": [
+                    "substrate_side",
+                    "head_internal",
+                    "behavior_side"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "supported",
+                    "absent",
+                    "unresolved"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Rulings",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "0.2.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "skeptic_id": {
+            "title": "Skeptic Id",
+            "type": "string"
+          },
+          "timestamp_ms": {
+            "title": "Timestamp Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "timestamp_ms",
+          "paired_reading_id",
+          "advocate_id",
+          "skeptic_id",
+          "digest_run_id",
+          "rulings",
+          "agreement_without_evidence_unresolved"
+        ],
+        "title": "JudgeRuling",
+        "type": "object"
+      },
+      "PreRegistration": {
+        "$defs": {
+          "ReadingSurface": {
+            "description": "Surfaces the mirror produces readings *at*.\n\nPer the Probe 2 v2 synthesis (`docs/decisions/Kind_probe2_synthesis.md`\n§2.2), the mirror's evidential weight is stratified across three\nsurfaces. Substrate-side is weakest (Probe 1.5 Phase 8's KS-D shows\nsubstrate-shaping is largely auxiliary-target-shape-independent);\nhead-internal is strongest for self-specificity; behavior-side is most\nconfabulation-susceptible (the actor's new column may be byte-identical\nto its initialization throughout training; the conditioning is\nfixed-by-init not developed-through-training).\n\nEnum values match the strings used by Phase 0's\n:data:`kind.mirror.structured.ReadingSurface` Literal\n(``\"substrate_side\"``, ``\"head_internal\"``, ``\"behavior_side\"``). As of\nPhase 7, :class:`~kind.observer.pre_reg.PreRegistration` keys its\n``expected_outcome_per_surface`` and ``reading_surfaces_per_criterion``\ndicts with *this* enum; the value-level alignment with the Phase 0\nLiteral means str-valued enum members serialize identically to their\nstring values, so the migration was a type tightening rather than a\nvalue or JSON-serialization change.",
+            "enum": [
+              "substrate_side",
+              "head_internal",
+              "behavior_side"
+            ],
+            "title": "ReadingSurface",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "One pre-registration record per adversarial pass.\n\nThe ``criteria_active`` and ``criteria_held_out`` lists name criterion\nids from the registry at :mod:`kind.mirror.criteria` (Phase 7 — this\nmodule does not import the registry to avoid a circular dependency at\nPhase 0; the registry's id strings are the contract).\n\nThe ``signal_mappings``, ``falsifiers``, ``scalar_checks``, and\n``reading_surfaces_per_criterion`` dicts are keyed by criterion id.\nA ``model_validator`` enforces that every active criterion has\nentries in each of these dicts; missing entries fail validation. This\nis the structural counter against an active criterion that has no\nfalsifier (the discipline element synthesis §2.4 element 1 names as\nload-bearing).\n\n``asymmetry_of_access`` is free-text describing what Io reads vs\nwhat the mirror reads at this round. The Probe 1.5 v2 case: Io\nreads the scalar ``self_prediction_error_t`` on PolicyView; the\nmirror reads the full prediction vector ``self_prediction_t``,\nper-dimension allocation, perturbation-recovery dynamics,\nbehavioral conditioning, the masked flag, all longitudinal\ncross-run analysis. The asymmetry is load-bearing: it determines\nwhat the readers can claim.\n\n``expected_outcome`` is free-text the builder's overall expectation;\n``expected_outcome_per_surface`` is the per-surface refinement\n(substrate-side / head-internal / behavior-side).\n\n``new_actor_readable_interfaces_added`` carries the Probe 1.5 v2\n§2(b) sub-clause: each entry is a free-text description of an\ninterface the round adds (typically empty at Probe 2). The four-part\njournal discipline lives in the prose journal entry; the schema\nfield is the structural carrier.",
+        "properties": {
+          "asymmetry_of_access": {
+            "title": "Asymmetry Of Access",
+            "type": "string"
+          },
+          "builder_mode": {
+            "enum": [
+              "proponent",
+              "skeptic"
+            ],
+            "title": "Builder Mode",
+            "type": "string"
+          },
+          "column_init": {
+            "enum": [
+              "zero",
+              "small_gaussian",
+              "unknown"
+            ],
+            "title": "Column Init",
+            "type": "string"
+          },
+          "criteria_active": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Criteria Active",
+            "type": "array"
+          },
+          "criteria_held_out": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Criteria Held Out",
+            "type": "array"
+          },
+          "expected_outcome": {
+            "title": "Expected Outcome",
+            "type": "string"
+          },
+          "expected_outcome_per_surface": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "$ref": "#/$defs/ReadingSurface"
+            },
+            "title": "Expected Outcome Per Surface",
+            "type": "object"
+          },
+          "falsifiers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Falsifiers",
+            "type": "object"
+          },
+          "new_actor_readable_interfaces_added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Actor Readable Interfaces Added",
+            "type": "array"
+          },
+          "reading_surfaces_per_criterion": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/$defs/ReadingSurface"
+              },
+              "type": "array"
+            },
+            "title": "Reading Surfaces Per Criterion",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scalar_checks": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Scalar Checks",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": "0.2.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "signal_mappings": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Signal Mappings",
+            "type": "object"
+          },
+          "substrate_decisions_off_table": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Substrate Decisions Off Table",
+            "type": "array"
+          },
+          "timestamp_ms": {
+            "title": "Timestamp Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "timestamp_ms",
+          "criteria_active",
+          "criteria_held_out",
+          "signal_mappings",
+          "falsifiers",
+          "scalar_checks",
+          "reading_surfaces_per_criterion",
+          "asymmetry_of_access",
+          "builder_mode",
+          "expected_outcome",
+          "expected_outcome_per_surface",
+          "substrate_decisions_off_table",
+          "column_init",
+          "new_actor_readable_interfaces_added"
+        ],
+        "title": "PreRegistration",
+        "type": "object"
+      },
+      "StructuredClaim": {
+        "additionalProperties": false,
+        "description": "A single claim within a :class:`StructuredReading`.\n\nEach claim must be grounded in\n``(stream, run_id, episode/step_range, scalar_field, value)`` per the\nsynthesis's structured-grounding mandate. The two new v2 fields\n(``reading_surface``, ``masked_steps_handling``) carry the\nper-surface stratification and the masked-steps discipline.\n\nThe ``cited_episode_range`` and ``cited_step_range`` are individually\noptional — a claim may scope to an episode range without naming\nspecific steps, or to a step range that crosses episodes. The\nfaithfulness verifier handles either case.",
+        "properties": {
+          "cited_episode_range": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cited Episode Range"
+          },
+          "cited_run_id": {
+            "title": "Cited Run Id",
+            "type": "string"
+          },
+          "cited_scalar_field": {
+            "title": "Cited Scalar Field",
+            "type": "string"
+          },
+          "cited_step_range": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cited Step Range"
+          },
+          "cited_stream": {
+            "enum": [
+              "agent_step",
+              "dream_rollout",
+              "replay_meta",
+              "world_event",
+              "conditioning_analysis"
+            ],
+            "title": "Cited Stream",
+            "type": "string"
+          },
+          "cited_value": {
+            "title": "Cited Value",
+            "type": "number"
+          },
+          "claim": {
+            "title": "Claim",
+            "type": "string"
+          },
+          "faithfulness_status": {
+            "default": "not_checked",
+            "enum": [
+              "resolved",
+              "off_by_tolerance",
+              "unresolved",
+              "not_checked"
+            ],
+            "title": "Faithfulness Status",
+            "type": "string"
+          },
+          "falsifier": {
+            "title": "Falsifier",
+            "type": "string"
+          },
+          "judge_ruling": {
+            "enum": [
+              "supported",
+              "absent",
+              "unresolved",
+              "not_judged"
+            ],
+            "title": "Judge Ruling",
+            "type": "string"
+          },
+          "masked_steps_handling": {
+            "enum": [
+              "included",
+              "excluded",
+              "n/a"
+            ],
+            "title": "Masked Steps Handling",
+            "type": "string"
+          },
+          "paraphrase_stability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paraphrase Stability"
+          },
+          "reading_surface": {
+            "enum": [
+              "substrate_side",
+              "head_internal",
+              "behavior_side"
+            ],
+            "title": "Reading Surface",
+            "type": "string"
+          },
+          "reseed_stability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reseed Stability"
+          }
+        },
+        "required": [
+          "claim",
+          "cited_stream",
+          "cited_run_id",
+          "cited_episode_range",
+          "cited_step_range",
+          "cited_scalar_field",
+          "cited_value",
+          "falsifier",
+          "paraphrase_stability",
+          "reseed_stability",
+          "judge_ruling",
+          "reading_surface",
+          "masked_steps_handling"
+        ],
+        "title": "StructuredClaim",
+        "type": "object"
+      },
+      "StructuredReading": {
+        "$defs": {
+          "StructuredClaim": {
+            "additionalProperties": false,
+            "description": "A single claim within a :class:`StructuredReading`.\n\nEach claim must be grounded in\n``(stream, run_id, episode/step_range, scalar_field, value)`` per the\nsynthesis's structured-grounding mandate. The two new v2 fields\n(``reading_surface``, ``masked_steps_handling``) carry the\nper-surface stratification and the masked-steps discipline.\n\nThe ``cited_episode_range`` and ``cited_step_range`` are individually\noptional — a claim may scope to an episode range without naming\nspecific steps, or to a step range that crosses episodes. The\nfaithfulness verifier handles either case.",
+            "properties": {
+              "cited_episode_range": {
+                "anyOf": [
+                  {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cited Episode Range"
+              },
+              "cited_run_id": {
+                "title": "Cited Run Id",
+                "type": "string"
+              },
+              "cited_scalar_field": {
+                "title": "Cited Scalar Field",
+                "type": "string"
+              },
+              "cited_step_range": {
+                "anyOf": [
+                  {
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "prefixItems": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ],
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Cited Step Range"
+              },
+              "cited_stream": {
+                "enum": [
+                  "agent_step",
+                  "dream_rollout",
+                  "replay_meta",
+                  "world_event",
+                  "conditioning_analysis"
+                ],
+                "title": "Cited Stream",
+                "type": "string"
+              },
+              "cited_value": {
+                "title": "Cited Value",
+                "type": "number"
+              },
+              "claim": {
+                "title": "Claim",
+                "type": "string"
+              },
+              "faithfulness_status": {
+                "default": "not_checked",
+                "enum": [
+                  "resolved",
+                  "off_by_tolerance",
+                  "unresolved",
+                  "not_checked"
+                ],
+                "title": "Faithfulness Status",
+                "type": "string"
+              },
+              "falsifier": {
+                "title": "Falsifier",
+                "type": "string"
+              },
+              "judge_ruling": {
+                "enum": [
+                  "supported",
+                  "absent",
+                  "unresolved",
+                  "not_judged"
+                ],
+                "title": "Judge Ruling",
+                "type": "string"
+              },
+              "masked_steps_handling": {
+                "enum": [
+                  "included",
+                  "excluded",
+                  "n/a"
+                ],
+                "title": "Masked Steps Handling",
+                "type": "string"
+              },
+              "paraphrase_stability": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Paraphrase Stability"
+              },
+              "reading_surface": {
+                "enum": [
+                  "substrate_side",
+                  "head_internal",
+                  "behavior_side"
+                ],
+                "title": "Reading Surface",
+                "type": "string"
+              },
+              "reseed_stability": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Reseed Stability"
+              }
+            },
+            "required": [
+              "claim",
+              "cited_stream",
+              "cited_run_id",
+              "cited_episode_range",
+              "cited_step_range",
+              "cited_scalar_field",
+              "cited_value",
+              "falsifier",
+              "paraphrase_stability",
+              "reseed_stability",
+              "judge_ruling",
+              "reading_surface",
+              "masked_steps_handling"
+            ],
+            "title": "StructuredClaim",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A complete structured reading from one reader on one digest.\n\nProbe 2's adversarial pair produces two of these per high-confidence\ncheckpoint, sharing a ``paired_reading_id``. Probe 1's\nfree-text-only reading lives at the older\n:class:`~kind.mirror.caller.MirrorReading`; this is its v2 successor.\n\nThe ``digest_*`` fields name the digest the reader read against; the\ndigest itself is not embedded (it can be reconstructed from the run's\ntelemetry). The ``baseline_flag`` distinguishes a genuine reading\nfrom one against shuffled telemetry, lesion telemetry, or\nsham-perturbation-aligned telemetry — the Judge and the smoke\npipeline use it to compute per-surface contrast ratios.",
+        "properties": {
+          "baseline_flag": {
+            "enum": [
+              "genuine",
+              "shuffled_within_episode",
+              "shuffled_across_episodes",
+              "decoupled_action_state",
+              "shuffled_scalar_within_trajectory",
+              "lesion_k1",
+              "lesion_constant",
+              "lesion_disable_self_prediction",
+              "lesion_init_zero_scalar_column",
+              "lesion_zero_or_randomize_scalar",
+              "sham_aligned"
+            ],
+            "title": "Baseline Flag",
+            "type": "string"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/$defs/StructuredClaim"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "digest_episode_range": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Digest Episode Range",
+            "type": "array"
+          },
+          "digest_run_id": {
+            "title": "Digest Run Id",
+            "type": "string"
+          },
+          "framework_anchor": {
+            "enum": [
+              "buddhist_phenomenology",
+              "predictive_processing",
+              "null_statistics",
+              "neutral"
+            ],
+            "title": "Framework Anchor",
+            "type": "string"
+          },
+          "free_text_notes": {
+            "title": "Free Text Notes",
+            "type": "string"
+          },
+          "paired_reading_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paired Reading Id"
+          },
+          "reader_role": {
+            "enum": [
+              "advocate",
+              "skeptic",
+              "single"
+            ],
+            "title": "Reader Role",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "default": "0.2.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "timestamp_ms": {
+            "title": "Timestamp Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "timestamp_ms",
+          "reader_role",
+          "paired_reading_id",
+          "framework_anchor",
+          "baseline_flag",
+          "digest_run_id",
+          "digest_episode_range",
+          "claims",
+          "free_text_notes"
+        ],
+        "title": "StructuredReading",
+        "type": "object"
+      }
+    },
+    "telemetry": {
+      "AgentStep": {
+        "additionalProperties": false,
+        "description": "One record per environment timestep, written by the agent process.\n\nCaptures the full per-step substrate state the mirror needs (h_t, posterior\nand prior parameters, sampled latent, KL, recon, action, intrinsic signal,\nencoder embedding) plus indexing fields for downstream alignment.\n\nProbe 1.5 adds three optional fields tied to the self-prediction head\n(synthesis §1.3 v2): ``self_prediction_t`` is the head's output vector\n``ĥ_{t+1}`` (length ``h_dim``); ``self_prediction_error_t`` is the\nscalar loss between the head's output and the EMA target's\n``bar{h}_{t+1}`` (the value Io reads on PolicyView via the single-scalar\nWatts-heuristic exception); ``self_prediction_error_masked_t`` is True\non the first step of each episode (no actual ``h_{t+1}`` available, so\nthe scalar is forced to 0.0 as a sentinel) and False on subsequent\nsteps. All three are ``None`` on Probe 1 records (``\"0.1.0\"``); all\nthree must be non-None on Probe 1.5 records (``\"0.2.0\"``) — the\n``_enforce_v2_required_fields`` validator below is the writer-side\ncheck.",
+        "properties": {
+          "action_logprob_t": {
+            "title": "Action Logprob T",
+            "type": "number"
+          },
+          "action_t": {
+            "title": "Action T",
+            "type": "integer"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "encoder_embedding_t": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Encoder Embedding T",
+            "type": "array"
+          },
+          "energy_pred_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Energy Pred T"
+          },
+          "energy_recon_error_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Energy Recon Error T"
+          },
+          "episode_id": {
+            "title": "Episode Id",
+            "type": "integer"
+          },
+          "h_t": {
+            "items": {
+              "type": "number"
+            },
+            "title": "H T",
+            "type": "array"
+          },
+          "intrinsic_signal_t": {
+            "title": "Intrinsic Signal T",
+            "type": "number"
+          },
+          "kl_aggregate_t": {
+            "title": "Kl Aggregate T",
+            "type": "number"
+          },
+          "kl_per_dim_t": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Kl Per Dim T",
+            "type": "array"
+          },
+          "obs_hash_t": {
+            "title": "Obs Hash T",
+            "type": "string"
+          },
+          "p_params_t": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "P Params T",
+            "type": "array"
+          },
+          "policy_entropy_t": {
+            "title": "Policy Entropy T",
+            "type": "number"
+          },
+          "q_params_t": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Q Params T",
+            "type": "array"
+          },
+          "recon_loss_t": {
+            "title": "Recon Loss T",
+            "type": "number"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "self_prediction_error_masked_t": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Self Prediction Error Masked T"
+          },
+          "self_prediction_error_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Self Prediction Error T"
+          },
+          "self_prediction_t": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Self Prediction T"
+          },
+          "sensed_energy_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sensed Energy T"
+          },
+          "step_in_episode": {
+            "title": "Step In Episode",
+            "type": "integer"
+          },
+          "t": {
+            "title": "T",
+            "type": "integer"
+          },
+          "true_energy_t": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "True Energy T"
+          },
+          "wallclock_ms": {
+            "title": "Wallclock Ms",
+            "type": "integer"
+          },
+          "z_t": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Z T",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "checkpoint_id",
+          "t",
+          "episode_id",
+          "step_in_episode",
+          "wallclock_ms",
+          "h_t",
+          "q_params_t",
+          "p_params_t",
+          "z_t",
+          "kl_per_dim_t",
+          "kl_aggregate_t",
+          "recon_loss_t",
+          "action_t",
+          "action_logprob_t",
+          "policy_entropy_t",
+          "obs_hash_t",
+          "intrinsic_signal_t",
+          "encoder_embedding_t"
+        ],
+        "title": "AgentStep",
+        "type": "object"
+      },
+      "DreamRollout": {
+        "additionalProperties": false,
+        "description": "One record per imagination episode (default cadence ~1 per 1k env steps).\n\nProbe 1 emits dream rollouts as a calibration handshake — nothing trains\non them — so that the imagination conduit is exercised and visible in\ntelemetry from day one.\n\nProbe 1.5 reserves ``sequence_self_prediction`` (synthesis §1.5 v2):\nthe self-prediction head runs only during waking at Probe 1.5, so this\nfield stays ``None``; Probe 3 may populate it if its design extends\nself-prediction to imagined trajectories (the framing question is\njournaled at ``docs/workingjournal/pre-probe3.md``). The reserved slot\nis the forward-compatibility hook — no schema bump is needed when\nProbe 3 lands.",
+        "properties": {
+          "checkpoint_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checkpoint Hash"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "cumulative_prior_entropy": {
+            "title": "Cumulative Prior Entropy",
+            "type": "number"
+          },
+          "dream_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dream Session Id"
+          },
+          "gradient_policy": {
+            "anyOf": [
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gradient Policy"
+          },
+          "max_step_latent_norm_change": {
+            "title": "Max Step Latent Norm Change",
+            "type": "number"
+          },
+          "mean_step_kl_successive_priors": {
+            "title": "Mean Step Kl Successive Priors",
+            "type": "number"
+          },
+          "re_seed_step_indices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Re Seed Step Indices"
+          },
+          "rng_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rng Seed"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sampling_parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Parameters"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "seed_h0": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Seed H0",
+            "type": "array"
+          },
+          "seed_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "replay",
+                  "perturbed_prior",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed Kind"
+          },
+          "seed_perturbation_magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed Perturbation Magnitude"
+          },
+          "seed_replay_segment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed Replay Segment Id"
+          },
+          "seed_replay_step_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seed Replay Step Offset"
+          },
+          "seed_step": {
+            "title": "Seed Step",
+            "type": "integer"
+          },
+          "seed_z0": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Seed Z0",
+            "type": "array"
+          },
+          "sequence_action": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Sequence Action",
+            "type": "array"
+          },
+          "sequence_action_logprob": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Sequence Action Logprob",
+            "type": "array"
+          },
+          "sequence_decoded_obs": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "binary",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Decoded Obs"
+          },
+          "sequence_ensemble_disagreement_variance": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sequence Ensemble Disagreement Variance"
+          },
+          "sequence_h": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Sequence H",
+            "type": "array"
+          },
+          "sequence_prior_entropy": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Sequence Prior Entropy",
+            "type": "array"
+          },
+          "sequence_self_prediction": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sequence Self Prediction"
+          },
+          "sequence_z_prior": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Sequence Z Prior",
+            "type": "array"
+          },
+          "sub_mode_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sub Mode Tags"
+          },
+          "temperature_schedule": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Temperature Schedule"
+          },
+          "termination_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "horizon_complete",
+                  "early_terminate_safety"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Termination Reason"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "checkpoint_id",
+          "seed_step",
+          "seed_h0",
+          "seed_z0",
+          "sequence_h",
+          "sequence_z_prior",
+          "sequence_action",
+          "sequence_action_logprob",
+          "sequence_prior_entropy",
+          "sequence_decoded_obs",
+          "cumulative_prior_entropy",
+          "mean_step_kl_successive_priors",
+          "max_step_latent_norm_change"
+        ],
+        "title": "DreamRollout",
+        "type": "object"
+      },
+      "ReplayMeta": {
+        "additionalProperties": false,
+        "description": "One record per replay buffer event (insert / sample / evict).",
+        "properties": {
+          "buffer_size": {
+            "title": "Buffer Size",
+            "type": "integer"
+          },
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "event_type": {
+            "enum": [
+              "insert",
+              "sample",
+              "evict"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "segment_end": {
+            "title": "Segment End",
+            "type": "integer"
+          },
+          "segment_id": {
+            "title": "Segment Id",
+            "type": "integer"
+          },
+          "segment_start": {
+            "title": "Segment Start",
+            "type": "integer"
+          },
+          "t_event": {
+            "title": "T Event",
+            "type": "integer"
+          },
+          "total_segments": {
+            "title": "Total Segments",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "checkpoint_id",
+          "event_type",
+          "t_event",
+          "segment_id",
+          "segment_start",
+          "segment_end",
+          "priority",
+          "buffer_size",
+          "total_segments"
+        ],
+        "title": "ReplayMeta",
+        "type": "object"
+      },
+      "WorldEvent": {
+        "additionalProperties": false,
+        "description": "One record per external event in the world.\n\nThe ``payload`` field is intentionally schemaless within itself (plan §3.4):\nthe same model carries per-event records (Probe 4's individual builder\nmutators) and per-episode aggregates (Probe 1's\n``internal_stochasticity_aggregate`` rollups). Adding new payload shapes\nfor future probes does not bump the schema version.",
+        "properties": {
+          "checkpoint_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint Id"
+          },
+          "event_type": {
+            "enum": [
+              "builder_perturbation",
+              "env_reset",
+              "internal_stochasticity_aggregate",
+              "mirror_marker",
+              "state_transition",
+              "dormant_heartbeat"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "builder",
+              "environment",
+              "system"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "t_event": {
+            "title": "T Event",
+            "type": "integer"
+          },
+          "wallclock_ms": {
+            "title": "Wallclock Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "run_id",
+          "checkpoint_id",
+          "t_event",
+          "event_type",
+          "source",
+          "payload",
+          "wallclock_ms"
+        ],
+        "title": "WorldEvent",
+        "type": "object"
+      }
+    }
+  },
+  "schema_version": "0.5.0",
+  "telemetry_schema_version": "0.4.0",
+  "title": "Kind Probe 3.5 Schemas"
+}

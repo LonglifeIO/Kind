@@ -232,6 +232,7 @@ def _encode_env_step(step: EnvStep) -> dict[str, Any]:
         "episode_id": step.episode_id,
         "step_in_episode": step.step_in_episode,
         "wallclock_ms": step.wallclock_ms,
+        "sensed_energy": step.sensed_energy,
     }
 
 
@@ -242,6 +243,9 @@ def _decode_env_step(d: dict[str, Any]) -> EnvStep:
         episode_id=int(d["episode_id"]),
         step_in_episode=int(d["step_in_episode"]),
         wallclock_ms=int(d["wallclock_ms"]),
+        # Probe 3.5: backward-tolerant — pre-3.5 wire messages have no
+        # ``sensed_energy`` field; default to 0.0 so old shards/replays decode.
+        sensed_energy=float(d.get("sensed_energy", 0.0)),
     )
 
 

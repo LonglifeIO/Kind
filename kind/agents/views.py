@@ -165,6 +165,12 @@ class TelemetryView:
     intrinsic_signal: Tensor
     self_prediction: Tensor
     self_prediction_error_masked: bool
+    # Probe 3.5: the world model's decoded energy prediction (``(B, 1)``),
+    # mirror-side only. Energy never reaches PolicyView (DP4) — it enters the
+    # actor only implicitly through ``h, z``. The sensed/true energy scalars
+    # are env-side (assembled into ``AgentStep`` by the runner), not
+    # WorldModelStep fields, so they are not carried here.
+    energy_pred: Tensor
 
 
 def split(
@@ -271,6 +277,7 @@ def split(
         intrinsic_signal=intrinsic,
         self_prediction=step.self_prediction,
         self_prediction_error_masked=masked_for_view,
+        energy_pred=step.energy_pred,
     )
     return policy, telemetry
 
