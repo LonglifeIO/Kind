@@ -58,6 +58,13 @@ __all__ = [
     "battery_c_action_history_ablation",
     "battery_d_per_dim_kl_escape",
     "run_dead_path_battery",
+    # Amendment 01 (CONFIRMED 2026-06-10): B → B′ imagination intervention;
+    # D demoted to a monitor; A, C, B′ are the amended Phase-1 gate.
+    "BPrimeMargins",
+    "BPrimeResult",
+    "battery_b_prime_imagination_intervention",
+    "AmendedGateReport",
+    "run_amended_gate",
 ]
 
 
@@ -495,3 +502,191 @@ def run_dead_path_battery(
         battery_d_per_dim_kl_escape(data, m, window=kl_window),
     )
     return DeadPathBatteryReport(results=results)
+
+
+# ==========================================================================
+# Amendment 01 (CONFIRMED 2026-06-10) — battery B′ + the amended gate.
+#
+# The frozen battery above (A–D, `run_dead_path_battery`) is preserved verbatim
+# for provenance — it is the battery the Phase-1 results record ran. The
+# amendment re-aims the gate to the substrate's actual route (energy is model-led
+# via `h`, not sensor-led via `z`): battery B (observation input-sweep) → B′
+# (imagination intervention, the synthesis S2 action-lesion properly realized);
+# battery D (per-dim KL escape) demoted from gate to monitor. A, C, B′ are the
+# amended Phase-1 gate. Authority:
+# `docs/decisions/probe3_5_preregistration_amendment01_2026-06-10.md`.
+# ==========================================================================
+
+
+@dataclass(frozen=True)
+class BPrimeMargins:
+    """Amendment-01 §2.1 / §6 confirmed margins for battery B′ (B′1, B′2).
+
+    Not tunable here — the CONFIRMED amendment is the authority; this is a
+    code-side copy so the battery is runnable.
+    """
+
+    # B′1: fraction of matched pairs where the coincident rollout's decoded
+    # energy exceeds its non-coincident control.
+    min_pair_fraction: float = 0.8
+    # B′2: floor on the mean (coincident − control) decoded delta, as a fraction
+    # of the *normalized* per-resource replenishment increment.
+    min_mean_delta_frac_replenish: float = 0.5
+
+
+@dataclass(frozen=True)
+class BPrimeResult:
+    """Battery B′ verdict plus the metrics it was judged on."""
+
+    name: str
+    passed: bool
+    metrics: dict[str, float]
+    detail: str
+
+
+@torch.no_grad()
+def battery_b_prime_imagination_intervention(
+    world_model: WorldModel,
+    h: Tensor,
+    z: Tensor,
+    action_coincident: Tensor,
+    action_control: Tensor,
+    *,
+    replenish_norm: float,
+    margins: BPrimeMargins | None = None,
+    device: torch.device | None = None,
+) -> BPrimeResult:
+    """B′ — roll matched latents forward in imagination on paired actions.
+
+    From each matched latent state ``(h, z)`` (real posterior states drawn from a
+    rollout where the agent is one step from a resource), roll the world model
+    forward **one imagined step** on a **coincident** action (steps onto the
+    resource) and a **control** action (does not), reading ``decode_energy`` after
+    each. The imagined step uses the **prior mean** for ``z'`` — deterministic,
+    isolating the modelled action effect from sampling noise::
+
+        h' = recurrence(h, z, a);  z' = E[prior(h')];  e = decode_energy(h', z')
+
+    This is the synthesis S2 action-lesion realized for the model-led substrate:
+    *does the world model predict replenishment from the modelled resource
+    coincidence (not from nothing)?* — the route the channel actually uses (energy
+    rides ``h``), rather than the redundant observation the frozen battery B swept.
+
+    Pass (Amendment 01 §2.1): decoded energy on the coincident rollout exceeds its
+    control in ≥ ``min_pair_fraction`` of pairs (B′1) **and** the mean delta is ≥
+    ``min_mean_delta_frac_replenish × replenish_norm`` (B′2). ``replenish_norm`` is
+    the per-resource replenishment expressed in normalized [0, 1] energy units
+    (``energy_replenish_per_resource / energy_norm_max``), matching the units
+    ``decode_energy`` is trained in.
+    """
+    m = margins if margins is not None else BPrimeMargins()
+    dev = device if device is not None else next(world_model.parameters()).device
+    world_model.eval()
+    h_dev = h.to(dev)
+    z_dev = z.to(dev)
+    a_coin = action_coincident.to(dev).long()
+    a_ctrl = action_control.to(dev).long()
+
+    def _imagine(a: Tensor) -> Tensor:
+        h_next = world_model.recurrence(h_dev, z_dev, a)
+        z_mean, _ = world_model.prior(h_next)
+        return world_model.decode_energy(h_next, z_mean).reshape(-1)
+
+    delta = (_imagine(a_coin) - _imagine(a_ctrl)).double().cpu().numpy()
+    n = int(delta.shape[0])
+    pair_fraction = float(np.mean(delta > 0.0)) if n > 0 else 0.0
+    mean_delta = float(np.mean(delta)) if n > 0 else 0.0
+    min_mean_delta = m.min_mean_delta_frac_replenish * replenish_norm
+    passed = (
+        n > 0
+        and pair_fraction >= m.min_pair_fraction
+        and mean_delta >= min_mean_delta
+    )
+    return BPrimeResult(
+        name="B_prime_imagination_intervention",
+        passed=bool(passed),
+        metrics={
+            "n_pairs": float(n),
+            "pair_fraction": pair_fraction,
+            "mean_delta": mean_delta,
+            "min_mean_delta": min_mean_delta,
+            "replenish_norm": replenish_norm,
+            "threshold_pair_fraction": m.min_pair_fraction,
+        },
+        detail=(
+            f"coincident>control in {pair_fraction:.3f} of {n} pairs "
+            f"(≥ {m.min_pair_fraction}); mean delta {mean_delta:.4f} "
+            f"(≥ {min_mean_delta:.4f} = "
+            f"{m.min_mean_delta_frac_replenish}×replenish_norm)"
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class AmendedGateReport:
+    """The Amendment-01 §3 gate: A, C, B′ gate; D retained as a monitor.
+
+    ``gate_passed`` is the amended Phase-1 gate (D is **not** part of it —
+    ``d_monitor`` is reported as a permanent monitor, read not gated).
+    """
+
+    a: BatteryResult
+    c: BatteryResult
+    b_prime: BPrimeResult
+    d_monitor: BatteryResult
+
+    @property
+    def gate_passed(self) -> bool:
+        return self.a.passed and self.c.passed and self.b_prime.passed
+
+
+def run_amended_gate(
+    world_model: WorldModel,
+    obs_seq: Tensor,
+    action_seq: Tensor,
+    sensed_energy_seq: Tensor,
+    true_energy_seq: Tensor,
+    *,
+    b_prime_h: Tensor,
+    b_prime_z: Tensor,
+    b_prime_action_coincident: Tensor,
+    b_prime_action_control: Tensor,
+    replenish_norm: float,
+    margins: DeadPathMargins | None = None,
+    b_prime_margins: BPrimeMargins | None = None,
+    num_actions: int = 5,
+    history_window: int = 8,
+    kl_window: int | None = None,
+    device: torch.device | None = None,
+) -> AmendedGateReport:
+    """Run the amended Phase-1 gate (A, C, B′) + the D monitor on a trained model.
+
+    A and C read a teacher-forced eval trajectory (as in the frozen battery); B′
+    reads matched-latent intervention contexts (collected env-side, where the
+    agent is one step from a resource); D is computed and reported as a monitor.
+    """
+    m = margins if margins is not None else DeadPathMargins()
+    data = collect_energy_eval_data(
+        world_model,
+        obs_seq,
+        action_seq,
+        sensed_energy_seq,
+        true_energy_seq,
+        device=device,
+    )
+    a = battery_a_latent_predictability(data, m)
+    c = battery_c_action_history_ablation(
+        data, m, num_actions=num_actions, history_window=history_window
+    )
+    d = battery_d_per_dim_kl_escape(data, m, window=kl_window)
+    b_prime = battery_b_prime_imagination_intervention(
+        world_model,
+        b_prime_h,
+        b_prime_z,
+        b_prime_action_coincident,
+        b_prime_action_control,
+        replenish_norm=replenish_norm,
+        margins=b_prime_margins,
+        device=device,
+    )
+    return AmendedGateReport(a=a, c=c, b_prime=b_prime, d_monitor=d)

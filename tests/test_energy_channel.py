@@ -19,11 +19,14 @@ import torch
 from kind.agents.world_model import WorldModel, WorldModelConfig
 from kind.env.grid_world import NUM_ACTIONS, GridWorld, GridWorldConfig
 from kind.observer.energy_eval import (
+    BPrimeMargins,
     DeadPathMargins,
     battery_a_latent_predictability,
+    battery_b_prime_imagination_intervention,
     battery_c_action_history_ablation,
     battery_d_per_dim_kl_escape,
     collect_energy_eval_data,
+    run_amended_gate,
     run_dead_path_battery,
 )
 from kind.observer.schemas import (
@@ -488,3 +491,117 @@ def test_collect_energy_eval_data_shapes() -> None:
     assert data.z.shape == (n, cfg.z_dim)
     assert data.kl_per_dim.shape == (n, cfg.z_dim)
     assert data.true_energy.shape == (n,)
+
+
+# ===========================================================================
+# Amendment 01 — battery B′ (imagination intervention) + the amended gate
+# ===========================================================================
+
+
+def test_battery_b_prime_zero_delta_when_actions_identical() -> None:
+    """Identical coincident/control actions ⇒ delta ≡ 0 (prior mean is
+    deterministic) ⇒ B′ fails: no responsiveness to distinguish coincidence.
+
+    This pins the comparison semantics without fitting a pass verdict (which
+    would require a trained resource→replenishment association the frozen
+    pre-registration forbids tuning a test toward)."""
+    torch.manual_seed(0)
+    wm = WorldModel(_small_wm_config())
+    n = 8
+    h = torch.randn(n, 16)
+    z = torch.randn(n, 4)
+    same = torch.randint(0, NUM_ACTIONS, (n,))
+    res = battery_b_prime_imagination_intervention(
+        wm, h, z, same, same.clone(), replenish_norm=0.08
+    )
+    assert res.metrics["n_pairs"] == float(n)
+    assert res.metrics["pair_fraction"] == 0.0
+    assert res.metrics["mean_delta"] == 0.0
+    assert res.passed is False
+
+
+def test_battery_b_prime_metrics_and_determinism() -> None:
+    """Well-formed, deterministic metrics on a fixed model + contexts."""
+    torch.manual_seed(1)
+    wm = WorldModel(_small_wm_config())
+    n = 12
+    h = torch.randn(n, 16)
+    z = torch.randn(n, 4)
+    coin = torch.zeros(n, dtype=torch.long)  # action 0
+    ctrl = torch.full((n,), 3, dtype=torch.long)  # action 3
+    r1 = battery_b_prime_imagination_intervention(
+        wm, h, z, coin, ctrl, replenish_norm=0.08, margins=BPrimeMargins()
+    )
+    r2 = battery_b_prime_imagination_intervention(
+        wm, h, z, coin, ctrl, replenish_norm=0.08, margins=BPrimeMargins()
+    )
+    assert set(r1.metrics) == {
+        "n_pairs",
+        "pair_fraction",
+        "mean_delta",
+        "min_mean_delta",
+        "replenish_norm",
+        "threshold_pair_fraction",
+    }
+    assert r1.metrics["n_pairs"] == float(n)
+    # B′2 floor = 0.5 × replenish_norm.
+    assert r1.metrics["min_mean_delta"] == pytest.approx(0.5 * 0.08)
+    assert r1.passed == r2.passed
+    assert r1.metrics["mean_delta"] == r2.metrics["mean_delta"]
+
+
+def test_amended_gate_gate_passed_excludes_d_monitor() -> None:
+    """``run_amended_gate`` gates on A ∧ C ∧ B′; D is a monitor (not gated).
+
+    Pins the amended-gate wiring (Amendment 01 §3): the report carries all four
+    components, and ``gate_passed`` is exactly the three-way AND, independent of
+    the D monitor's verdict."""
+    torch.manual_seed(0)
+    rng = np.random.default_rng(0)
+    cfg = GridWorldConfig()
+    w = GridWorld(cfg, seed=0)
+    s = w.reset()
+    obs: list[np.ndarray] = []
+    act: list[int] = []
+    sen: list[float] = []
+    tru: list[float] = []
+    prev = s
+    for _ in range(120):
+        a = int(rng.integers(0, NUM_ACTIONS))
+        obs.append(prev.observation.astype(np.float32) / 255.0)
+        act.append(a)
+        sen.append(prev.sensed_energy)
+        tru.append(w.state.true_energy)
+        prev = w.step(a)
+    obs_t = torch.from_numpy(np.stack(obs)).unsqueeze(1)
+    act_t = torch.tensor(act, dtype=torch.long)
+    sen_t = torch.tensor(sen, dtype=torch.float32)
+    tru_t = torch.tensor(tru, dtype=torch.float32)
+
+    wm = WorldModel(WorldModelConfig())
+    nctx = 16
+    ctx_h = torch.randn(nctx, wm.config.h_dim)
+    ctx_z = torch.randn(nctx, wm.config.z_dim)
+    coin = torch.zeros(nctx, dtype=torch.long)
+    ctrl = torch.full((nctx,), 3, dtype=torch.long)
+
+    report = run_amended_gate(
+        wm,
+        obs_t,
+        act_t,
+        sen_t,
+        tru_t,
+        b_prime_h=ctx_h,
+        b_prime_z=ctx_z,
+        b_prime_action_coincident=coin,
+        b_prime_action_control=ctrl,
+        replenish_norm=0.08,
+    )
+    assert report.a.name == "A_latent_predictability"
+    assert report.c.name == "C_action_history_ablation"
+    assert report.b_prime.name == "B_prime_imagination_intervention"
+    assert report.d_monitor.name == "D_per_dim_kl_escape"
+    # The gate is exactly A ∧ C ∧ B′ — D is excluded.
+    assert report.gate_passed == (
+        report.a.passed and report.c.passed and report.b_prime.passed
+    )

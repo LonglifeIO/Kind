@@ -236,3 +236,112 @@ observation pathway (the fused proprioceptive branch into `h, z`); PolicyView is
 and its guard tests stay green. The actor never reads any energy quantity directly; the
 mirror-side `TelemetryView.energy_pred` and the AgentStep energy fields are observer-side
 only.
+
+## Phase 1 (cont.) — Amendment 01, recalibration, amended gate
+
+**Purpose.** Execute the post-Phase-1 amendment + recalibration sequence: re-aim the
+Phase-1 gate to the substrate's actual route (energy is model-led via `h`, not
+sensor-led via `z`), recalibrate the env energy economy so an indifferent agent's
+energy is non-degenerate, re-run the amended gate, and (if green) instantiate the
+baseline. **Answer: the amended gate is not green; the recalibration did not transfer
+to a trained instance; the baseline was not instantiated — a recorded finding.** Full
+results: `docs/decisions/probe3_5_recalibration_amendedgate_2026-06-10.md`.
+
+### Amendment 01 — confirmed
+
+`probe3_5_preregistration_amendment01_2026-06-10.md`, **CONFIRMED 2026-06-10
+(builder: Gordon)**, all bracketed items as proposed (no overrides): B → B′
+(imagination intervention; B′1 = 80% of pairs, B′2 = 0.5× normalized replenish);
+D → retired as a gate, retained as a permanent monitor; E → E′ (estimate-lesion,
+Phase 2+; Be = 0.20 carried over); recalibration target R3–R5 (R1 = 8, R2 = 20,
+R3 std ≥ 0.10, R4 mean ∈ [0.30,0.70], R5 floor ≤ 0.10). The frozen pre-registration
+stays byte-frozen; the amendment is the only place the changes live. The **retry**
+(one at 2× P3) was **waived** for the B/D failures and recorded in the amendment: the
+Phase-1 failure was behavioral-floor + substrate-routing, not insufficient training
+age, so P3 = 5000 stays the operative age.
+
+### What was built
+
+- **B′ + amended gate** in `kind/observer/energy_eval.py` (the frozen A–D
+  `run_dead_path_battery` preserved verbatim for provenance): `battery_b_prime_…`
+  rolls matched real latents forward one imagined step on a coincident vs control
+  action (prior mean for `z'`), comparing `decode_energy`; `run_amended_gate` gates on
+  A ∧ C ∧ B′ with D as a monitor. mypy `--strict` clean; 3 new tests (B′ zero-delta on
+  identical actions; metric/determinism; gate excludes D).
+- **Recalibration harness** (`scripts/recalibrate_probe3_5_energy.py`): trains one
+  epistemic instance, records physics-invariant `(is_move, consumed)` flags, and
+  re-simulates energy analytically per candidate triple. The analytic re-simulation
+  **reproduces the env exactly** (max abs err 0.0) — validated before any candidate
+  was trusted.
+- **Gate+baseline harness** (`scripts/run_probe3_5_amended_gate.py`): retrains at the
+  chosen physics, runs the amended gate on the epistemic distribution, and (if green)
+  measures the baseline over 8 eval seeds × 20 episodes on the retrained instance.
+
+### Recalibration + the transfer failure
+
+- Analytic search: only **2 of 140** triples meet R3–R5, both at the **grid edge**
+  (`decay = 0.01`, `move_cost = 0.005`). Chosen: `(0.01, 0.005, 4.0)` — analytically
+  std 0.284, mean 0.609. Default physics re-simulated reproduces the Phase-1 floor
+  (mean 0.006, floor 0.975). Incidental foraging is sparse (consume-rate 0.5%/step;
+  the actor moves every step).
+- **The chosen triple did not transfer.** On the instance *trained at the chosen
+  physics*, the epistemic actor's energy is **ceiling-saturated** (mean 0.943, std
+  0.073, 62.6% at ceiling) — **R3 and R4 fail**. The passivity premise is only
+  approximate: energy is fused into `h, z`, which the actor reads, so an actor trained
+  under live energy forages differently than the default-trained (floored-energy)
+  actor whose trajectories drove the analytic selection.
+- **Amended gate (on the saturated target): not green** — A R² ≪ 0, C ratio 0.60
+  (history beats latents), B′ mean Δ = −0.017 (no imagination replenishment, no decode
+  headroom above the ceiling), D max KL ~1.2 (sub-1.5, as Phase 1). Because the target
+  is degenerate (ceiling-pinned), A/C/B′ are **uninformative about grounding** — the
+  ceiling-side twin of the Phase-1 degenerate-floor caveat.
+
+### What is now closed
+
+- The **env-economy double-bind is confirmed at three levels**: energy is degenerate
+  for an indifferent actor across the physics envelope — floored (fast physics),
+  ceiling-saturated (gentle physics, trained instance *and* uniform-random), with the
+  targeted live band surviving only as an **analytic artifact** of the energy-blind
+  default actor. Env-only recalibration cannot manufacture a world-grounded, in-band
+  interoceptive channel for an indifferent agent.
+- This independently re-confirms the Phase-1 conclusion from a second direction:
+  **energy becomes live/in-band only when regulated — a preference (Phase 2).** DP7
+  "sustainable" is necessary but not sufficient; sustainability keeps the agent off the
+  floor only by making depletion negligible, which saturates rather than centers.
+
+### What is newly open (Phase 2 / next session — builder decisions)
+
+- **Close the recalibration loop or move the band into Phase 2.** Passive-trajectory
+  physics selection does not transfer; options are an iterate-until-the-*trained*-
+  instance-meets-R3–R5 loop, or instantiating the band against a *regulated* (Phase 2)
+  reference. A build-time choice / new dated doc — **out of scope here** (Step-4 "no
+  further tuning in-session").
+- **Does a pure-epistemic baseline in a non-degenerate form even exist?** If energy is
+  in-band only under regulation, the frozen §3 pure-epistemic baseline may need to
+  resolve against a regulated reference — a pre-registration amendment question.
+
+### Deviations / flags
+
+- **Three gate eval runs, as diagnosis not tuning.** (1) uniform-random distribution
+  (degenerate — saturates); (2) epistemic distribution (the methodologically-correct
+  one post-recalibration; substantively examined); (3) an instance-energy diagnostic
+  that found the recalibration didn't transfer. **No threshold or physics was changed
+  across them** — each run diagnosed *why* the gate fails (wrong distribution →
+  saturation → transfer failure). The final reading attributes the failure to the
+  degenerate (saturated) target from the transfer failure, **not** to a demonstrated
+  channel-grounding failure (an earlier "action-history clock" reading was retracted as
+  unsupported on a degenerate target).
+- **Chosen triple not adopted.** It saturates a trained instance; it is recorded in the
+  results doc, **not** written into `GridWorldConfig` (the default physics stay).
+- **Physics-invariance premise documented as approximate.** Step-3's "the actor reads
+  no energy quantity, so its trajectory is invariant to energy physics" holds for the
+  *direct* read (PolicyView has no energy field) but not the *indirect* one (energy →
+  `h, z` → actor) once trained at live physics.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []`. PolicyView stays frozen at
+`{h, z, self_prediction_error}`; B′, the amended gate, and all recalibration/diagnostic
+machinery are **observer-side eval only** (`true_energy` / `decode_energy` never enter a
+training loss). The amendment *removed* a gate (D → monitor) and re-aimed another
+(B → B′); it added no actor read path.
