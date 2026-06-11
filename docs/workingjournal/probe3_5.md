@@ -471,3 +471,151 @@ generated against that section plus both amendments.
 only (env-only imports; no Io code path); PolicyView stays frozen at
 `{h, z, self_prediction_error}`. Amendment 02 touches references and gates, not
 any actor-readable surface.
+
+## Phase 2 — Fill the scaffold (mechanism gate)
+
+**Purpose (one question).** Does the machinery for asking Phase 4's question
+work — the preference implemented per DP5/DP6 and Amendment 02, the degenerate
+baseline formally instantiated, the S1 grid instantiated, the guards provable,
+the gradient path live? **Answer: yes — the mechanism gate is green.** No
+behavioral result this session is the probe's answer; Phase 2's gate is
+mechanism-level and the verdict belongs to Phase 4. Full record:
+`docs/decisions/probe3_5_phase2_mechanism_2026-06-11.md`.
+
+**Framing (from the oracle check, which bounded the experiment precisely).**
+Same physics: 0.4% in-band for indifference, 100% for perfect-information
+competence. Phase 2 sits in the gap — a mild preference that never reads
+`true_energy`, only the world model's belief (`decode_energy`, R² ≈ 0.55 on its
+best distribution), added to a curiosity term that currently owns the agent.
+Whether that produces the competence the world permits is Phase 4's question;
+Phase 2's question was whether the machinery for asking it works.
+
+### What was built
+
+- **Step 0 — the degenerate baseline, formally taken** (the before-photo,
+  finally with its honest meaning). One epistemic-only instance at default
+  physics, P3 = 5000; eval per the frozen mechanics (8 eval seeds × 20
+  episodes × 200 steps; Phase-1 artifacts didn't satisfy them — run fresh).
+  **Rail identity: floor** (floor-frac 0.973, ceiling 0.000); in-band 0.37%
+  pooled, **0.00% on the O1 steady-state window** (the residual 0.37% is the
+  once-per-seed initial transit from the 0.6 start through the band to the
+  floor). Entropy references A1b denominates against: positional **0.575 ±
+  0.438 nats/episode** (per-episode, per the frozen Shared definition — the
+  Phase-1 1.63 nats was a whole-rollout statistic), epistemic activity
+  **0.394 ± 0.050**/step. Standard condition only; per-condition baselines are
+  Phase 4 prep.
+- **Step 1 — the preference** (`kind/agents/preference.py`; actor scaffold
+  filled). `d(e) = relu(|e−0.6|−0.15)`; `v(e) = −S·tanh(precision·d²/(2S))`,
+  S = 1.0. Flat-with-zero-gradient in the fixed band; Gaussian log-preference
+  in band-edge distance outside; saturating to the bound; **coefficient-free —
+  precision is the weight, no β** (stated in code). Operates on
+  `decode_energy` over imagined `(h, z)` inside the waking objective only.
+  Three genuinely-unpinned items were surfaced bracketed and
+  **builder-confirmed before implementation** (no silent choices): the
+  saturation scale [SAT-1: S = 1.0 | pre]; the S1 "marginal magnitude"
+  operationalization (slope reading — `precision × halfwidth`, the unique
+  reading invariant under the Amendment-02 geometry change); the S1
+  denominator ("at the band edge" unconditionable under the degenerate null →
+  unconditional mean per-step disagreement, Phase-1 measurement precedent).
+- **Step 2 — guards + telemetry.** Dream-path unreachability made structural
+  *and* behavioral (`tests/test_pragmatic_guards.py`): import-lint over the
+  offline regime (dream / dream_seed / state_machine / dream_session must not
+  import the preference or reference `imagine_and_compute_loss`) with positive
+  controls, plus a tripwire backstop — `energy_log_preference` monkeypatched
+  to raise at both its definition site and the actor's bound name; full dream
+  rollouts under both action policies complete untripped while the same
+  tripwire fires on the waking path. Marker belt extended test-side
+  (`energy`/`pragmatic`/`sensed`) over MetabolicState (DP2) and PolicyView
+  (DP4) in the new guard file; **`tests/test_metabolic_reentry.py` stays green
+  unmodified** (deviation from the plan's letter, which sited the extension
+  inside that file — the build instruction's stricter reading won; same
+  guarantee, original belt asserted to be a strict subset). Telemetry: fresh
+  record version "0.5.0" with required `pragmatic_value_t` / `epistemic_value_t`
+  / `pragmatic_share_t` (per-training-step decomposition; A2b's share is
+  measurable); D monitor (per-dim KL) retained per Amendment 01;
+  `schemas/v0.5.0.json` frozen to bytes, new frozen export `v0.6.0.json`;
+  older shards backward-readable; **opt-in, default off** —
+  `RunnerConfig.energy_preference = None` keeps every existing runner
+  byte-identical.
+- **Step 3 — S1 instantiated** (instantiation ≠ editing; formula untouched).
+  Burn-in = the Step-0 instance (trained preference-off to P3 — exactly
+  Amendment 02's instantiation point). E_typ = 0.39350 →
+  `precision_k = k·E_typ/0.15` = **{0.2623, 0.8395, 2.6234, 8.3947, 26.2335}**.
+  Values + provenance in the results doc and
+  `runs/probe3_5_phase2/s1_instantiation.json`.
+- **Step 4 — mechanism gate.** (a) Unit: in-band exactly zero value and
+  gradient; correctly-signed pull both sides; saturation bounds at
+  decoder-extrapolation extremes; precision-0 identically zero. (b)
+  Integration: pragmatic gradient reaches the policy through the imagined
+  trajectory; **precision = 0 reproduces the Phase-1 actor bit-identically on
+  a fixed seed** (loss and every parameter gradient — stronger than the
+  pre-registered "statistically indistinguishable"); composition
+  coefficient-free; no viability→capacity coupling at loss time. (c) Smoke at
+  S1-baseline (1.0×), σ = 0.075, P3, **explicitly NON-VERDICT**: the term is
+  live in training (final-step share 0.295, pragmatic value −0.120, correctly
+  signed) — **but energy did not leave the rail at this grid point**
+  (floor-frac 0.985 ≈ null) and behavioral entropy contracted (positional
+  0.19×, epistemic 0.55× of null) at one seed against a high-variance null.
+  Recorded as found; not tuned, not re-run. Where the displacement begins is
+  the sweep's question, under the frozen precision-first order.
+
+### What is now closed
+
+- The scaffold is filled, guarded, and instrumented: full suite **1279 passed /
+  7 skipped**, mypy `--strict` clean (67 sources). PolicyView frozen;
+  MetabolicBudget untouched; the dream regime provably cannot compute the
+  pragmatic term.
+- The degenerate null is no longer a narrative — it is a measured record with
+  the O1 window at exactly 0%, and the rail→band contrast is maximally clean
+  for Phase 4 (null 0%, oracle 100%).
+- Every constant of the functional form is either frozen, amended, or
+  builder-confirmed-with-provenance. Nothing was chosen silently.
+
+### What is newly open
+
+- **Phase 3 — positive control** (next session): crank precision/band to
+  deliberately dominant on a throwaway instance and verify the §8.4 detectors
+  fire. The smoke's entropy contraction makes this *more* interesting, not
+  less: the detectors must distinguish a real dominance signature from
+  one-seed variance.
+- **Phase 4 — the disciplined sweep**: per-condition baselines, the three
+  assays, the frozen precision-first order and stopping rule, E′
+  (estimate-lesion) once behavior is energy-dependent at any point. The smoke
+  hints the interesting region may sit above 1.0× for displacement — the
+  sweep order (raise from low, record first crossings) already covers this;
+  no order change is needed or made.
+- **Dream passive-decode of energy** (frozen pre-reg §7 resolved sub-decision:
+  dream rollouts record `decode_energy` alongside `sequence_decoded_obs`)
+  remains **unbuilt** — it was not in this phase's step list and was not added
+  silently. Flagged for the Phase-3/4 build prompt to site explicitly.
+
+### Deviations / flags
+
+- **Marker-belt location.** The plan sited the belt extension inside
+  `tests/test_metabolic_reentry.py`; the Phase-2 build instruction required
+  that file to stay unmodified. Resolved in the instruction's favor: the
+  extension lives in `tests/test_pragmatic_guards.py`, imports the original
+  belt, and asserts superset coverage. Same structural guarantee.
+- **Per-episode entropy reference differs from Phase 1's figure** (0.575
+  nats/episode vs 1.63 nats/1500-step-rollout) because the frozen Shared
+  definition is per-episode; both are recorded, the per-episode one is the
+  A1b denominator.
+- **Smoke entropy contraction at 1.0×** — one seed, non-verdict, recorded not
+  tuned. If it replicates in Phase 4 at pass-level precisions it would bear on
+  A1b; if it is the start of a dominant signature the §8.4 discipline applies
+  (finding, never a tuning target).
+- The schema-version string "0.5.0" now names both the Phase-2 *record*
+  version and the Phase-1 *export file* — the third instance of the
+  documented collision pattern; constants carry disambiguating names.
+
+### Watts / new-interface entry
+
+**`new_actor_readable_interfaces_added = ["pragmatic_value: decode_energy
+over imagined (h, z) enters the waking actor objective — pre-registered,
+DP5"]`.** Not empty this phase, deliberately recorded: the ledger exists to
+make exactly this addition visible. It is an objective-level influence, not a
+new readable field — PolicyView stays frozen at `{h, z,
+self_prediction_error}` and its guard tests (plus the new Phase-2 marker belt)
+stay green. Bounded by construction (saturation S = 1.0, no terminal state, no
+viability→capacity coupling), waking-only (dream-unreachability proven), and
+swept only under the frozen pre-registration.

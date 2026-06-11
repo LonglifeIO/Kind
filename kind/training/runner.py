@@ -65,6 +65,7 @@ from torch import Tensor
 
 from kind.agents.actor import ActionOutput, Actor
 from kind.agents.ensemble import LatentDisagreementEnsemble
+from kind.agents.preference import EnergyPreferenceConfig
 from kind.agents.views import PolicyView, split
 from kind.agents.world_model import WorldModel, WorldModelConfig, WorldModelStep
 from kind.env.env_server import EnvServer
@@ -72,6 +73,7 @@ from kind.env.grid_world import EnvStep
 from kind.env.transport import EnvTransportClient
 from kind.observer.schemas import (
     PROBE_1_SCHEMA_VERSION,
+    PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION,
     PROBE_3_5_TELEMETRY_SCHEMA_VERSION,
     SCHEMA_VERSION,
     AgentStep,
@@ -239,6 +241,19 @@ class RunnerConfig:
     # ``sensed_energy`` scalar is fused into the world model on every step
     # regardless of this flag — it governs telemetry emission, not the substrate.
     energy_telemetry: bool = False
+
+    # Probe 3.5 Phase 2 (implementation plan §S-ACT). When non-None, the
+    # saturating Gaussian log-preference over decoded energy is passed to the
+    # **waking** actor-training call (``imagine_and_compute_loss``) — the
+    # scaffold filled. ``None`` (the default) preserves the Phase-1 zero
+    # scaffold exactly, so every existing runner / smoke is unchanged. With
+    # both this and ``energy_telemetry`` set, AgentStep records are stamped at
+    # ``PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION`` ("0.5.0") and carry the
+    # per-training-step pragmatic/epistemic decomposition fields; before the
+    # first training step the decomposition is genuinely (0.0, 0.0, 0.0).
+    # Precision is the dominance-relevant weight (no β anywhere); the dream
+    # path has no route to this config (tests/test_pragmatic_guards.py).
+    energy_preference: EnergyPreferenceConfig | None = None
     self_prediction_target_mode: Literal[
         "online", "frozen", "environmental"
     ] = "online"
@@ -589,6 +604,15 @@ class Runner:
                 "env_server (true_energy is read from GridState); got None."
             )
         self._energy_telemetry_enabled: bool = config.energy_telemetry
+
+        # Probe 3.5 Phase 2: the most recent imagination-training step's
+        # pragmatic/epistemic decomposition (per-training-step quantities —
+        # grounding fact 3). Stamped onto AgentStep records when the Phase-2
+        # record version is in effect. Before the first training step the
+        # values are genuinely zero: no preference gradient has existed yet.
+        self._last_pragmatic_value: float = 0.0
+        self._last_epistemic_value: float = 0.0
+        self._last_pragmatic_share: float = 0.0
 
         self._closed: bool = False
 
@@ -1474,10 +1498,23 @@ class Runner:
             h_0=h_0,
             z_0=z_0,
             horizon=self._config.imagination_horizon,
+            energy_preference=self._config.energy_preference,
         )
         self._actor_opt.zero_grad(set_to_none=True)
         actor_loss_dict["actor_loss"].backward()  # type: ignore[no-untyped-call]
         self._actor_opt.step()
+
+        # Probe 3.5 Phase 2: cache the per-training-step pragmatic/epistemic
+        # decomposition for the AgentStep writer (telemetry only).
+        self._last_pragmatic_value = float(
+            actor_loss_dict["mean_pragmatic_value"].detach().item()
+        )
+        self._last_epistemic_value = float(
+            actor_loss_dict["mean_disagreement"].detach().item()
+        )
+        self._last_pragmatic_share = float(
+            actor_loss_dict["pragmatic_share"].detach().item()
+        )
 
     # ---- dream rollout --------------------------------------------------
 
@@ -1700,6 +1737,9 @@ class Runner:
         energy_recon_error_t: float | None = None
         sensed_energy_t: float | None = None
         true_energy_t: float | None = None
+        pragmatic_value_t: float | None = None
+        epistemic_value_t: float | None = None
+        pragmatic_share_t: float | None = None
         schema_version = SCHEMA_VERSION
         if self._energy_telemetry_enabled:
             assert true_energy_value is not None
@@ -1711,6 +1751,15 @@ class Runner:
             energy_pred_t = energy_pred_val
             energy_recon_error_t = (energy_pred_val - sensed_energy_value) ** 2
             schema_version = PROBE_3_5_TELEMETRY_SCHEMA_VERSION
+            # Probe 3.5 Phase 2: with a preference configured, stamp the
+            # Phase-2 record version and the per-training-step
+            # pragmatic/epistemic decomposition (the most recent training
+            # step's values; genuinely zero before the first one).
+            if self._config.energy_preference is not None:
+                pragmatic_value_t = self._last_pragmatic_value
+                epistemic_value_t = self._last_epistemic_value
+                pragmatic_share_t = self._last_pragmatic_share
+                schema_version = PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION
 
         record = AgentStep(
             schema_version=schema_version,
@@ -1740,6 +1789,9 @@ class Runner:
             true_energy_t=true_energy_t,
             energy_pred_t=energy_pred_t,
             energy_recon_error_t=energy_recon_error_t,
+            pragmatic_value_t=pragmatic_value_t,
+            epistemic_value_t=epistemic_value_t,
+            pragmatic_share_t=pragmatic_share_t,
         )
         self._agent_step_sink.write(record)
         return record

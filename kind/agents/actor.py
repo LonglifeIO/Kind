@@ -19,10 +19,17 @@ end-to-end in the actor's parameters. Sampling at env-step time uses a
 plain ``Categorical`` — non-differentiable, but env-step doesn't need
 gradients.
 
-The pragmatic prior is uniform at Probe 1 and contributes zero to the
-loss; the formula structure ``-mean(sum_τ epistemic + sum_τ pragmatic)``
-is kept as scaffolding so Probe 4+ can introduce structured preferences
-without rebuilding the objective (synthesis §Q2).
+The pragmatic prior was uniform (zero) from Probe 1 through Probe 3.5
+Phase 1; the formula structure ``-mean(sum_τ epistemic + sum_τ pragmatic)``
+was kept as scaffolding for that span. **Probe 3.5 Phase 2 fills the
+scaffold**: when an ``EnergyPreferenceConfig`` is passed to
+``imagine_and_compute_loss``, the pragmatic term is the saturating
+Gaussian log-preference over ``world_model.decode_energy`` along the
+imagined rollout (``kind/agents/preference.py``; synthesis DP5/DP6,
+Amendment 02 geometry). The composition stays coefficient-free —
+precision is the dominance-relevant weight; there is no β and none is
+to be added. With no preference passed, the Probe-1 zero scaffold is
+preserved exactly.
 
 **Probe 1.5 v2 self-attention affordance.** The actor reads a scalar
 ``self_prediction_error`` field on ``PolicyView`` alongside ``(h, z)``.
@@ -54,6 +61,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 
 from kind.agents.ensemble import LatentDisagreementEnsemble
+from kind.agents.preference import EnergyPreferenceConfig, energy_log_preference
 from kind.agents.views import PolicyView
 from kind.agents.world_model import WorldModel
 
@@ -253,6 +261,7 @@ class Actor(nn.Module):
         h_0: Tensor,
         z_0: Tensor,
         horizon: int = 15,
+        energy_preference: EnergyPreferenceConfig | None = None,
     ) -> dict[str, Tensor]:
         """Roll the world model forward for ``horizon`` steps in latent
         space and return the differentiable actor loss.
@@ -286,10 +295,34 @@ class Actor(nn.Module):
         actor's parameters are the only ones that receive gradients
         from ``actor_loss.backward()``.
 
-        Pragmatic value is zero at Probe 1 (uniform preference prior,
-        synthesis §Q2 placeholder); the formula structure is preserved
-        so Probe 4+ can swap in structured preferences without
-        refactoring.
+        **Probe 3.5 Phase 2 — the scaffold is filled.** When
+        ``energy_preference`` is provided, the pragmatic value is the
+        saturating Gaussian log-preference over the **decoded energy
+        along the imagined rollout**::
+
+            pragmatic_value = Σ_τ energy_log_preference(
+                world_model.decode_energy(h_τ, z_τ), energy_preference)
+
+        differentiable through the (frozen) energy decoder, so the
+        gradient reaches the policy through the imagined trajectory —
+        the waking path only (the dream regime structurally never calls
+        this method; ``tests/test_pragmatic_guards.py``). The actor
+        never reads an energy quantity directly: the preference operates
+        on the world model's *belief* (``decode_energy``), and
+        PolicyView stays frozen at ``{h, z, self_prediction_error}``.
+
+        **Precision is the dominance-relevant weight; do not add a β or
+        any outer coefficient — the additive form is load-bearing
+        (DP5/DP6, synthesis §8.3).** ``total_return = sum_disagreement
+        + pragmatic_value``, coefficient-free.
+
+        When ``energy_preference`` is ``None`` (Probe 1 → Phase 1
+        behavior, and the default), ``pragmatic_value`` is identically
+        zero — the original scaffold, byte-for-byte. A provided config
+        with ``precision = 0`` computes the same zero with the same
+        gradients (the preference is exactly zero with exactly zero
+        gradient at zero precision), so the degenerate-null
+        configuration is a point on the same surface.
 
         Args:
             world_model: the substrate's recurrent generative model.
@@ -299,12 +332,21 @@ class Actor(nn.Module):
             z_0: shape ``(B, z_dim)``; starting stochastic latent.
                 Detached internally.
             horizon: number of imagined steps. Default 15 per plan §6.
+            energy_preference: the fixed pragmatic preference (Probe 3.5
+                Phase 2). ``None`` preserves the zero scaffold.
 
         Returns:
             ``{"actor_loss": scalar, "mean_disagreement": scalar,
-            "policy_entropy": scalar}`` — all three are 0-dim Tensors.
-            ``mean_disagreement`` and ``policy_entropy`` are averaged
-            over both batch and time, for telemetry.
+            "policy_entropy": scalar, "mean_pragmatic_value": scalar,
+            "pragmatic_share": scalar}`` — all 0-dim Tensors.
+            ``mean_disagreement``, ``policy_entropy``, and
+            ``mean_pragmatic_value`` are averaged over both batch and
+            time, for telemetry. ``pragmatic_share`` is the
+            per-training-step pragmatic/epistemic decomposition the
+            pre-registration's A2b / §8.4 share signatures read:
+            ``|P| / (|E| + |P|)`` over the batch-mean absolute summed
+            terms (0 when both are 0). Telemetry-only — nothing in the
+            loss reads it.
         """
         if horizon <= 0:
             raise ValueError(f"horizon must be positive, got {horizon}")
@@ -316,6 +358,7 @@ class Actor(nn.Module):
 
         sum_disagreement = torch.zeros(batch_size, device=device)
         sum_entropy = torch.zeros(batch_size, device=device)
+        sum_pragmatic = torch.zeros(batch_size, device=device)
 
         # Mask-via-zero-feed: the scalar self-prediction-error is zero
         # throughout imagination (plan §2.3). Allocated once outside
@@ -348,6 +391,18 @@ class Actor(nn.Module):
                 )
                 sum_disagreement = sum_disagreement + disagreement
 
+                # Probe 3.5 Phase 2: the pragmatic preference over the
+                # decoded energy *belief* at the current imagined state.
+                # Differentiable through the frozen decoder; the actor
+                # reads no energy quantity directly (DP4 — PolicyView is
+                # unchanged). Skipped entirely under the Phase-1 scaffold
+                # (energy_preference=None).
+                if energy_preference is not None:
+                    energy_belief = world_model.decode_energy(h, z).squeeze(-1)
+                    sum_pragmatic = sum_pragmatic + energy_log_preference(
+                        energy_belief, energy_preference
+                    )
+
                 # Per-step policy entropy (telemetry only — never enters
                 # the loss directly). Cast + ignore as in `forward` above.
                 dist = torch.distributions.Categorical(logits=logits)
@@ -367,20 +422,43 @@ class Actor(nn.Module):
                 h = h_next
                 z = z_next
 
-        # Pragmatic value is uniform-prior at Probe 1 → zero. Kept in the
-        # formula as scaffolding so Probe 4+ can introduce structured
-        # preferences without refactoring the loss (synthesis §Q2).
-        pragmatic_value = torch.zeros_like(sum_disagreement)
+        # Probe 3.5 Phase 2: the scaffold is filled. With a preference,
+        # pragmatic_value is the summed saturating log-preference over
+        # decoded energy along the imagined rollout; without one it is
+        # identically zero (the Probe-1 scaffold preserved). The
+        # composition is coefficient-free — precision is the weight; no
+        # β exists and none is to be added (DP5/DP6, synthesis §8.3).
+        pragmatic_value = (
+            sum_pragmatic
+            if energy_preference is not None
+            else torch.zeros_like(sum_disagreement)
+        )
         total_return = sum_disagreement + pragmatic_value
 
         actor_loss = -total_return.mean()
         mean_disagreement = sum_disagreement.mean() / horizon
         policy_entropy = sum_entropy.mean() / horizon
+        mean_pragmatic_value = pragmatic_value.mean() / horizon
+
+        # Per-training-step pragmatic/epistemic share (telemetry only —
+        # the §8.4 "pragmatic share → 1" falsification signature and the
+        # A2b mid-band share band read this). |P| / (|E| + |P|), 0 when
+        # both terms are 0.
+        epistemic_abs = sum_disagreement.abs().mean()
+        pragmatic_abs = pragmatic_value.abs().mean()
+        share_denominator = epistemic_abs + pragmatic_abs
+        pragmatic_share = torch.where(
+            share_denominator > 0,
+            pragmatic_abs / share_denominator,
+            torch.zeros_like(share_denominator),
+        )
 
         return {
             "actor_loss": actor_loss,
             "mean_disagreement": mean_disagreement,
             "policy_entropy": policy_entropy,
+            "mean_pragmatic_value": mean_pragmatic_value,
+            "pragmatic_share": pragmatic_share,
         }
 
 

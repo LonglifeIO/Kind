@@ -150,6 +150,19 @@ PROBE_3_TELEMETRY_SCHEMA_VERSION: str = "0.3.0"
 # (:data:`PROBE_3_5_EXPORT_VERSION`), preserving the existing +1 offset between
 # record-level and export-file versions (Probe 3: record 0.3.0 / export 0.4.0).
 PROBE_3_5_TELEMETRY_SCHEMA_VERSION: str = "0.4.0"
+# Probe 3.5 *Phase 2* record-level AgentStep version (the pragmatic-preference
+# generation): adds the per-training-step pragmatic/epistemic decomposition
+# fields (``pragmatic_value_t``, ``epistemic_value_t``, ``pragmatic_share_t``)
+# the pre-registration's A2b share band and §8.4 "pragmatic share → 1"
+# falsification signature read. **Version-name collision note** (the plan §3.3
+# pattern, third instance): the string "0.5.0" is also
+# :data:`PROBE_3_5_EXPORT_VERSION` (the *export-file* name of the now-frozen
+# ``schemas/v0.5.0.json``); the two values share a string but mean different
+# things, and the disambiguating constant names keep writer-side code pointed
+# at the right one. The matching export-file for *this* record version is
+# ``schemas/v0.6.0.json`` (:data:`PROBE_3_5_PHASE2_EXPORT_VERSION`),
+# preserving the +1 offset.
+PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION: str = "0.5.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -222,6 +235,19 @@ class AgentStep(RecordEnvelope):
     energy_pred_t: float | None = None
     energy_recon_error_t: float | None = None
 
+    # Probe 3.5 Phase 2 pragmatic/epistemic decomposition (plan §S-TEL;
+    # grounding fact 3: the share is a **per-training-step** quantity — the
+    # runner stamps the most recent imagination-training decomposition onto
+    # subsequent AgentStep records; before the first training step all three
+    # are genuinely 0.0 (no preference gradient has existed yet).
+    # ``pragmatic_value_t`` / ``epistemic_value_t`` are the per-step batch
+    # means of the two summed objective terms; ``pragmatic_share_t`` is
+    # |P| / (|E| + |P|). Optional so older shards deserialize cleanly;
+    # required non-None at the Phase-2 record version.
+    pragmatic_value_t: float | None = None
+    epistemic_value_t: float | None = None
+    pragmatic_share_t: float | None = None
+
     @model_validator(mode="after")
     def _enforce_v2_required_fields(self) -> "AgentStep":
         if self.schema_version == SCHEMA_VERSION:
@@ -285,6 +311,49 @@ class AgentStep(RecordEnvelope):
                 f"values for {missing}. Probe 3.5 writers populate the "
                 f"self-prediction and energy fields on every emission "
                 f"(implementation plan §S-TEL)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_probe_3_5_phase2_required_fields(self) -> "AgentStep":
+        """Probe 3.5 Phase 2 writer-side discipline (plan §S-TEL).
+
+        Records stamped :data:`PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION`
+        must carry non-None values for the Probe 1.5 self-prediction fields,
+        the four Phase-1 energy fields, **and** the three pragmatic
+        decomposition fields — the Phase-2 runner is the sole writer and
+        populates all of them on every emission. Records at older versions
+        bypass this check by their version literal, so Probe 1 / 1.5 / 3 /
+        3.5-Phase-1 shards stay backward-readable (the new fields surface as
+        None)."""
+        if self.schema_version != PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION:
+            return self
+        missing = [
+            name
+            for name, value in (
+                ("self_prediction_t", self.self_prediction_t),
+                ("self_prediction_error_t", self.self_prediction_error_t),
+                (
+                    "self_prediction_error_masked_t",
+                    self.self_prediction_error_masked_t,
+                ),
+                ("sensed_energy_t", self.sensed_energy_t),
+                ("true_energy_t", self.true_energy_t),
+                ("energy_pred_t", self.energy_pred_t),
+                ("energy_recon_error_t", self.energy_recon_error_t),
+                ("pragmatic_value_t", self.pragmatic_value_t),
+                ("epistemic_value_t", self.epistemic_value_t),
+                ("pragmatic_share_t", self.pragmatic_share_t),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                f"AgentStep with schema_version=="
+                f"{PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION!r} requires "
+                f"non-None values for {missing}. Probe 3.5 Phase 2 writers "
+                f"populate the self-prediction, energy, and pragmatic "
+                f"decomposition fields on every emission (plan §S-TEL)."
             )
         return self
 
@@ -462,6 +531,7 @@ def export_json_schema() -> bytes:
 PROBE_2_EXPORT_VERSION: str = "0.3.0"
 PROBE_3_EXPORT_VERSION: str = "0.4.0"
 PROBE_3_5_EXPORT_VERSION: str = "0.5.0"
+PROBE_3_5_PHASE2_EXPORT_VERSION: str = "0.6.0"
 
 
 def export_json_schema_v0_3_0() -> bytes:
@@ -482,29 +552,48 @@ def export_json_schema_v0_4_0() -> bytes:
     so — exactly as the v0.2.0 / v0.3.0 exports already do — the Probe 3 export
     is now treated as a **frozen historical artifact**: reading the checked-in
     bytes keeps it byte-stable rather than regenerating it from the now-wider
-    models. Probe 3.5's live export is :func:`export_json_schema_v0_5_0`.
+    models. Probe 3.5 Phase 1's export is the (now likewise frozen)
+    :func:`export_json_schema_v0_5_0`; the live export is
+    :func:`export_json_schema_v0_6_0`.
     """
 
     return _read_frozen_schema("v0.4.0.json")
 
 
 def export_json_schema_v0_5_0() -> bytes:
-    """Return a byte-stable JSON Schema export covering Probe 3.5's surface.
+    """Return the frozen Probe 3.5 Phase-1 export (``schemas/v0.5.0.json``).
 
-    Builds on the frozen v0.4.0 export and refreshes the telemetry models (the
-    AgentStep energy fields + the Probe-3.5 record version). The mirror-side,
-    conditioning, and dream models are carried unchanged from v0.4.0. The
-    export-file version is :data:`PROBE_3_5_EXPORT_VERSION` (``"0.5.0"``); the
+    Probe 3.5 Phase 2 widens the live telemetry models (AgentStep gains the
+    pragmatic decomposition fields), so — exactly as the v0.2.0 / v0.3.0 /
+    v0.4.0 exports already do — the Phase-1 export is now treated as a
+    **frozen historical artifact**: reading the checked-in bytes keeps it
+    byte-stable rather than regenerating it from the now-wider models. The
+    Phase-2 live export is :func:`export_json_schema_v0_6_0`.
+    """
+
+    return _read_frozen_schema("v0.5.0.json")
+
+
+def export_json_schema_v0_6_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 3.5 Phase 2.
+
+    Builds on the frozen v0.5.0 export and refreshes the telemetry models
+    (AgentStep gains ``pragmatic_value_t`` / ``epistemic_value_t`` /
+    ``pragmatic_share_t`` + the Phase-2 record version). The mirror-side,
+    conditioning, and dream models are carried unchanged. The export-file
+    version is :data:`PROBE_3_5_PHASE2_EXPORT_VERSION` (``"0.6.0"``); the
     record-level telemetry version it advertises is
-    :data:`PROBE_3_5_TELEMETRY_SCHEMA_VERSION` (``"0.4.0"``).
+    :data:`PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION` (``"0.5.0"``).
     """
 
     from kind.observer.dream_session import DreamSessionMeta
 
-    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.4.0.json"))
-    base_document["title"] = "Kind Probe 3.5 Schemas"
-    base_document["schema_version"] = PROBE_3_5_EXPORT_VERSION
-    base_document["telemetry_schema_version"] = PROBE_3_5_TELEMETRY_SCHEMA_VERSION
+    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.5.0.json"))
+    base_document["title"] = "Kind Probe 3.5 Phase 2 Schemas"
+    base_document["schema_version"] = PROBE_3_5_PHASE2_EXPORT_VERSION
+    base_document["telemetry_schema_version"] = (
+        PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION
+    )
     base_document["dream_schema_version"] = "0.1.0"
     base_document["models"]["telemetry"] = {
         model.__name__: model.model_json_schema() for model in RECORD_MODELS
@@ -521,9 +610,11 @@ __all__ = [
     "PROBE_1_SCHEMA_VERSION",
     "PROBE_3_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_TELEMETRY_SCHEMA_VERSION",
+    "PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION",
     "PROBE_2_EXPORT_VERSION",
     "PROBE_3_EXPORT_VERSION",
     "PROBE_3_5_EXPORT_VERSION",
+    "PROBE_3_5_PHASE2_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -535,4 +626,5 @@ __all__ = [
     "export_json_schema_v0_3_0",
     "export_json_schema_v0_4_0",
     "export_json_schema_v0_5_0",
+    "export_json_schema_v0_6_0",
 ]

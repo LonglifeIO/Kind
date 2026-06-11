@@ -286,15 +286,25 @@ def test_actor_forward_reads_only_policy_view_fields() -> None:
 
 
 def test_imagine_and_compute_loss_returns_expected_dict_with_finite_scalars() -> None:
-    """Plan §2.6: ``{"actor_loss", "mean_disagreement", "policy_entropy"}``,
-    every value a 0-dim Tensor and finite."""
+    """Plan §2.6 keys plus the Probe 3.5 Phase 2 decomposition keys
+    (``mean_pragmatic_value``, ``pragmatic_share`` — telemetry-only), every
+    value a 0-dim Tensor and finite. With no preference passed, the
+    pragmatic keys are exactly zero (the preserved Probe-1 scaffold)."""
     actor = fresh_actor()
     wm = fresh_world_model()
     ens = fresh_ensemble()
     h_0, z_0 = fresh_state()
 
     out = actor.imagine_and_compute_loss(wm, ens, h_0, z_0, horizon=15)
-    assert set(out.keys()) == {"actor_loss", "mean_disagreement", "policy_entropy"}
+    assert set(out.keys()) == {
+        "actor_loss",
+        "mean_disagreement",
+        "policy_entropy",
+        "mean_pragmatic_value",
+        "pragmatic_share",
+    }
+    assert out["mean_pragmatic_value"].item() == 0.0
+    assert out["pragmatic_share"].item() == 0.0
     for key, value in out.items():
         assert value.dim() == 0, f"{key} is not a scalar (dim={value.dim()})"
         assert torch.isfinite(value), f"{key} is not finite ({value.item()})"
