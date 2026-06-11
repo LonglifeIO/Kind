@@ -38,6 +38,7 @@ from kind.env.transport import (
     EnvTransportServer,
     MessageType,
     MutateError,
+    TransportError,
     _encode_mutate_args,
 )
 from kind.observer.schemas import WorldEvent
@@ -551,6 +552,64 @@ def test_barrier_queues_mutates_and_drains_in_order() -> None:
         assert first.get("ok") is True
         second = client._await_response(step_id)
         assert second.get("type") == MessageType.TRANSITION.value
+
+
+def test_concurrent_request_raises_immediately_positive_control() -> None:
+    """The one-outstanding-request contract is *enforced*: a second request
+    issued while one is outstanding raises TransportError immediately
+    (non-blocking), naming the contract — it does not block, and it does
+    not silently mispair responses off the shared queue.
+
+    Positive control for the request lock: a barrier holds a ``step()``
+    outstanding deterministically (its TRANSITION cannot arrive until
+    BARRIER_END), so the contended state is real, not timing-dependent.
+    """
+    with _make_transport_pair(grid_world_config=_make_quiet_config()) as (
+        client,
+        server,
+        _recorded,
+    ):
+        client.connect()
+        client.barrier_begin("ckpt-lock-001")
+
+        step_error: list[Exception] = []
+
+        def do_step() -> None:
+            try:
+                client.step(4)
+            except Exception as e:  # pragma: no cover
+                step_error.append(e)
+
+        t = threading.Thread(target=do_step, daemon=True)
+        t.start()
+        # Wait until the STEP is provably queued server-side: the step()
+        # call is now outstanding (holding the request lock, awaiting a
+        # TRANSITION that cannot arrive during the barrier).
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if len(server._pending_msgs) == 1:
+                break
+            time.sleep(0.005)
+        assert len(server._pending_msgs) == 1
+
+        # Contention: each user-facing request method refuses immediately.
+        with pytest.raises(TransportError, match="one outstanding request"):
+            client.mutate("add_resource", cell=(1, 1))
+        with pytest.raises(TransportError, match="one outstanding request"):
+            client.step(4)
+        with pytest.raises(TransportError, match="one outstanding request"):
+            client.barrier_begin("ckpt-lock-002")
+        # The refused calls consumed nothing: the outstanding step is still
+        # queued and unanswered.
+        assert len(server._pending_msgs) == 1
+
+        # Release the barrier; the outstanding step completes cleanly and
+        # the lock cycles — a subsequent sequential request succeeds.
+        client.barrier_end("ckpt-lock-001")
+        t.join(timeout=5.0)
+        assert not t.is_alive()
+        assert not step_error
+        client.step(4)
 
 
 # ---- length-prefix robustness --------------------------------------------

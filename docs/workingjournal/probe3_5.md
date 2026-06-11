@@ -440,6 +440,21 @@ generated against that section plus both amendments.
   (non-contingent drops are indistinguishable from weather). To be researched,
   not assumed.
 
+  **Committed design constraint (injection topology — 2026-06-11, builder:
+  Gordon).** Whatever the perturbation content turns out to be, **perturbations
+  enter only through the runner's loop, via a queue drained at step
+  boundaries** — no side-thread `client.mutate()` calls, and no direct
+  in-process `env_server` mutator calls from outside the transport thread.
+  **Rationale: required for yoked-replay timing reproducibility** — perturbation
+  placement must be deterministic relative to TRANSITIONs, so a replay can
+  reproduce *when* (in env-step time) a perturbation landed, not merely *that*
+  it landed — **not merely race-safety**. (The race-safety half is now also
+  enforced structurally: the transport client refuses concurrent requests with
+  an immediate `TransportError` — the one-outstanding-request contract is
+  unrepresentable-to-violate from the wire side.) This constrains Probe 4's
+  *plumbing*, not its content; the content question above stays open for the
+  research pass.
+
 ### Deviations / flags
 
 - **O1 operationalized at confirmation** (final-50%-of-episode window) — recorded

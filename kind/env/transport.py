@@ -588,10 +588,15 @@ class EnvTransportClient:
     else to the response queue consumed by the synchronous user-facing
     methods.
 
-    The client is single-threaded from the user's point of view: only one
-    request may be in flight at a time. Calling :meth:`step` from two
-    threads simultaneously is not supported and would result in
-    ``request_id`` ordering errors.
+    The client is single-threaded from the user's point of view: **only one
+    request may be outstanding at a time**, and this contract is *enforced* —
+    :meth:`step`, :meth:`mutate`, and :meth:`barrier_begin` hold a
+    non-blocking request lock across their send+await, and a second caller
+    arriving while a request is outstanding gets an immediate
+    :class:`TransportError` naming the contract (rather than silently
+    mispairing responses off the shared queue, which is what concurrent
+    awaiters would otherwise do). Issue MUTATEs from the same loop that
+    issues STEPs, or serialize externally.
     """
 
     def __init__(
@@ -610,6 +615,9 @@ class EnvTransportClient:
         self._connected: bool = False
         self._closed: bool = False
         self._send_lock = threading.Lock()
+        # Enforces the one-outstanding-request contract (class docstring):
+        # held non-blockingly across send+await by step/mutate/barrier_begin.
+        self._request_lock = threading.Lock()
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -643,17 +651,37 @@ class EnvTransportClient:
             )
         return _decode_env_step(msg)
 
+    def _acquire_request_lock_or_raise(self, method: str) -> None:
+        """Acquire the request lock without blocking, or raise immediately.
+
+        Enforces the one-outstanding-request contract: a concurrent caller
+        fails loudly here rather than racing the first caller on the shared
+        response queue and mispairing responses (a silent-corruption mode —
+        see the barrier-queue test's history).
+        """
+        if not self._request_lock.acquire(blocking=False):
+            raise TransportError(
+                f"concurrent {method}(): EnvTransportClient supports one "
+                "outstanding request at a time (send+await is exclusive) — "
+                "issue MUTATEs from the same loop that issues STEPs, or "
+                "serialize externally"
+            )
+
     def step(self, action: int) -> EnvStep:
         """Send STEP, wait for matching TRANSITION, return the EnvStep."""
-        request_id = self._issue_request_id()
-        self._send(
-            {
-                "type": MessageType.STEP.value,
-                "action": int(action),
-                "request_id": request_id,
-            }
-        )
-        msg = self._await_response(request_id)
+        self._acquire_request_lock_or_raise("step")
+        try:
+            request_id = self._issue_request_id()
+            self._send(
+                {
+                    "type": MessageType.STEP.value,
+                    "action": int(action),
+                    "request_id": request_id,
+                }
+            )
+            msg = self._await_response(request_id)
+        finally:
+            self._request_lock.release()
         if msg.get("type") != MessageType.TRANSITION.value:
             raise TransportError(
                 f"expected TRANSITION for request {request_id}, got "
@@ -669,16 +697,20 @@ class EnvTransportClient:
         underlying :mod:`kind.env.mutators` functions propagate as
         :class:`MutateError` with the original error message.
         """
-        request_id = self._issue_request_id()
-        self._send(
-            {
-                "type": MessageType.MUTATE.value,
-                "mutator": mutator,
-                "args": _encode_mutate_args(kwargs),
-                "request_id": request_id,
-            }
-        )
-        msg = self._await_response(request_id)
+        self._acquire_request_lock_or_raise("mutate")
+        try:
+            request_id = self._issue_request_id()
+            self._send(
+                {
+                    "type": MessageType.MUTATE.value,
+                    "mutator": mutator,
+                    "args": _encode_mutate_args(kwargs),
+                    "request_id": request_id,
+                }
+            )
+            msg = self._await_response(request_id)
+        finally:
+            self._request_lock.release()
         if msg.get("type") != MessageType.MUTATE_ACK.value:
             raise TransportError(
                 f"expected MUTATE_ACK for request {request_id}, got "
@@ -694,13 +726,17 @@ class EnvTransportClient:
         ``STEP`` and ``MUTATE`` messages. The trainer can commit the
         checkpoint, then call :meth:`barrier_end` to resume the server.
         """
-        self._send(
-            {
-                "type": MessageType.BARRIER_BEGIN.value,
-                "checkpoint_id": checkpoint_id,
-            }
-        )
-        msg = self._await_response(request_id=None)
+        self._acquire_request_lock_or_raise("barrier_begin")
+        try:
+            self._send(
+                {
+                    "type": MessageType.BARRIER_BEGIN.value,
+                    "checkpoint_id": checkpoint_id,
+                }
+            )
+            msg = self._await_response(request_id=None)
+        finally:
+            self._request_lock.release()
         if msg.get("type") != MessageType.BARRIER_BEGIN_ACK.value:
             raise TransportError(
                 f"expected BARRIER_BEGIN_ACK, got {msg.get('type')!r}"
