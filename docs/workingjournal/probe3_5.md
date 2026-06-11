@@ -619,3 +619,133 @@ self_prediction_error}` and its guard tests (plus the new Phase-2 marker belt)
 stay green. Bounded by construction (saturation S = 1.0, no terminal state, no
 viability→capacity coupling), waking-only (dream-unreachability proven), and
 swept only under the frozen pre-registration.
+
+## Phase 3 — Positive control (instrument-and-pathway validation)
+
+**Purpose (one question).** Can the mechanism as built — a preference over a
+*learned belief*, acting through imagined rollouts and policy gradients —
+produce detectable displacement at the strong end of the pre-registered grid?
+The oracle already positively controlled the occupancy *instrument* (100%
+measured); what had never been demonstrated is the *learned pathway* moving
+the needle at all. The experiment lives in the gap between 0.37% (no reason)
+and 100% (perfect information), and Phase 3 asked whether the learned pathway
+can move at all when told to push hard. **Answer: no — and the failure is
+pathway-limited, not noise-limited, with a sharp shape: conserve is
+gradient-reachable, seek is not.** Both outcomes were pre-stated as
+informative; this is the substrate-finding branch, recorded, not rescued.
+Full record: `docs/decisions/probe3_5_phase3_positive_control_2026-06-11.md`.
+
+### What was built / run
+
+- **Step 1 — §7 dream passive-decode monitor** (pre-registered, flagged
+  unbuilt at Phase 2; committed `ec1aab8`). `DreamRolloutConfig.
+  record_decoded_energy` (default off): dream rollouts record `decode_energy`
+  alongside `sequence_decoded_obs`, under the existing `no_grad`,
+  observer-side only. Monitor-on records stamp DreamRollout "0.4.0"
+  (version-gated validator); v0.6.0.json frozen; v0.7.0.json the new frozen
+  export; legacy emission byte-identical (test-pinned). The loss-free proof is
+  at the only surface a dream has: **the ON record equals the OFF record on
+  every field but the monitor's** (same RNG), plus the tripwire guard
+  (preference function raises if touched; monitor-ON rollouts complete). The
+  mirror gets to watch whether offline processing touches the energy belief;
+  Io's dream gains nothing to optimize. Deliberate reopening of `dream.py`:
+  the Probe-3 Phase-6 option-(a) hold was lifted by the builder's
+  pre-registered §7 instruction; `run_dream_session` itself untouched.
+- **Step 2 — retro torpor check, no new runs.** From preserved Phase-2
+  telemetry (training actions): stay-share **null 0.0392 vs smoke 0.0406**,
+  both decaying to exactly 0 in the final 1000 steps. Torpor
+  (conserve-by-staying) **not supported** on the data that generated the
+  watch-note — the Phase-2 entropy contraction was path-tightening under full
+  movement.
+- **Step 3 — positive control at the grid top.** precision = 26.2335 (the
+  instantiated 10× point — the pre-registered maximum, not an off-grid
+  crank; the plan's "narrow band" variant was not used, so non-displacement
+  is a statement about the *grid*), σ = [P3-σ: 0.075 | pre,
+  builder-confirmed], frozen 8 × 20 × 200 mechanics at P3, age-matched,
+  throwaway instance. **O1-window occupancy: 0.00% pooled, 0.0 on all 8
+  seeds** (the null is exactly 0.00% on this window — there was nothing to
+  detect). Mean energy 0.0059 → 0.0147, floor 0.973 → 0.897: a lean against
+  the rail, not displacement. Positional entropy **rose** to 1.74× the null
+  (0.998 ± 0.118 vs 0.575 ± 0.438) — the Phase-2 contraction at 1.0× did not
+  extrapolate. Share plateaued ≈ 0.35; D monitor max per-dim KL 1.04
+  (sub-1.5, as ever).
+- **§8.4 suite — first exercise on real data.** All four signatures executed;
+  **none fire** (occupancy 0.004 vs A1c 0.95; positional 1.74× / epistemic
+  0.59× vs A1d 0.40; share max 0.356; camping 0/160 episodes). The detectors
+  run end-to-end; the dominant regime did not appear at the pre-registered
+  maximum.
+- **Step 4 — gate [P3-G | pre, builder-confirmed]: pooled O1 ≥ 25% and > 0 on
+  ≥ 7/8 seeds → NOT GREEN** (0.00%, 0/8). Pre-stated branch taken: **exactly
+  one** σ = 0 diagnostic at the same configuration, then stop. **σ = 0: still
+  0.00% O1 on all 8 seeds — pathway-limited, not noise-limited.** And the
+  noiseless run reorganized behavior dramatically: **torpor** — eval-greedy
+  stay-share 0.984, train final-1000 stay-share 0.549, positional entropy
+  0.43× the null (just above the A1d ceiling; no detector formally fires).
+  Staying halves depletion — the one energy lever the 15-step amortized
+  imagination gradient can find. **Conserve is reachable; seek is not.**
+
+### What is now closed
+
+- The §7 monitor exists, loss-free and guarded; the export/version lineage is
+  v0.7.0 / DreamRollout "0.4.0".
+- The torpor watch-note is resolved in both directions: not present at
+  1.0×/σ=0.075 (retro check), exactly realized at 10×/σ=0 (diagnostic). The
+  hypothesis named the right attractor, one configuration early.
+- The occupancy instrument, the O1 window, and the §8.4 detectors have all
+  now run on real data against a null that is exactly 0.00% and an oracle
+  that is 100% — the bracketing the design wanted.
+- **The Phase-3 question is answered: the learned pathway cannot produce
+  rail→band displacement anywhere in the pre-registered configuration space**
+  (10× is the grid top; σ=0 is cleaner than any eligible operating point).
+  The tiny-tensor double-bind surfaces at the pathway level, sharpened:
+  belief-mediated bounded preference + amortized imagination-gradients find
+  the cost-side lever (movement) and never the income-side lever (resource
+  entry).
+
+### What is newly open (Phase 4 is gated on this — builder decisions)
+
+- **What Phase 4 now is.** The frozen raise-from-low sweep, run as written on
+  the standard condition, is expected to render inert across the grid (lower
+  precisions cannot displace where 10× did not). Options, all builder's, all
+  via the existing discipline: run the frozen sweep anyway and record the
+  inert verdict (the pre-registration's own stopping rule already names
+  "no pass window" a finding); amend, via a new dated doc, what the sweep can
+  claim or measure (e.g., conserve-side signatures); or take the
+  **conserve-vs-seek asymmetry** as the probe's reportable result and close
+  Probe 3.5 at the boundary finding. Not decided here.
+- **Why seek is unreachable** is now a concrete mechanistic question (horizon
+  15 credit assignment? sparse resource coincidence in imagination? decoder
+  regression toward the rail?) — research-pass material if the builder wants
+  it, not for unsanctioned in-session experiments.
+
+### Deviations / flags
+
+- **The plan's Phase-3 letter vs this session's.** The plan sketched the
+  positive control as an off-grid "high precision, narrow band" throwaway
+  whose gate was "the dominant detectors fire." The build prompt redefined it
+  as grid-top displacement detection (which makes non-displacement a
+  pre-registered-strength finding rather than a tuning artifact); the
+  detectors were exercised and reported rather than gated on. Both the σ and
+  the margin were surfaced bracketed and builder-confirmed before the run;
+  the margin's provenance class (arbitrary-but-pre-committed, half the
+  verdict bar, session-branch-only, not a signature) is recorded in the
+  results doc.
+- **Two runs only**: the confirmed configuration and the single pre-stated
+  σ = 0 diagnostic. No tuning, no extension, no re-runs.
+- **σ = 0 remains diagnostic-only** (self-opacity); its use here is exactly
+  the pre-registered diagnostic function.
+- The Phase-2 harnesses did not retain eval-side actions; this session's
+  harness does (the retro check therefore reads training-time actions,
+  caveated in the record). Phase-2 telemetry was preserved from the surviving
+  tmp dirs into `runs/probe3_5_phase2/`.
+
+### Watts / new-interface entry
+
+**`new_actor_readable_interfaces_added = []` — stated, not assumed.** The §7
+monitor is observer-side only: it reads `decode_energy` inside the dream
+rollout's `no_grad` and writes telemetry the mirror reads; no actor-readable
+surface changed, PolicyView stays frozen at `{h, z, self_prediction_error}`,
+and the ON-vs-OFF byte-identity test is the proof that Io's dream regime
+gains nothing — not even a perturbation — from being watched. The positive
+control and diagnostic used only the Phase-2 objective term already on the
+ledger.
