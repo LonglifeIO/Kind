@@ -345,3 +345,114 @@ age, so P3 = 5000 stays the operative age.
 machinery are **observer-side eval only** (`true_energy` / `decode_energy` never enter a
 training loss). The amendment *removed* a gate (D → monitor) and re-aimed another
 (B → B′); it added no actor read path.
+
+## Amendment 02 — baseline reframed, oracle feasibility (pre-Phase-2)
+
+**Purpose.** Correct the second falsified premise before Phase 2: the frozen §3
+*pure-epistemic baseline* assumed an indifferent-but-centered energy distribution,
+which Phase 1 + the recalibration session showed is **degenerate in principle**
+(floored under fast physics; ceiling-saturated under gentle physics; mid-band only
+as an analytic artifact of the energy-blind actor). No Phase 2 build this session.
+
+### Amendment 02 — confirmed
+
+`probe3_5_preregistration_amendment02_2026-06-10.md`, **CONFIRMED 2026-06-11
+(builder: Gordon)**, all bracketed items as proposed, with one operationalization
+added at confirmation (O1's "sustained at steady state" = in-band occupancy over
+the **final 50% of each eval episode**, averaged across P1 × P2). Contents:
+
+- **Builder decision: Option A — the pure-epistemic baseline *is* the degenerate
+  distribution** (energy-blind, rail-pinned, ~0% in-band; rail identity recorded as
+  a measurement). Rationale: the charter's own language ("not unmotivated or
+  indifferent to its existence") never described an indifferent-but-centered agent;
+  the reframe dissolves the circularity of measuring regulated behavior against a
+  reference only regulation could produce; the contrast sharpens from
+  band-occupancy-delta to **rail-versus-band**. The baseline **survives intact as
+  the entropy/exploration reference** (all entropy-relative thresholds and the
+  inertness criterion unchanged); it stops providing the energy-band reference.
+- **Fixed units**: B0a′ band = 0.6 ± **0.15 absolute** ([0.45, 0.75]); S2′ σ grid
+  = {0, 0.075, 0.15} (fractions of band halfwidth; σ=0 diagnostic-only). S1
+  unchanged as a formula, instantiating from the epistemic magnitude at **Phase 2's
+  pre-preference burn-in** (non-circular).
+- **Phase 2 pass = rail → band displacement**: sustained in-band occupancy ≥ 50%
+  (final-half-of-episode window) vs the ~0% null, entropy thresholds unchanged;
+  §8.4 falsification signatures unchanged and binding.
+- **Recalibration loop closed as impossible** (three-level evidence); not to be
+  reopened without new evidence.
+- **New pre-committed instrument — oracle feasibility**: a scripted
+  nearest-resource forager (observer-side; not Io; no learning; policy
+  pre-committed: BFS-to-nearest-resource below setpoint, stay otherwise) must hold
+  in-band ≥ 70% over 8 × 20 before Phase 2 trains anything. If default physics
+  fails, physics is selected by the oracle criterion and **presented for builder
+  adoption, never self-applied**.
+
+Both amendments are substrate-forced corrections to falsified premises, not scope
+drift; no further pre-registration changes are expected before the Phase 2 build.
+The frozen original and Amendment 01 remain byte-frozen.
+
+### Oracle feasibility — RUN, PASS at default physics
+
+Harness: `kind/observer/oracle_forager.py` (pure env instrument; imports only
+`kind/env/grid_world.py`; touches no Io code path) + 6 tests +
+`scripts/run_probe3_5_oracle_feasibility.py`. **Verdict: PASS — pooled in-band
+occupancy 1.00; every seed 1.00** (8 seeds × 20 episodes = 32,000 steps, never
+leaving [0.45, 0.75]) under the **default physics** (decay 0.08, move 0.04,
+replenish 0.8). **Phase 2 proceeds at default physics**; the candidate search was
+not triggered; no `GridWorldConfig` change proposed.
+
+The same physics that floors the indifferent agent (in-band 0.4%) is held
+perfectly in-band by a trivially competent regulator — the rail-versus-band
+contrast is maximal (null ~0%, oracle 100%), and the Phase-2 question is now
+cleanly posed: *does the preference produce the competence the world demonstrably
+permits?*
+
+### Propagation
+
+The implementation plan gains an "Amendments — post-Amendment-02" section
+(baseline meaning, fixed band/σ, oracle gate before Phase 2, rail→band pass
+condition, recalibration closed). The plan's Phase 2 build prompt should be
+generated against that section plus both amendments.
+
+### What is now closed
+
+- The §3 baseline premise is corrected; every threshold that survives is
+  enumerated explicitly (entropy-relative ratios, inertness, collection
+  mechanics); everything re-denominated is in fixed units. The band no longer
+  depends on any measured std.
+- **Environment feasibility is established at default physics** — a Phase-2
+  failure is attributable to the preference/substrate, never to an unwinnable
+  world.
+
+### What is newly open
+
+- **Phase 2 build** (next session): fill the scaffold per the plan + both
+  amendments; pre-preference burn-in instantiates S1; the amended A/C/B′ gate
+  instantiates on the Phase-2 instance **where energy varies** (the degenerate
+  null cannot provide target variance by definition) — the exact gate timing
+  belongs in the Phase-2 build prompt.
+- **Probe 4 perturbation content is undecided.** Candidate design, logged for
+  Probe 4's research pass — **not for action now**: a **two-class mixture** of
+  builder perturbations — *need-keyed resource drops* (contingent on Io's energy
+  state) and *need-neutral novel objects* (contingent but energy-irrelevant) —
+  enabling a **contingency-vs-care contrast**: does Io's behavior (and the
+  mirror's reading) distinguish a relational other that responds to *need* from
+  one that merely responds *contingently*? Both classes must remain contingent
+  (non-contingent drops are indistinguishable from weather). To be researched,
+  not assumed.
+
+### Deviations / flags
+
+- **O1 operationalized at confirmation** (final-50%-of-episode window) — recorded
+  in the amendment §3, not a post-hoc choice.
+- The oracle reads `GridState.true_energy` directly — deliberate and stated in
+  the amendment: it is an instrument, not Io; no opacity constraint applies.
+- Oracle pass at 1.00 leaves F1 = 70% with large headroom; if a future physics
+  change makes the oracle marginal, the F1 floor (not the headroom) is the
+  binding commitment.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []`. The oracle forager is observer-side
+only (env-only imports; no Io code path); PolicyView stays frozen at
+`{h, z, self_prediction_error}`. Amendment 02 touches references and gates, not
+any actor-readable surface.

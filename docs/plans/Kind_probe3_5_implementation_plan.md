@@ -506,3 +506,43 @@ sharpen the plan, not the decisions).
    decoder width, exact saturating form) stay build-time fixed choices, journaled.
    Applied in the grounding facts, S-ENV, Phase 0 contents, and the (renamed) builder-
    decisions section.
+
+---
+
+## Amendments — post-Amendment-02 (2026-06-11)
+
+Phase 1 and the recalibration session falsified the indifferent-but-centered
+baseline premise; Amendment 02
+(`docs/decisions/probe3_5_preregistration_amendment02_2026-06-10.md`, CONFIRMED
+2026-06-11) corrects it. (Amendment 01 — B → B′ imagination intervention, D →
+monitor, E → E′ estimate-lesion — also stands; both amend the *gate and
+references*, not the probe question or the assay structure.) What changes for
+the phases of this plan:
+
+1. **The pure-epistemic baseline means the degenerate null.** The Phase-1/§3
+   baseline is the energy-blind, rail-pinned `true_energy` distribution itself
+   (~0% in-band; rail identity — floor vs ceiling — recorded as a measurement).
+   It remains the **entropy/exploration reference** (all entropy-relative
+   thresholds and the inertness criterion resolve against it unchanged); it no
+   longer provides any energy-band reference.
+2. **The band is a fixed design constant.** In-band = setpoint 0.6 ± **0.15
+   absolute** ([0.45, 0.75]); the σ grid is {0, 0.075, 0.15} (fractions of the
+   band halfwidth; σ = 0 diagnostic-only). No band/σ quantity is denominated in
+   a measured baseline std any longer. S1 (precision grid) stays a formula and
+   instantiates from the epistemic magnitude measured during **Phase 2's
+   pre-preference burn-in**.
+3. **A new gate precedes Phase 2 training: oracle feasibility.** A scripted
+   nearest-resource forager (observer-side; not Io; no learning) must hold
+   in-band occupancy ≥ 70% over 8 seeds × 20 episodes under the operative
+   physics, so Phase 2 measures whether the preference produces the competence,
+   not whether the world permits it. If default physics fails, physics is
+   selected by the oracle criterion and **presented for builder adoption — never
+   self-applied**.
+4. **Phase 2's first-order pass condition is rail → band displacement**:
+   sustained in-band occupancy ≥ 50% (computed over the final 50% of each eval
+   episode, averaged across 8 seeds × 20 episodes) against the ~0% degenerate
+   null, with epistemic behavior surviving per the unchanged entropy thresholds.
+   The §8.4 dominant/falsification signatures are unchanged and binding.
+5. **Env-only recalibration is closed as impossible** (three-level evidence in
+   `probe3_5_recalibration_amendedgate_2026-06-10.md`); the Phase-2 build should
+   not revisit physics selection except through the oracle criterion above.
