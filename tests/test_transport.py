@@ -38,6 +38,7 @@ from kind.env.transport import (
     EnvTransportServer,
     MessageType,
     MutateError,
+    _encode_mutate_args,
 )
 from kind.observer.schemas import WorldEvent
 
@@ -477,72 +478,79 @@ def test_barrier_queues_steps_until_barrier_end() -> None:
         )
 
 
-# QUARANTINED FLAKE (Probe 3 Phase 4, 2026-06-01): this test is timing/threading
-# dependent (~1/3 fail) — it sleeps a fixed 0.2s and then asserts no responses
-# arrived during the barrier, but under load the queued mutate/step can drain
-# before BARRIER_END, surfacing as `assert all(not isinstance(r, Exception))`
-# (or the "no responses during barrier" assert) failing. It is unrelated to the
-# state machine. xfail(strict=False, raises=AssertionError) so the known
-# assertion-flake reads as xfail/xpass (not a suite failure) while any *other*
-# exception still fails loudly. Tracking: re-write deterministically (event
-# barriers instead of sleeps) and lift the marker.
-@pytest.mark.xfail(
-    reason="known threading/timing flake (~1/3); see quarantine note above",
-    strict=False,
-    raises=AssertionError,
-)
 def test_barrier_queues_mutates_and_drains_in_order() -> None:
-    """A MUTATE issued during a barrier is queued and processed when
-    BARRIER_END arrives; multiple queued messages drain in arrival order."""
+    """A MUTATE and a STEP sent during a barrier are queued server-side
+    (not processed) and drain in arrival order on BARRIER_END.
+
+    Deterministic rewrite of a quarantined flake (Probe 3 Phase 4,
+    quarantined 2026-06-01; marker lifted 2026-06-11). The old version
+    issued both requests from concurrent threads, which races on the
+    client's shared response queue: two outstanding requests violate the
+    client's single-outstanding-request contract (``_await_response`` pops
+    the *next* message and requires a request_id match), so whichever
+    thread woke first could pop the other's response — the ~1/3 flake. The
+    queued/drains-in-order property is *server-side*, so this version sends
+    the raw wire messages without awaiting (single thread, no sleeps as
+    assertions), waits on the server's queue state directly, and asserts
+    the drain *order* on the wire after BARRIER_END — strictly stronger
+    than the original, which raced and could not assert order at all.
+    """
     with _make_transport_pair(grid_world_config=_make_quiet_config()) as (
         client,
-        _server,
+        server,
         _recorded,
     ):
         client.connect()
         client.barrier_begin("ckpt-test-003")
 
-        results: list[object] = []
-        order: list[str] = []
+        # Send (without awaiting) a MUTATE then a STEP — the same wire
+        # payloads client.mutate()/client.step() build.
+        mutate_id = client._issue_request_id()
+        client._send(
+            {
+                "type": MessageType.MUTATE.value,
+                "mutator": "add_resource",
+                "args": _encode_mutate_args({"cell": (1, 1)}),
+                "request_id": mutate_id,
+            }
+        )
+        step_id = client._issue_request_id()
+        client._send(
+            {
+                "type": MessageType.STEP.value,
+                "action": 4,
+                "request_id": step_id,
+            }
+        )
 
-        def do_mutate() -> None:
-            try:
-                client.mutate("add_resource", cell=(1, 1))
-                results.append("mutate-ok")
-                order.append("mutate")
-            except Exception as e:  # pragma: no cover
-                results.append(e)
-
-        def do_step() -> None:
-            try:
-                client.step(4)
-                results.append("step-ok")
-                order.append("step")
-            except Exception as e:  # pragma: no cover
-                results.append(e)
-
-        # The trainer can only have one outstanding request at a time
-        # (the client's await is synchronous), so we issue them
-        # sequentially-but-from-threads. This test verifies the queue
-        # drains them; the precise ordering depends on which thread
-        # gets the lock first.
-        t_mutate = threading.Thread(target=do_mutate, daemon=True)
-        t_mutate.start()
-        time.sleep(0.05)
-        t_step = threading.Thread(target=do_step, daemon=True)
-        t_step.start()
-
-        time.sleep(0.2)
-        assert not results, (
+        # Wait (bounded) for both to be *queued* server-side — polling for
+        # the actual condition, not asserting after a fixed sleep.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if len(server._pending_msgs) == 2:
+                break
+            time.sleep(0.005)
+        queued_types = [m.get("type") for m in server._pending_msgs]
+        assert queued_types == [
+            MessageType.MUTATE.value,
+            MessageType.STEP.value,
+        ], "both messages must be queued, in arrival order, during the barrier"
+        # The server is sequential and queued both without processing them,
+        # so no response can have been produced during the barrier.
+        assert client._response_queue.empty(), (
             "no responses should have been received during the barrier"
         )
 
         client.barrier_end("ckpt-test-003")
-        t_mutate.join(timeout=5.0)
-        t_step.join(timeout=5.0)
 
-        assert len(results) == 2
-        assert all(not isinstance(r, Exception) for r in results)
+        # Drain order on the wire: the MUTATE (queued first) is processed
+        # first, then the STEP. Sequential pops from this single thread; a
+        # wrong order surfaces as a request_id mismatch (TransportError).
+        first = client._await_response(mutate_id)
+        assert first.get("type") == MessageType.MUTATE_ACK.value
+        assert first.get("ok") is True
+        second = client._await_response(step_id)
+        assert second.get("type") == MessageType.TRANSITION.value
 
 
 # ---- length-prefix robustness --------------------------------------------
