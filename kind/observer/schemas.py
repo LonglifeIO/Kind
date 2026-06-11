@@ -163,6 +163,20 @@ PROBE_3_5_TELEMETRY_SCHEMA_VERSION: str = "0.4.0"
 # ``schemas/v0.6.0.json`` (:data:`PROBE_3_5_PHASE2_EXPORT_VERSION`),
 # preserving the +1 offset.
 PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION: str = "0.5.0"
+# Probe 3.5 *Phase 3* record-level **DreamRollout** version (the §7
+# passive-decode monitor generation): adds ``sequence_decoded_energy``, the
+# observer-side energy-belief trace recorded alongside ``sequence_decoded_obs``
+# when ``DreamRolloutConfig.record_decoded_energy`` is on (default off →
+# writers keep stamping the Probe-3 "0.3.0" and the field stays None,
+# byte-identical to pre-monitor emission). **Collision note (fourth
+# instance):** the string "0.4.0" is also the AgentStep record version
+# :data:`PROBE_3_5_TELEMETRY_SCHEMA_VERSION` and the Probe-3 *export-file*
+# version :data:`PROBE_3_EXPORT_VERSION` — different namespaces (DreamRollout
+# record vs AgentStep record vs export file); the disambiguating constant
+# names keep writer-side code pointed at the right one. The matching
+# export-file is ``schemas/v0.7.0.json``
+# (:data:`PROBE_3_5_PHASE3_EXPORT_VERSION`).
+PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION: str = "0.4.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -406,13 +420,27 @@ class DreamRollout(RecordEnvelope):
     sequence_ensemble_disagreement_variance: list[float] | None = None
     checkpoint_hash: str | None = None
 
+    # Probe 3.5 Phase 3 — the §7 passive-decode monitor: the world model's
+    # decoded energy belief at each dream step, recorded alongside
+    # ``sequence_decoded_obs``. Observer-side telemetry only — the dream
+    # regime stays preference-free and loss-free with respect to this monitor
+    # (tests/test_dream_energy_monitor.py proves the rollout is byte-identical
+    # apart from this field). Optional so all older shards deserialize
+    # cleanly; required non-None at the Phase-3 dream record version.
+    sequence_decoded_energy: list[float] | None = None
+
     @model_validator(mode="after")
     def _enforce_v3_required_fields(self) -> "DreamRollout":
         # Probe 3 is additive at the model level: older Probe 1 / 1.5 records
         # must continue to read through with the new fields surfacing as None.
         # The required-field discipline is therefore writer-side and keyed
-        # strictly on the v0.3.0 schema_version stamp.
-        if self.schema_version != PROBE_3_TELEMETRY_SCHEMA_VERSION:
+        # strictly on the version stamp. The Probe 3.5 Phase 3 version
+        # ("0.4.0", §7 monitor on) requires everything the Probe-3 version
+        # does **plus** ``sequence_decoded_energy``.
+        if self.schema_version not in (
+            PROBE_3_TELEMETRY_SCHEMA_VERSION,
+            PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION,
+        ):
             return self
 
         missing = [
@@ -435,7 +463,7 @@ class DreamRollout(RecordEnvelope):
         ]
         if missing:
             raise ValueError(
-                f"DreamRollout with schema_version=={PROBE_3_TELEMETRY_SCHEMA_VERSION!r} "
+                f"DreamRollout with schema_version=={self.schema_version!r} "
                 f"requires non-None values for {missing}."
             )
 
@@ -451,9 +479,22 @@ class DreamRollout(RecordEnvelope):
                 conditional_missing.append("seed_perturbation_magnitude")
         if conditional_missing:
             raise ValueError(
-                f"DreamRollout with schema_version=={PROBE_3_TELEMETRY_SCHEMA_VERSION!r} "
+                f"DreamRollout with schema_version=={self.schema_version!r} "
                 f"and seed_kind=={self.seed_kind!r} requires non-None values for "
                 f"{conditional_missing}."
+            )
+
+        # Probe 3.5 Phase 3 (§7 monitor): the Phase-3 dream version is stamped
+        # only by monitor-on writers, so the monitor field is required there.
+        if (
+            self.schema_version == PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION
+            and self.sequence_decoded_energy is None
+        ):
+            raise ValueError(
+                f"DreamRollout with schema_version=="
+                f"{PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION!r} requires a non-None "
+                f"sequence_decoded_energy (the §7 passive-decode monitor is "
+                f"what this version means)."
             )
         return self
 
@@ -532,6 +573,7 @@ PROBE_2_EXPORT_VERSION: str = "0.3.0"
 PROBE_3_EXPORT_VERSION: str = "0.4.0"
 PROBE_3_5_EXPORT_VERSION: str = "0.5.0"
 PROBE_3_5_PHASE2_EXPORT_VERSION: str = "0.6.0"
+PROBE_3_5_PHASE3_EXPORT_VERSION: str = "0.7.0"
 
 
 def export_json_schema_v0_3_0() -> bytes:
@@ -575,24 +617,43 @@ def export_json_schema_v0_5_0() -> bytes:
 
 
 def export_json_schema_v0_6_0() -> bytes:
-    """Return a byte-stable JSON Schema export covering Probe 3.5 Phase 2.
+    """Return the frozen Probe 3.5 Phase-2 export (``schemas/v0.6.0.json``).
 
-    Builds on the frozen v0.5.0 export and refreshes the telemetry models
-    (AgentStep gains ``pragmatic_value_t`` / ``epistemic_value_t`` /
-    ``pragmatic_share_t`` + the Phase-2 record version). The mirror-side,
-    conditioning, and dream models are carried unchanged. The export-file
-    version is :data:`PROBE_3_5_PHASE2_EXPORT_VERSION` (``"0.6.0"``); the
-    record-level telemetry version it advertises is
-    :data:`PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION` (``"0.5.0"``).
+    Probe 3.5 Phase 3 widens the live telemetry models (DreamRollout gains
+    ``sequence_decoded_energy``, the §7 passive-decode monitor), so — per the
+    house pattern — the Phase-2 export is now a **frozen historical
+    artifact**: reading the checked-in bytes keeps it byte-stable rather than
+    regenerating it from the now-wider models. The Phase-3 live export is
+    :func:`export_json_schema_v0_7_0`.
+    """
+
+    return _read_frozen_schema("v0.6.0.json")
+
+
+def export_json_schema_v0_7_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 3.5 Phase 3.
+
+    Builds on the frozen v0.6.0 export and refreshes the telemetry models
+    (DreamRollout gains ``sequence_decoded_energy`` + the Phase-3 dream
+    record version). The mirror-side and conditioning models are carried
+    unchanged. The export-file version is
+    :data:`PROBE_3_5_PHASE3_EXPORT_VERSION` (``"0.7.0"``); the record-level
+    versions it advertises are
+    :data:`PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION` (AgentStep, ``"0.5.0"``)
+    and :data:`PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION` (DreamRollout,
+    ``"0.4.0"``).
     """
 
     from kind.observer.dream_session import DreamSessionMeta
 
-    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.5.0.json"))
-    base_document["title"] = "Kind Probe 3.5 Phase 2 Schemas"
-    base_document["schema_version"] = PROBE_3_5_PHASE2_EXPORT_VERSION
+    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.6.0.json"))
+    base_document["title"] = "Kind Probe 3.5 Phase 3 Schemas"
+    base_document["schema_version"] = PROBE_3_5_PHASE3_EXPORT_VERSION
     base_document["telemetry_schema_version"] = (
         PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION
+    )
+    base_document["dream_rollout_schema_version"] = (
+        PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION
     )
     base_document["dream_schema_version"] = "0.1.0"
     base_document["models"]["telemetry"] = {
@@ -611,10 +672,12 @@ __all__ = [
     "PROBE_3_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION",
+    "PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION",
     "PROBE_2_EXPORT_VERSION",
     "PROBE_3_EXPORT_VERSION",
     "PROBE_3_5_EXPORT_VERSION",
     "PROBE_3_5_PHASE2_EXPORT_VERSION",
+    "PROBE_3_5_PHASE3_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -627,4 +690,5 @@ __all__ = [
     "export_json_schema_v0_4_0",
     "export_json_schema_v0_5_0",
     "export_json_schema_v0_6_0",
+    "export_json_schema_v0_7_0",
 ]

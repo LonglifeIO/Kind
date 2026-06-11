@@ -87,7 +87,11 @@ from kind.observer.dream_session import (
     DreamSessionMeta,
     DreamSessionSink,
 )
-from kind.observer.schemas import PROBE_3_TELEMETRY_SCHEMA_VERSION, DreamRollout
+from kind.observer.schemas import (
+    PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION,
+    PROBE_3_TELEMETRY_SCHEMA_VERSION,
+    DreamRollout,
+)
 from kind.training.dream_seed import SeedSelectionConfig, select_seed
 from kind.training.replay import SequenceReplayBuffer
 
@@ -165,6 +169,16 @@ class DreamRolloutConfig:
     # Off-switch for the Phase 3 pure-prior control: "prior_only" ignores
     # select_seed and samples (h_init, z_init) from the prior at a zero h.
     seed_strategy_for_control: Literal["normal", "prior_only"] = "normal"
+    # Probe 3.5 §7 dream passive-decode (pre-registered resolved sub-decision
+    # #1; built at Phase 3). When True, each dream step also records
+    # ``decode_energy(h_next, z_next)`` — observer-side telemetry only, under
+    # the rollout's existing ``no_grad``, alongside ``sequence_decoded_obs``.
+    # The preference term has NO code path into dreaming (F5 intact; the
+    # guards in tests/test_pragmatic_guards.py and the byte-identity test in
+    # tests/test_dream_energy_monitor.py are the proof): the mirror gets to
+    # watch whether offline processing touches the energy belief; Io's dream
+    # gains nothing to optimize. Default off → legacy emission byte-identical.
+    record_decoded_energy: bool = False
     # Closed at first build; widening requires a separate synthesis (the
     # type-level half of the synthesis §1 no-gradient-flow commitment).
     gradient_policy: Literal["none"] = "none"
@@ -403,6 +417,11 @@ def emit_dream_rollout(
         sequence_action_logprob: list[float] = []
         sequence_prior_entropy: list[float] = []
         sequence_decoded_obs: list[bytes] = []
+        # §7 passive-decode monitor: populated only when opted in; stays None
+        # on the record otherwise (legacy byte-identical).
+        sequence_decoded_energy: list[float] | None = (
+            [] if config.record_decoded_energy else None
+        )
         disagreement_seq: list[float] = []
         temperature_schedule: list[float] = []
         re_seed_step_indices: list[int] = []
@@ -490,6 +509,20 @@ def emit_dream_rollout(
             )
             sequence_decoded_obs.append(decoded_uint8.tobytes())
 
+            # §7 dream passive-decode (Probe 3.5, built at Phase 3): record
+            # the energy belief alongside the decoded obs. A passive read of
+            # ``decode_energy`` under the rollout's no_grad — observer-side
+            # only, never a dream driver; the preference term is not computed
+            # here or anywhere on this path (F5).
+            if sequence_decoded_energy is not None:
+                sequence_decoded_energy.append(
+                    float(
+                        world_model.decode_energy(h_next, z_next)
+                        .reshape(-1)[0]
+                        .item()
+                    )
+                )
+
             # Base-prior entropy (the model's prior; the temperature regime is
             # recorded separately in temperature_schedule, so this field stays
             # comparable to the waking distribution).
@@ -537,7 +570,14 @@ def emit_dream_rollout(
     }
 
     return DreamRollout(
-        schema_version=PROBE_3_TELEMETRY_SCHEMA_VERSION,
+        # §7 monitor on → the Phase-3 dream record version (which requires the
+        # monitor field non-None); off → the Probe-3 version, byte-identical
+        # to pre-monitor emission.
+        schema_version=(
+            PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION
+            if config.record_decoded_energy
+            else PROBE_3_TELEMETRY_SCHEMA_VERSION
+        ),
         run_id=run_id,
         checkpoint_id=checkpoint_id,
         seed_step=env_step_at_emit,
@@ -569,6 +609,7 @@ def emit_dream_rollout(
         re_seed_step_indices=re_seed_step_indices or None,
         sequence_ensemble_disagreement_variance=disagreement_seq,
         checkpoint_hash=checkpoint_hash,
+        sequence_decoded_energy=sequence_decoded_energy,
     )
 
 

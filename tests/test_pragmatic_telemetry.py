@@ -142,16 +142,16 @@ def test_v0_5_0_export_is_frozen_and_pre_pragmatic() -> None:
 
 
 def test_v0_6_0_export_byte_stable_and_matches_disk() -> None:
-    """The Phase-2 export is byte-stable across invocations and matches the
-    checked-in ``schemas/v0.6.0.json``. If a model intentionally changes,
-    regenerate via :func:`export_json_schema_v0_6_0` and commit."""
+    """The Phase-2 export is byte-stable and matches the checked-in
+    ``schemas/v0.6.0.json``. Since Phase 3 (which widened DreamRollout with
+    the §7 monitor field) it is a **frozen historical artifact** — the
+    function reads the checked-in bytes; the live export is v0.7.0
+    (tests/test_dream_energy_monitor.py)."""
     first = export_json_schema_v0_6_0()
     second = export_json_schema_v0_6_0()
     assert first == second
-    assert SCHEMA_FILE_V0_6_0.read_bytes() == first, (
-        "schemas/v0.6.0.json no longer matches the live models — regenerate "
-        "via export_json_schema_v0_6_0() and commit the result."
-    )
+    assert SCHEMA_FILE_V0_6_0.read_bytes() == first
+    assert b"sequence_decoded_energy" not in first  # pre-monitor artifact
 
 
 def test_v0_6_0_export_carries_the_decomposition_fields_and_versions() -> None:
