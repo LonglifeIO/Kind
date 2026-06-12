@@ -875,3 +875,84 @@ at rest.
 disposition, archival only). The probe's cumulative ledger stands at the
 single Phase-2 entry: the pragmatic term in the waking objective —
 pre-registered, DP5, now resting at `None`/0.
+
+## Post-close — seek-mechanism classification (2026-06-12)
+
+**The question the verdict routed:** is seek's unreachability bin 1
+(instrument defect — the belief lies) or bin 2 (architectural absence — the
+belief is honest, the credit path missing)? **Answer: BIN 1, decisively.**
+Decision rule pre-stated with thresholds before any analysis ran; all
+model-dependent diagnostics on the Step-0 instance (the only persisted
+weights); eval and analysis only — no training, no env or physics changes.
+Full record: `docs/decisions/probe3_5_seek_classification_2026-06-12.md`;
+raw diagnostics: `runs/probe3_5_seek_classification/results.json`.
+
+### What the diagnostics found
+
+- **D1 (keystone) — the belief lies, dramatically.** Teacher-forced on
+  oracle (in-band) trajectories, the decoder reports mean **1.124** against
+  true 0.629 (|error| 0.495 — 3.3× the 0.15 threshold), with slope
+  **−0.948**: not the hypothesized regression-toward-the-rail but
+  **anti-correlated, above-ceiling extrapolation** — while *ignoring an
+  honest sensor* (decode-vs-sensed error = decode-vs-true error). Phase 1's
+  model-led interoception, biting OOD: the model stopped listening to the
+  sense organ, and off-distribution the `h`-led inference invents. Computed
+  consequence: under this belief the rail's penalty pressure is halved
+  (floor decodes at 0.218, believed deviation 0.232 vs honest 0.45) and
+  genuinely in-band living reads as *worse* than the rail (believed
+  deviation 0.374) — **the instrument inverts the band's value**.
+- **D2 — fires, marginally** (predicted consumption jump 45% of realized on
+  the events it has data for; the 0.5× floor); in-band consumption predicted
+  as a *drop* (−0.071) on the OOD complement.
+- **D3 — miscalibrated, not dead**: handed the path, imagination shows a
+  sign-correct coincidence signal at ≈1.7× the true increment; prior-mean ≈
+  rsample (the signal rides `h`; stochastic-latent wash-out exonerated).
+- **D4 — horizon exonerated**: nearest resource 1–2 steps away, 100% of
+  visited states within the 15-step window, on-policy consumption in ~5–7%
+  of 15-step spans. Coincidence-sparsity was not the binding constraint.
+- **D5 — the bin-2 inventory is real but non-binding here**: differentiable
+  chain within the horizon (cited to the line), hard truncation, no value
+  tail (no critic/reward head by settled decision), a terminal credit hole
+  (the last imagined action's consequence is never decoded). At distance
+  1–2, none of this is what blocked seek.
+- **Literature (existence-checked)**: DreamerV1 buys distal pursuit with a
+  value model + V_λ; PlaNet with a reward head + online latent planning;
+  sophisticated inference with recursive-EFE tree search. Every neighbor
+  pays in evaluator-or-planner; Kind deliberately carries neither — which
+  would bind in larger worlds, but did not bind here.
+
+### Decided / routed
+
+- **Classification: bin 1**, by the pre-stated first-failed-link rule (D1
+  and D2 both fire; D1 by a wide margin). The verdict doc's **bin-1
+  contingency is triggered**: `decode_energy` is mirror-facing
+  instrumentation (energy telemetry, §7 dream monitor), and it misreports
+  OOD by half a band with inverted slope.
+- **Fixes proposed, presented not applied** (record §9): F1 decoder-head-only
+  recalibration on a coverage mixture + the D1 honesty table as a standing
+  instrument (least invasive; owed to Probe 4's telemetry regardless); F2
+  bound the decoder to [0,1] (own decision doc if wanted); F3 coverage
+  curriculum (charter texture; research-pass material only). Not proposed:
+  anything dream-mediated, any value head or planner, any physics change.
+- **The circularity, named** (fourth appearance of the double-bind): the
+  rail starves the instrument of in-band experience; the starved instrument
+  helps hold the rail. tensor → env-economy → pathway → **instrument**.
+
+### Surprised
+
+- The OOD failure is an *explosion*, not a regression — and the decoder
+  ignores a sensor that is telling it the truth. The redundancy that was
+  benign in-distribution is the defect out-of-distribution.
+- The horizon story died: payoff sits 1–2 steps away on this grid. The
+  most-cited mechanistic suspect (credit assignment over distance) was the
+  wrong one; the humble suspect (the instrument) was right.
+- Under the dishonest belief, regulation would have been *anti-incentivized
+  at equilibrium*, not merely unfindable — the Phase-3 zero-displacement now
+  has a sufficient mechanism behind it.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []` — analysis only. Nothing was
+applied: no recalibration performed, no substrate touched; the classifier
+script is observer-side eval (`true_energy`/`decode_energy` enter no
+training loss). PolicyView unchanged; resting defaults unchanged.
