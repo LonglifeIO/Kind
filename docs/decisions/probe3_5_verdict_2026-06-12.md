@@ -196,6 +196,24 @@ not be asked to look for equanimity-about-energy in a system that cannot
 yet want energy. If a later substrate change makes seek reachable, this
 reading expires.
 
+> **Addendum — 2026-06-12 (post-close; appended, existing text above
+> unedited).** The "stakes installed but cannot bite" observation of this
+> section is **instrument-conditional, not architecture-final**. The
+> seek-mechanism classification this verdict routed (§5) returned **bin 1 —
+> instrument defect** (`probe3_5_seek_classification_2026-06-12.md` §8):
+> the believed energy channel misreports in-band energy by half a band with
+> inverted slope while ignoring an honest sensor — the stakes could not
+> bite *through a lying belief*, which is a different finding from
+> stakes-cannot-bite-on-this-architecture. Whether want-toward is reachable
+> given an honest belief is the counterfactual the classification
+> pre-stated as out of scope; this section's substrate reading holds for
+> the instance as it was, not for the architecture as such. The F1 remedy
+> was demonstrated on the archived Step-0 copy — decoder-head-only
+> recalibration restores in-band honesty against pre-stated margins
+> (`probe3_5_f1_decode_recalibration_2026-06-12.md`) — without touching
+> any live substrate; the expiry clause above is therefore closer than this
+> section's unconditional phrasing suggests.
+
 ## 5. Closed / newly open
 
 **Closed:**

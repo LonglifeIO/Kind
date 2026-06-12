@@ -956,3 +956,105 @@ raw diagnostics: `runs/probe3_5_seek_classification/results.json`.
 applied: no recalibration performed, no substrate touched; the classifier
 script is observer-side eval (`true_energy`/`decode_energy` enter no
 training loss). PolicyView unchanged; resting defaults unchanged.
+
+## Post-close — decode-honesty instrument + F1 demonstration (2026-06-12)
+
+**The remedy session the classification routed:** promote D1 into a standing
+decode-honesty instrument, demonstrate F1 (decoder-head-only recalibration)
+on the archived Step-0 instance, and mark the verdict's charter reading as
+instrument-conditional. Eval and head-only recalibration on an archived copy
+throughout — no live substrate changes, no F2 (gate input reported, decision
+deferred), no fresh-instance work, no Probe 4 design. Record:
+`docs/decisions/probe3_5_f1_decode_recalibration_2026-06-12.md`; raw output
+`runs/probe3_5_f1_recalibration/results.json`.
+
+### Built
+
+- **`kind/observer/decode_honesty.py`** — the D1 one-off generalized:
+  typed, deterministic, checkpoint-agnostic; three policy sources
+  (own-greedy / oracle / uniform-random), five named energy regions with
+  edges from config constants, three-way error comparison
+  (decode-vs-true / decode-vs-sensed / sensed-vs-true) so
+  "ignores the honest sensor" is a standing readout, out-of-range mass as
+  the standing F2 gate input; versioned output schema
+  (`DECODE_HONESTY_SCHEMA_VERSION = "0.1.0"`). Tests in the
+  instrument-validates-itself style (`tests/test_decode_honesty.py`):
+  synthetic honest decoder reads honest; injected bias detected at its
+  magnitude; injected slope recovered; deterministic under fixed seed.
+  The self-validation earned its keep immediately: it caught a ddof
+  mismatch (np.cov vs np.var) in the first slope estimator. This table is
+  the calibration reference for §7 dream-monitor readings and is expected
+  to become pre-registered Probe 4 instrumentation.
+- **`scripts/probe3_5_f1_decoder_recalibration.py`** — the F1
+  demonstration: SHA-256-guarded load of the archived Step-0, before-table,
+  coverage mixture (equal thirds: own-rail at the archived eval seed series
+  9000–9007, oracle 9100–9107, uniform-random 9300–9307; 48k pairs),
+  head-only refit on `(h, z) → sensed_energy` (S-ENV binds recalibration as
+  much as original training — true energy stayed eval-only, read by the
+  honesty table alone), after-table, margins, artifacts.
+
+### Margins — pre-stated, builder-confirmed, then run
+
+M1 oracle in-band |bias| ≤ 0.05; M2 pooled slope positive in [0.5, 1.5];
+M3 own-rail no-regression beyond +0.02 — each with a pre-stated
+interpretation clause (M1 fail = remedy-class-insufficient-at-head-level,
+F2/F3 + Probe 4 gate input, not a retry trigger; M2 sub-1 slope with M1
+green = honest-head-on-noisy-latents attenuation, a measurement; M3
+expected direction = improve-or-hold). **All three passed**: in-band bias
+0.007 (70× under the broken 0.507), pooled slope 0.902, rail error 0.193 →
+0.025 (improved 7.6×). The before-table reproduced D1 at held-out seeds
+(oracle in-band 1.136 / slope −0.865 vs D1's 1.124 / −0.948) — the standing
+instrument validates against the classification.
+
+### Found
+
+- **The defect was entirely head-level.** Everything upstream frozen, ~5
+  seconds of head refitting on covered states, and the decoder reads
+  in-band energy at the honest sensor's own accuracy (|decode−true| 0.040
+  vs |sensed−true| 0.046). The latents carried the truth all along; the
+  head had simply never been asked to read it off-rail — coverage was the
+  whole defect, exactly as §8's circularity named it.
+- **The F2 gate input inverted in shape**: out-of-range mass after is
+  own-policy 0.572 / oracle 0.000 / pooled 0.192 — but it is sub-floor
+  jitter (floor decode −0.007 ± 0.033 straddling the physical 0), not the
+  before-state's +1.1 above-ceiling explosion. Mass large, magnitude tiny.
+  Recorded as the F2 input; decision deferred to its own dated doc if
+  wanted.
+- **The residual envelope is localized, not gone**: uniform-random
+  floor-adjacent stays biased (+0.661, n = 107) — coverage repairs what
+  coverage reaches, and the standing table now shows the boundary instead
+  of a post-hoc surprise.
+- **Preference geometry un-inverted** (computed): floor believed deviation
+  0.447 ≈ honest 0.45 (broken: 0.232); in-band ≈ 0. The classification's
+  "in-band reads worse than the rail" is gone on the archived copy. Whether
+  seek would organize under an honest belief remains the pre-stated
+  out-of-scope counterfactual.
+
+### Verdict-doc addendum
+
+Appended a dated block to the verdict's §4 charter reading (no existing
+text edited): "stakes installed but unable to bite" is
+**instrument-conditional, not architecture-final** — stakes couldn't bite
+through a lying belief; pointers to the classification and to this
+demonstration.
+
+### Lineage
+
+The archived original `step0_burnin_checkpoint.pt` is byte-intact (SHA-256
+asserted before and after; `9bddae31…`). The recalibrated variant is a new
+artifact alongside it (`step0_f1_recalibrated_checkpoint.pt`, provenance
+fields inside; manifest note appended). Training-data provenance, plainly:
+the head saw oracle-policy states no Io-lineage instance ever visited —
+that is the point of coverage, and it is recorded, pre-biography, carrying
+nothing forward.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []`, reasoning explicit: the
+instrument is observer-side (no Io code path imports it; PolicyView frozen
+at `{h, z, self_prediction_error}`); the recalibrated head lives on an
+archived copy, not on any live or carried-forward substrate;
+`decode_energy`'s actor-objective exposure — the DP5 ledger entry — is
+untouched and resting at precision `None`/0. Recalibrating what a read-only
+surface reports, on an archived copy, adds no readable quantity to any
+actor.
