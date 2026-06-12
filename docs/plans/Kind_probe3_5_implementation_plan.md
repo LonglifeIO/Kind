@@ -546,3 +546,29 @@ the phases of this plan:
 5. **Env-only recalibration is closed as impossible** (three-level evidence in
    `probe3_5_recalibration_amendedgate_2026-06-10.md`); the Phase-2 build should
    not revisit physics selection except through the oracle criterion above.
+
+---
+
+## Disposition — probe closed (2026-06-12)
+
+**Probe 3.5 is closed. Verdict: negative-with-structure; no pass window.**
+The authority for everything below is the verdict doc,
+`docs/decisions/probe3_5_verdict_2026-06-12.md` (builder: Gordon).
+
+- **Phases 0–3: complete.** Phase 0 (pre-registration, frozen + two
+  confirmed amendments); Phase 1 (channel without preference — amended gate,
+  recalibration record); Phase 2 (scaffold filled, degenerate baseline
+  instantiated, S1 grid instantiated, mechanism gate green); Phase 3
+  (positive control at the grid top + the single pre-stated σ = 0
+  diagnostic — no displacement at either σ; pathway-limited).
+- **Phase 4: CLOSED UNEXERCISED** — a builder decision, recorded with
+  grounds in the verdict doc §2 (the grid-top result, 0.00% O1-window
+  occupancy on all seeds at both σ, dominates every sweep cell; the
+  pre-stated Phase-3 gate branch was taken; the sweep would re-establish a
+  dominated conclusion). The per-condition baselines, the A1–A3 assay
+  harnesses, and the E′ estimate-lesion described above were therefore
+  never built; their designs remain in this plan as designs only.
+- The frozen pre-registration and both amendments remain byte-frozen; the
+  §8.4 detectors were exercised on real data at Phase 3 (correctly silent).
+  Resting state: default physics unchanged; `energy_preference = None`;
+  energy telemetry and the §7 dream monitor opt-in, default off.

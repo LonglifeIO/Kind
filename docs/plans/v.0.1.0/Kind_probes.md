@@ -70,6 +70,8 @@ I'll know I've found out if Io's explore/conserve behavior shifts with energy (n
 
 Sits between Probe 3 (dream, built through Phase 8c) and Probe 4. Touch-surfaces: env energy economy, world-model energy channel, the actor's existing `pragmatic_value` scaffold, TelemetryView/schema. Do-not-touch: the MetabolicBudget / dream-entry gate (F6), the PolicyView field set (DP4), the dream not-for-anything commitment (F5).
 
+**Post-probe (closed 2026-06-12).** Answered: **negative-with-structure; no pass window.** A bounded, saturating, non-terminal preference over the *believed* channel produces conservation pressure but cannot produce regulation at any pre-registered strength — want-away is gradient-reachable (torpor under a noiseless belief at the grid top), want-toward is not (0.00% steady-state band occupancy on every seed at 10×, both σ; pathway-limited, not noise-limited, by pre-stated diagnostic). Neither feared branch occurred: no energy-dependent trade-off, and no continuation-becoming-the-frame — the §8.4 detectors ran on real data and were correctly silent. The detection half of the question succeeded outright (exact 0.00% null, 100% oracle, the unnamed changed-but-not-displaced corner caught by the journal's watch-note discipline). The sweep (Phase 4) was closed unexercised by builder decision on dominance grounds. What carries forward: the energy channel and preference affordance at rest (precision 0, telemetry opt-in), the §7 dream passive-decode monitor, the guards, and the findings — the env-economy double-bind, model-led interoception, and the conserve/seek pathway asymmetry that now shapes Probe 4's need-keyed perturbation design. Verdict: `docs/decisions/probe3_5_verdict_2026-06-12.md`.
+
 ---
 
 ## Probe 4: Builder-as-perturbation

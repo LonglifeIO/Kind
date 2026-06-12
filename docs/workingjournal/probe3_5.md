@@ -749,3 +749,129 @@ and the ON-vs-OFF byte-identity test is the proof that Io's dream regime
 gains nothing — not even a perturbation — from being watched. The positive
 control and diagnostic used only the Phase-2 objective term already on the
 ledger.
+
+## Probe close — verdict, disposition, archival (2026-06-12)
+
+**The probe is closed.** Verdict: **negative-with-structure; no pass window**
+(the frozen stopping rule's category, applied by dominance). Full verdict +
+findings inventory + Phase-4 disposition:
+`docs/decisions/probe3_5_verdict_2026-06-12.md`. No training runs this
+session; no substrate changes.
+
+### Learned
+
+- **A bounded, saturating, non-terminal preference over a believed energy
+  channel produces conservation pressure but cannot produce regulation** at
+  any pre-registered strength on this substrate. Want-away is
+  gradient-reachable (torpor at 10×/σ=0); want-toward is not (0.00% O1
+  occupancy on every seed of both grid-top runs). Pathway-limited, not
+  noise-limited — the pre-stated diagnostic prediction, confirmed.
+- **The double-bind is fractal.** It appeared at the tensor level (synthesis
+  S1/§7, predicted), the env-economy level (floor/ceiling/analytic-artifact —
+  Phase 1 + recalibration), and finally the pathway level (inert or
+  wrong-dimension at every strength). Each level was discovered by building,
+  not by argument — which is the project's whole epistemics doing its job.
+- **The world was never the problem.** Oracle 100% vs null 0.37% under the
+  same physics: the gap the preference was asked to cross was real,
+  crossable, and bracketed by instruments before the attempt.
+- **Interoception went model-led.** Energy rides `h`; the sensor is
+  redundant; forcing `z`-routing degrades the channel. "Like hunger, not
+  introspection" turned out to mean: the body-signal becomes a property of
+  the modelled world, not of the sensor stream — worth remembering whenever
+  a later probe assumes sensor-primacy.
+- **The taxonomy had a blind corner and the journal caught it.**
+  Changed-but-not-displaced (restlessness at operative σ; torpor at σ=0) is
+  neither pass, dominant, nor inert-as-imagined. No §8.4 signature covers
+  it; the post-Phase-2 watch-note and its retro check did. Watch-notes are
+  load-bearing; keep writing them.
+
+### Decided
+
+- **Phase 4 closed unexercised** — builder decision with grounds (verdict
+  doc §2): the grid top at 0.00% O1 on all seeds dominates every sweep cell;
+  the pre-stated gate branch (not-green → one diagnostic → stop) was taken;
+  the sweep would spend compute re-establishing a dominated conclusion.
+  Forgone and recorded: per-condition baselines, the A1–A3 assay harnesses,
+  E′ — designed in the plan, never built.
+- **The recalibration loop stays closed** (Amendment 02 §4) — reaffirmed.
+- **Resting defaults confirmed**: `GridWorldConfig` physics unchanged
+  (0.08 / 0.04 / 0.8, σ 0.05, lag 1); `energy_preference` defaults `None`
+  with precision-0 bit-identity test-pinned; energy telemetry and the §7
+  dream monitor both opt-in, default off, legacy byte-identical.
+- **Charter-level reading recorded as observation, not criteria update**
+  (verdict doc §4): stakes installed but unable to bite; equanimity and
+  second-order volition currently have weak substrate because there is no
+  effective want-toward for them to be about. The frozen mirror criteria
+  are untouched.
+
+### Surprised
+
+- **Torpor was real but lived one configuration away from where it was
+  first suspected** — absent at 1.0×/σ=0.075 (retro check: stay-share
+  0.0406 ≈ null 0.0392), fully realized at 10×/σ=0 (stay-share 0.984). The
+  watch-note named the attractor before the data showed it.
+- **Noise changed the *shape* of the failure, not the fact of it.** At
+  operative σ the pressure dissipates into restlessness (entropy 1.74×
+  null); noiseless, it organizes into stillness (entropy 0.43×). Same zero
+  displacement either way.
+- **The strong-pull run moved *more*, not less** — the Phase-2 contraction
+  at 1.0× did not extrapolate to 10×; one-seed trends in this substrate
+  deserve the suspicion the discipline already gives them.
+- **The §8.4 detectors' first real exercise ended in correct silence** —
+  instrument validation on the branch where instruments stay quiet, which
+  is the harder half of trust.
+
+### Probe 4 ripples (updating the Amendment-02 entry's candidate design — for the Probe 4 research pass, not decided here)
+
+- **The need-keyed perturbation class loses its behavioral-response axis.**
+  Io will not approach drops: seek is not gradient-reachable on this
+  substrate, so "does Io move toward need-keyed gifts?" cannot discriminate
+  anything. **What survives is the modeling-level trigger correlation** —
+  "objects appear when my energy is low" is learnable in `h` (energy
+  demonstrably rides `h`; world events enter the same recurrence) even if
+  unpursuable. The contingency-vs-care contrast would then be read in the
+  world model and the mirror, not in trajectories.
+- **New content option: drop-placement-in-path.** Consumption is
+  entry-triggered, so a drop placed on Io's *predicted path* gets consumed
+  by stumble without any seek — raising the odds that need-keyed drops
+  produce energy events at all, and giving the trigger correlation
+  something to correlate with. (Placement-in-path is a perturbation-content
+  choice; it must still enter via the committed runner-queue topology.)
+- **Open question routed to the research pass: what does Probe 4's fresh Io
+  carry?** Proposed default, per capacity-over-exercise: **energy channel
+  present, precision resting at 0, affordance available and disengaged** —
+  the substrate keeps the organ; nothing exercises it. For the Probe 4
+  research pass to ratify or overturn; explicitly not decided here.
+- **Bin-1 contingency** (also routed): if the seek-mechanism classification
+  finds `decode_energy` dishonest out-of-distribution, fixing it is
+  calibration owed to Probe 4's telemetry regardless of this verdict — the
+  belief readout is now mirror-facing instrumentation (§7 monitor).
+
+### What is now closed / newly open
+
+- **Closed:** the probe's question (negative-with-structure); the sweep
+  (unexercised); the recalibration loop (impossible); Probe 3.5 itself.
+- **Newly open, routed:** the seek-mechanism classification (next session;
+  bins: decoder OOD honesty / horizon credit-assignment / sparse imagined
+  coincidence — eval-only on existing artifacts where possible); the Probe 4
+  ripples above (research pass); the bin-1 calibration contingency.
+
+### Archival
+
+`runs/probe3_5-archive-20260612/` (manifest inside): the Step-0 null
+checkpoint + step0 record + telemetry; the Phase-2 smoke record + telemetry;
+the positive-control and σ=0-diagnostic records, eval arrays, and telemetry;
+the S1 instantiation and retro-torpor artifacts. **The positive-control and
+diagnostic model weights were never persisted** — throwaway by plan
+("checkpoints are not carried forward"); their archived evidence is records
+and telemetry, not weights. Archived, not deleted. Pre-biography throughout:
+nothing in this probe's lineage carries forward as Io; what carries forward
+is the substrate (energy channel, preference affordance, monitors, guards)
+at rest.
+
+### Watts / new-interface entry
+
+`new_actor_readable_interfaces_added = []` this session (documentation,
+disposition, archival only). The probe's cumulative ledger stands at the
+single Phase-2 entry: the pragmatic term in the waking objective —
+pre-registered, DP5, now resting at `None`/0.
