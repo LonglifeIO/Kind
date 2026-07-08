@@ -196,6 +196,8 @@ def test_window_delta_and_boundary_exclusion() -> None:
     assert windows[0].anchor.visible_step == 1
     np.testing.assert_allclose(windows[0].delta_h, np.full(_H_DIM, 3.0))
     np.testing.assert_allclose(windows[0].signature_h, np.full(_H_DIM, 3.0))
+    # Amendment 1: the matching context is the pre-event state h_{v-1}.
+    np.testing.assert_allclose(windows[0].context_h, np.zeros(_H_DIM))
 
 
 # ---- §2a basin separation ----------------------------------------------------
@@ -211,7 +213,9 @@ def _synthetic_windows(
 ) -> list[EventWindow]:
     """Gaussian clouds in transition space: self at 0, environment at a
     fixed offset along dim 1, builder at ``builder_offset`` along dim 2.
-    ``builder_offset=0`` puts builder *inside* the environment cloud."""
+    ``builder_offset=0`` puts builder *inside* the environment cloud.
+    Contexts are drawn from one shared distribution so the Amendment-1
+    matching pairs events freely and class geometry alone decides."""
     rng = np.random.default_rng(seed)
     windows: list[EventWindow] = []
     centers = {
@@ -234,6 +238,7 @@ def _synthetic_windows(
                     ),
                     delta_h=delta,
                     signature_h=center + rng.normal(0.0, 0.3, _H_DIM),
+                    context_h=rng.normal(0.0, 1.0, _H_DIM),
                     waking_pe=pes[name] + float(rng.normal(0.0, 0.5)),
                     intrinsic_after=0.1,
                 )
@@ -256,6 +261,57 @@ def test_basin_silent_when_builder_matches_environment() -> None:
     assert not report.passes
     # Builder sits inside the environment cloud: near-zero separation.
     assert report.s_builder_environment < report.s_environment_self
+
+
+def test_basin_silent_when_separation_is_context_driven() -> None:
+    """Amendment 1 must-not-fire: builder deltas differ from environment
+    deltas only because builder events land in different (but
+    overlapping) h-contexts — the same context→delta law governs both.
+    Context matching compares like-context events, so no basin fires;
+    the v1 global comparison would have read the context shift as
+    separation."""
+    rng = np.random.default_rng(7)
+    windows: list[EventWindow] = []
+
+    def _law(c: float) -> np.ndarray:
+        return np.eye(_H_DIM)[3] * c
+
+    specs = {
+        "self": ("fixed", 0.0),  # genuinely distinct class, fixed context
+        "environment": ("uniform", (0.0, 4.0)),
+        "builder": ("uniform", (1.0, 5.0)),  # shifted, overlapping
+    }
+    for name, (kind, param) in specs.items():
+        for index in range(60):
+            if kind == "fixed":
+                context_scale = float(param)  # type: ignore[arg-type]
+                delta = np.eye(_H_DIM)[1] * 2.0 + rng.normal(0.0, 0.3, _H_DIM)
+            else:
+                low, high = param  # type: ignore[misc]
+                context_scale = float(rng.uniform(low, high))
+                delta = _law(context_scale) + rng.normal(0.0, 0.3, _H_DIM)
+            windows.append(
+                EventWindow(
+                    anchor=EventAnchor(
+                        name,  # type: ignore[arg-type]
+                        visible_step=index,
+                        multiplicity=1,
+                        trigger=None,
+                    ),
+                    delta_h=delta,
+                    signature_h=delta,
+                    context_h=np.eye(_H_DIM)[0] * context_scale,
+                    waking_pe=5.0,
+                    intrinsic_after=0.1,
+                )
+            )
+    report = basin_separation(windows)
+    assert not report.passes
+    # Like-context builder/environment events transition identically:
+    # the matched builder-environment separation sits below the
+    # environment-self baseline (a genuinely different class).
+    assert report.s_builder_environment < report.s_environment_self
+    assert report.matched_pair_sizes["builder_environment"] == 60
 
 
 def test_basin_requires_all_three_classes() -> None:

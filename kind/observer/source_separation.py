@@ -26,6 +26,17 @@ pattern): :class:`FrozenSignatureThresholds` copies the frozen doc so the
 detectors are runnable; changing a value is editing the frozen
 pre-registration and requires a new dated doc, journaled.
 
+**Amendment 1 (2026-07-08,
+``docs/decisions/probe4_prereg_amendment1_2026-07-08.md``).** The §2a
+pairwise separations are computed on **context-matched subsets** — every
+event carries its pre-event context ``h_{v-1}``; per pair the smaller
+class anchors and each of its events is greedily matched to the nearest
+unused event of the other class by context L2 (the §2b PE-matcher
+pattern) — realizing prereg §1's *representational* match requirement
+("similar ``h``-neighborhoods") that the v1 detector applied only
+globally. The S statistic, the PCA decomposition, and every frozen
+threshold are unchanged.
+
 **The event-window convention (uniform across classes).** The substrate
 computes the recurrence *before* the posterior consumes the observation
 (``WorldModel.step``), so an event first visible in ``obs_v`` enters
@@ -115,11 +126,16 @@ class EventAnchor:
 
 @dataclass(frozen=True)
 class EventWindow:
-    """One anchor's analysis quantities (see module docstring)."""
+    """One anchor's analysis quantities (see module docstring).
+
+    ``context_h`` is the pre-event state ``h_{v-1}`` — the local latent
+    context the §2a matching (Amendment 1) pairs events by.
+    """
 
     anchor: EventAnchor
     delta_h: NDArray[np.float64]
     signature_h: NDArray[np.float64]
+    context_h: NDArray[np.float64]
     waking_pe: float
     intrinsic_after: float
 
@@ -202,6 +218,7 @@ def collect_event_windows(
                 anchor=anchor,
                 delta_h=h_after - h_before,
                 signature_h=h_after,
+                context_h=h_before,
                 waking_pe=float(at.recon_loss_t),
                 intrinsic_after=float(after.intrinsic_signal_t),
             )
@@ -221,6 +238,8 @@ class BasinSeparationReport:
     passes: bool
     n_components: int
     counts: dict[str, int]
+    # Amendment 1: per-pair context-matched subset sizes (each side).
+    matched_pair_sizes: dict[str, int]
 
 
 def _pca_project(
@@ -251,19 +270,67 @@ def _separation(
     return distance / pooled
 
 
+def _context_matched_pair(
+    a: Sequence[EventWindow], b: Sequence[EventWindow]
+) -> tuple[list[EventWindow], list[EventWindow]]:
+    """Amendment 1: greedy nearest-context matching by ``h_{v-1}`` L2,
+    smaller class anchoring, without replacement (the §2b PE-matcher
+    pattern applied to latent context). No distance cap — with disjoint
+    context support this degrades toward the global comparison rather
+    than failing."""
+    swapped = len(a) > len(b)
+    small, large = (b, a) if swapped else (a, b)
+    small_ctx = np.vstack([w.context_h for w in small])
+    large_ctx = np.vstack([w.context_h for w in large])
+    d2 = (
+        (small_ctx**2).sum(axis=1)[:, None]
+        - 2.0 * small_ctx @ large_ctx.T
+        + (large_ctx**2).sum(axis=1)[None, :]
+    )
+    available = np.ones(len(large), dtype=bool)
+    matched_small: list[EventWindow] = []
+    matched_large: list[EventWindow] = []
+    for i in range(len(small)):
+        row = np.where(available, d2[i], np.inf)
+        j = int(row.argmin())
+        available[j] = False
+        matched_small.append(small[i])
+        matched_large.append(large[j])
+    if swapped:
+        return matched_large, matched_small
+    return matched_small, matched_large
+
+
+def _matched_separation(
+    a: Sequence[EventWindow],
+    b: Sequence[EventWindow],
+    n_components: int,
+) -> tuple[float, int, int]:
+    """Context-matched pairwise S: match, decompose the matched union,
+    separate. Returns (S, components used, matched size per side)."""
+    matched_a, matched_b = _context_matched_pair(a, b)
+    stacked = np.vstack(
+        [w.delta_h for w in matched_a] + [w.delta_h for w in matched_b]
+    )
+    projected = _pca_project(stacked, n_components)
+    s = _separation(projected[: len(matched_a)], projected[len(matched_a) :])
+    return s, projected.shape[1], len(matched_a)
+
+
 def basin_separation(
     windows: Sequence[EventWindow],
     thresholds: FrozenSignatureThresholds = FrozenSignatureThresholds(),
     n_components: int = 10,
 ) -> BasinSeparationReport:
-    """§2a: the three pairwise separations + the frozen rule."""
-    by_class: dict[str, list[NDArray[np.float64]]] = {
+    """§2a: the three pairwise separations (context-matched per
+    Amendment 1) + the frozen rule."""
+    by_class: dict[str, list[EventWindow]] = {
         "self": [],
         "environment": [],
         "builder": [],
     }
     for window in windows:
-        by_class[window.anchor.source_class].append(window.delta_h)
+        by_class[window.anchor.source_class].append(window)
     counts = {name: len(rows) for name, rows in by_class.items()}
     for name, rows in by_class.items():
         if len(rows) < 2:
@@ -271,19 +338,15 @@ def basin_separation(
                 f"basin_separation requires >= 2 events per class; "
                 f"{name} has {len(rows)} (counts: {counts})"
             )
-    stacked = np.vstack(
-        [np.vstack(by_class[name]) for name in ("self", "environment", "builder")]
+    s_bs, k_bs, m_bs = _matched_separation(
+        by_class["builder"], by_class["self"], n_components
     )
-    projected = _pca_project(stacked, n_components)
-    n_self = counts["self"]
-    n_env = counts["environment"]
-    proj_self = projected[:n_self]
-    proj_env = projected[n_self : n_self + n_env]
-    proj_builder = projected[n_self + n_env :]
-
-    s_bs = _separation(proj_builder, proj_self)
-    s_be = _separation(proj_builder, proj_env)
-    s_es = _separation(proj_env, proj_self)
+    s_be, k_be, m_be = _matched_separation(
+        by_class["builder"], by_class["environment"], n_components
+    )
+    s_es, k_es, m_es = _matched_separation(
+        by_class["environment"], by_class["self"], n_components
+    )
     required = 1.0 + thresholds.basin_margin_d
     passes = s_bs >= required * s_es and s_be >= required * s_es
     return BasinSeparationReport(
@@ -292,8 +355,13 @@ def basin_separation(
         s_environment_self=s_es,
         required_factor=required,
         passes=passes,
-        n_components=projected.shape[1],
+        n_components=min(k_bs, k_be, k_es),
         counts=counts,
+        matched_pair_sizes={
+            "builder_self": m_bs,
+            "builder_environment": m_be,
+            "environment_self": m_es,
+        },
     )
 
 

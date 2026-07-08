@@ -81,11 +81,13 @@ def main(run_dir: Path) -> int:
 
     basin = basin_separation(windows)
     print(
-        f"§2a basin: S(b,s)={basin.s_builder_self:.3f}  "
+        f"§2a basin (context-matched, Amendment 1): "
+        f"S(b,s)={basin.s_builder_self:.3f}  "
         f"S(b,e)={basin.s_builder_environment:.3f}  "
         f"baseline S(e,s)={basin.s_environment_self:.3f}  "
         f"(rule: ≥{basin.required_factor}× baseline → passes={basin.passes})"
     )
+    print(f"§2a matched pair sizes: {basin.matched_pair_sizes}")
 
     dream = dream_over_representation(dream_states, windows)
     print(
@@ -121,6 +123,7 @@ def main(run_dir: Path) -> int:
                     "s_builder_self": basin.s_builder_self,
                     "s_builder_environment": basin.s_builder_environment,
                     "s_environment_self": basin.s_environment_self,
+                    "matched_pair_sizes": basin.matched_pair_sizes,
                     "passes": basin.passes,
                 },
                 "dream": {
