@@ -1,75 +1,140 @@
 {% extends "base.html" %}
 {% block title %} — live{% endblock %}
 {% block content %}
-<meta http-equiv="refresh" content="2">
 <h2>Live</h2>
-{% if error %}
-  <div class="err">live_state.json is unreadable: {{ error }}</div>
-{% elif state is none %}
-  <p class="empty">No live state yet — no running driver has written
-  <code>window/live_state.json</code> for this run. When the biography
-  run is active this page shows the grid, Io, and the recent event
-  feed, refreshing every 2&nbsp;seconds.</p>
-{% else %}
-  <dl class="kv">
-    <dt>env step</dt><dd>{{ state.env_step }}</dd>
-    <dt>episode</dt><dd>{{ state.episode_id }}
-      (step {{ state.step_in_episode }} in episode)</dd>
-    {% if state.true_energy is not none %}
-    <dt>energy</dt><dd>{{ "%.3f"|format(state.true_energy) }}</dd>
-    {% endif %}
-    <dt>last update</dt>
-    <dd>
-      {{ "%.1f"|format(age_s) }} s ago
-      {% if age_s > 10 %}
-        <span class="note">(stale — Io is dreaming, dormant, paused, or
-        the run has stopped; see the overview state)</span>
-      {% endif %}
-    </dd>
-  </dl>
+<div id="status" class="note">connecting…</div>
+<dl class="kv" id="stats" style="display:none;">
+  <dt>env step</dt><dd id="stat-step"></dd>
+  <dt>episode</dt><dd id="stat-episode"></dd>
+  <dt>energy</dt><dd id="stat-energy"></dd>
+  <dt>last update</dt><dd id="stat-age"></dd>
+</dl>
 
-  <table style="border-collapse: collapse; width: auto; margin-top: 1rem;">
-    {% for row in state.grid %}
-    {% set row_index = loop.index0 %}
-    <tr>
-      {% for cell in row %}
-      {% set col_index = loop.index0 %}
-      {% set io_here = state.agent_pos[0] == row_index
-                        and state.agent_pos[1] == col_index %}
-      <td style="width: 2.2rem; height: 2.2rem; text-align: center;
-                 border: 1px solid #ccc;
-                 background:
-                   {%- if cell == 1 %} #444
-                   {%- elif cell == 2 %} #b6d7a8
-                   {%- else %} #fbfbf9
-                   {%- endif %};">
-        {% if io_here %}<span title="Io" style="color:#3465a4;
-          font-size:1.3rem;">&#9679;</span>{% endif %}
-      </td>
-      {% endfor %}
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="note">dark = wall, green = resource, blue dot = Io</p>
+<div style="display:flex; gap:2rem; align-items:flex-start; flex-wrap:wrap;">
+  <div>
+    <table id="grid" style="border-collapse:collapse; width:auto; margin-top:1rem;"></table>
+    <p class="note">dark = wall, green = resource, blue dot = Io.<br>
+      <b>Click any cell to say hello there</b> (an <code>add_resource</code>
+      through the manual trigger — lands next step, tagged
+      <code>manual</code>).</p>
+    <button id="hello-btn" style="font: inherit; padding: 0.4rem 1rem;
+      cursor: pointer;">say hello (random spot)</button>
+    <span id="hello-ack" class="note" style="margin-left:0.8rem;"></span>
+  </div>
+  <div style="min-width: 22rem;">
+    <h3 style="margin-top:1rem;">recent world events</h3>
+    <p class="note">source labels are the builder's ground truth;
+      Io's observation carries no marker.</p>
+    <table id="events">
+      <tr><th>t</th><th>source</th><th>type</th><th>detail</th></tr>
+    </table>
+  </div>
+</div>
 
-  <h2>Recent world events</h2>
-  {% if state.recent_events %}
-  <table>
-    <tr><th>t</th><th>source</th><th>type</th><th>detail</th></tr>
-    {% for event in state.recent_events | reverse %}
-    <tr>
-      <td>{{ event.t_event }}</td>
-      <td>{% if event.source == "builder" %}<b>{{ event.source }}</b>
-          {% else %}{{ event.source }}{% endif %}</td>
-      <td>{{ event.event_type }}</td>
-      <td>{{ event.detail }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="note">Source labels are the builder's ground truth from the
-  world_event stream. Io's observation carries no such marker.</p>
-  {% else %}
-  <p class="empty">no events yet</p>
-  {% endif %}
-{% endif %}
+<script>
+  const POLL_MS = 500;
+  const gridEl = document.getElementById("grid");
+  const eventsEl = document.getElementById("events");
+  const ackEl = document.getElementById("hello-ack");
+  let gridBuilt = false;
+
+  function cellStyle(v) {
+    if (v === 1) return "#444";
+    if (v === 2) return "#9fce91";
+    return "#fbfbf9";
+  }
+
+  function buildGrid(n) {
+    gridEl.innerHTML = "";
+    for (let r = 0; r < n; r++) {
+      const tr = document.createElement("tr");
+      for (let c = 0; c < n; c++) {
+        const td = document.createElement("td");
+        td.id = `cell-${r}-${c}`;
+        td.style.cssText =
+          "width:2.2rem;height:2.2rem;text-align:center;" +
+          "border:1px solid #ccc;cursor:pointer;font-size:1.2rem;";
+        td.title = `say hello at [${r}, ${c}]`;
+        td.onclick = () => sayHello(r, c);
+        tr.appendChild(td);
+      }
+      gridEl.appendChild(tr);
+    }
+    gridBuilt = true;
+  }
+
+  async function sayHello(row, col) {
+    const body = row === undefined ? {} : { row: row, col: col };
+    ackEl.textContent = "sending…";
+    try {
+      const res = await fetch("hello", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const out = await res.json();
+      ackEl.textContent = out.ok
+        ? `hello queued at [${out.cell}] — watch for trigger=manual`
+        : `not sent: ${out.error}`;
+    } catch (e) {
+      ackEl.textContent = "not sent: " + e;
+    }
+  }
+  document.getElementById("hello-btn").onclick = () => sayHello();
+
+  function render(data) {
+    const statusEl = document.getElementById("status");
+    if (!data.state) {
+      statusEl.textContent = data.error
+        ? "live_state.json unreadable: " + data.error
+        : "no live state — no running driver is writing snapshots";
+      return;
+    }
+    const s = data.state;
+    statusEl.textContent = "";
+    document.getElementById("stats").style.display = "";
+    document.getElementById("stat-step").textContent =
+      s.env_step.toLocaleString();
+    document.getElementById("stat-episode").textContent =
+      `${s.episode_id} (step ${s.step_in_episode} in episode)`;
+    document.getElementById("stat-energy").textContent =
+      s.true_energy === null ? "—" : s.true_energy.toFixed(3);
+    const age = data.age_s === null ? 0 : data.age_s;
+    document.getElementById("stat-age").textContent =
+      age.toFixed(1) + " s ago" + (age > 10
+        ? " (stale — dreaming, dormant, paused, or stopped)" : "");
+
+    const n = s.grid.length;
+    if (!gridBuilt || gridEl.rows.length !== n) buildGrid(n);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const td = document.getElementById(`cell-${r}-${c}`);
+        td.style.background = cellStyle(s.grid[r][c]);
+        const io = s.agent_pos[0] === r && s.agent_pos[1] === c;
+        td.innerHTML = io
+          ? '<span title="Io" style="color:#3465a4;">&#9679;</span>' : "";
+      }
+    }
+
+    let rows = "<tr><th>t</th><th>source</th><th>type</th><th>detail</th></tr>";
+    const events = (s.recent_events || []).slice().reverse();
+    for (const ev of events) {
+      const src = ev.source === "builder" ? `<b>${ev.source}</b>` : ev.source;
+      rows += `<tr><td>${ev.t_event}</td><td>${src}</td>` +
+              `<td>${ev.event_type}</td><td>${ev.detail}</td></tr>`;
+    }
+    eventsEl.innerHTML = rows;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch("live.json");
+      render(await res.json());
+    } catch (e) {
+      document.getElementById("status").textContent = "poll failed: " + e;
+    }
+  }
+  poll();
+  setInterval(poll, POLL_MS);
+</script>
 {% endblock %}

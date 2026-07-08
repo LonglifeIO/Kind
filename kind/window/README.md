@@ -8,12 +8,19 @@ Probe 4 run without hand-inspecting JSON.
 
 ## What Window is — and is not
 
-- **It is** a read-only viewer. Window opens files for reading and
-  writes nowhere under `runs/`. It makes no LLM calls. It does not
-  touch Io's process.
-- **It is not** a monitoring agent. There is no alerting, no push, no
-  real-time update — Window is a tool for human inspection at human
-  timescales.
+- **It is** a read-only viewer, with one deliberate exception: the
+  builder's hello button (`POST /hello` on the live page) writes a
+  manual perturbation request into the run's `perturbation_inbox/` —
+  the plan's DP2 "GUI button" convenience over the tested Phase-2
+  spool; the live runner drains it at the next step boundary, tagged
+  `trigger="manual"`. Every GET route opens files for reading only and
+  writes nowhere. Window makes no LLM calls. It does not touch Io's
+  process.
+- **It is not** a monitoring agent. There is no alerting and no push —
+  Window is a tool for human inspection at human timescales. (The
+  `/live` page does poll a per-step snapshot every 500 ms; that is
+  presentation, not monitoring — nothing watches it when no human is
+  looking.)
 - **It is not** interpretive. Window displays records as they are. It
   does not rank, filter, highlight, or weight what it shows.
   Interpretation stays journal-side.

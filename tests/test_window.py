@@ -273,9 +273,7 @@ def test_server_routes_respond_200() -> None:
         assert response.status_code == 200, f"{route} -> {response.status_code}"
 
 
-def test_live_route_renders_written_state(tmp_path: Path) -> None:
-    """A snapshot written by the runner-side producer renders on /live:
-    grid, Io marker, event feed, energy."""
+def _write_test_live_state(run_dir: Path) -> None:
     from kind.window.live import (
         LiveEventRow,
         LiveWindowState,
@@ -286,7 +284,7 @@ def test_live_route_renders_written_state(tmp_path: Path) -> None:
     grid[2][3] = 2  # a resource
     grid[5][5] = 1  # a wall
     write_live_state(
-        tmp_path,
+        run_dir,
         LiveWindowState(
             run_id="live-test",
             env_step=123,
@@ -306,24 +304,74 @@ def test_live_route_renders_written_state(tmp_path: Path) -> None:
             ],
         ),
     )
-    app = create_app("live-test", tmp_path)
-    response = app.test_client().get("/live")
-    assert response.status_code == 200
-    page = response.get_data(as_text=True)
-    assert "env step" in page and "123" in page
-    assert "builder_perturbation" in page
-    assert "0.500" in page
 
 
-def test_live_route_surfaces_malformed_state(tmp_path: Path) -> None:
+def test_live_json_serves_written_state(tmp_path: Path) -> None:
+    """The live view's data endpoint round-trips the producer's
+    snapshot; the /live page itself is a 200 shell that polls it."""
+    _write_test_live_state(tmp_path)
+    client = create_app("live-test", tmp_path).test_client()
+    assert client.get("/live").status_code == 200
+    data = client.get("/live.json").get_json()
+    assert data["state"]["env_step"] == 123
+    assert data["state"]["agent_pos"] == [1, 1]
+    assert data["state"]["true_energy"] == 0.5
+    assert data["state"]["recent_events"][0]["source"] == "builder"
+    assert data["error"] is None
+
+
+def test_live_json_surfaces_malformed_state(tmp_path: Path) -> None:
     from kind.window.live import live_state_path
 
     path = live_state_path(tmp_path)
     path.parent.mkdir(parents=True)
     path.write_text("{not json", encoding="utf-8")
-    response = create_app("live-test", tmp_path).test_client().get("/live")
-    assert response.status_code == 200
-    assert "unreadable" in response.get_data(as_text=True)
+    data = (
+        create_app("live-test", tmp_path).test_client().get("/live.json")
+    ).get_json()
+    assert data["state"] is None
+    assert "Error" in data["error"]
+
+
+def test_hello_writes_one_inbox_request(tmp_path: Path) -> None:
+    """POST /hello writes exactly one add_resource request into the
+    run's perturbation_inbox — the app's only write surface."""
+    _write_test_live_state(tmp_path)
+    client = create_app("live-test", tmp_path).test_client()
+    out = client.post("/hello", json={"row": 6, "col": 2}).get_json()
+    assert out["ok"] is True and out["cell"] == [6, 2]
+    requests = list((tmp_path / "perturbation_inbox").glob("*.json"))
+    assert len(requests) == 1
+    payload = json.loads(requests[0].read_text())
+    assert payload == {"mutator": "add_resource", "args": {"cell": [6, 2]}}
+    # Writes go nowhere else under the run dir.
+    written = [
+        p
+        for p in tmp_path.rglob("*")
+        if p.is_file() and "perturbation_inbox" not in p.parts
+        and "window" not in p.parts
+    ]
+    assert written == []
+
+
+def test_hello_rejects_io_cell_and_random_picks_valid(
+    tmp_path: Path,
+) -> None:
+    _write_test_live_state(tmp_path)  # Io at (1, 1)
+    client = create_app("live-test", tmp_path).test_client()
+    refused = client.post("/hello", json={"row": 1, "col": 1}).get_json()
+    assert refused["ok"] is False
+    random_pick = client.post("/hello", json={}).get_json()
+    assert random_pick["ok"] is True
+    row, col = random_pick["cell"]
+    assert max(abs(row - 1), abs(col - 1)) > 1  # outside the not-self floor
+
+
+def test_hello_without_live_state_writes_nothing(tmp_path: Path) -> None:
+    client = create_app("live-test", tmp_path).test_client()
+    out = client.post("/hello", json={}).get_json()
+    assert out["ok"] is False
+    assert not (tmp_path / "perturbation_inbox").exists()
 
 
 def test_server_round_detail_responds_200() -> None:
@@ -368,6 +416,7 @@ def test_server_opens_no_file_for_write(
     for route in (
         "/",
         "/live",
+        "/live.json",
         "/rounds",
         f"/rounds/{_PHASE_13_ROUND_ID}",
         "/audit",

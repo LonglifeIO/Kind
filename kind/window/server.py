@@ -1,4 +1,5 @@
-"""Window's HTTP server — a small read-only Flask app.
+"""Window's HTTP server — a small Flask app: read-only views plus one
+builder action.
 
 The server serves on ``localhost:<port>``; the host's Tailscale setup
 handles remote access from other devices on the Tailnet without any
@@ -6,7 +7,17 @@ code here. Window does not authenticate, encrypt, or restrict access —
 it assumes any caller reaching the port is authorized, because the
 Tailscale ACL is what gates that.
 
-Six routes, each read-only:
+**The one write surface: ``POST /hello``** — the builder's manual
+perturbation button (the plan's DP2 "GUI button" optional convenience,
+realized). It writes exactly one request file into the run's
+``perturbation_inbox/`` via the tested Phase-2 spool
+(:func:`kind.env.trigger_inbox.write_trigger_request`); the live
+runner drains it at the next step boundary with ``trigger="manual"``.
+Every GET route remains read-only (the invariant test sweeps them);
+the write scope of the POST is pinned by its own test to the inbox
+directory alone.
+
+The read-only GET routes:
 
 - ``/`` — overview (current state, uptime, totals, pace, breakdowns).
 - ``/rounds`` — the round list, most-recent first.
@@ -24,11 +35,13 @@ write-mode open happens across a full pass through every route.
 
 from __future__ import annotations
 
+import random
 import time
 from pathlib import Path
 
-from flask import Flask, abort, render_template
+from flask import Flask, Response, abort, jsonify, render_template, request
 
+from kind.env.trigger_inbox import write_trigger_request
 from kind.mirror import compute_admissibility
 from kind.window import loaders
 from kind.window.live import LiveWindowState, load_live_state
@@ -111,6 +124,10 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
 
     @app.route("/live")
     def live() -> str:
+        return render_template("live.html")
+
+    @app.route("/live.json")
+    def live_json() -> Response:
         loaded = load_live_state(run_dir)
         state: LiveWindowState | None = None
         error: str | None = None
@@ -121,8 +138,61 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
         age_s: float | None = None
         if state is not None:
             age_s = max(0.0, (_now_ms() - state.wallclock_ms) / 1000.0)
-        return render_template(
-            "live.html", state=state, error=error, age_s=age_s
+        return jsonify(
+            {
+                "state": None if state is None else state.model_dump(),
+                "error": error,
+                "age_s": age_s,
+            }
+        )
+
+    @app.route("/hello", methods=["POST"])
+    def hello() -> Response:
+        """The builder's hello: one ``add_resource`` request into the
+        run's perturbation inbox (drained by the live runner, tagged
+        ``trigger="manual"``). Body may carry ``{"row": r, "col": c}``
+        for a clicked cell; without it a random empty cell outside
+        Io's not-self exclusion (Chebyshev > 1) is chosen. The only
+        write this app performs, and only into ``perturbation_inbox/``.
+        """
+        loaded = load_live_state(run_dir)
+        if not isinstance(loaded, LiveWindowState):
+            return jsonify(
+                {"ok": False, "error": "no live run state to aim at"}
+            )
+        body = request.get_json(silent=True) or {}
+        size = len(loaded.grid)
+        agent_row, agent_col = loaded.agent_pos
+        row = body.get("row")
+        col = body.get("col")
+        if row is not None and col is not None:
+            cell = (int(row), int(col))
+            if not (0 <= cell[0] < size and 0 <= cell[1] < size):
+                return jsonify({"ok": False, "error": "cell out of bounds"})
+            if cell == (agent_row, agent_col):
+                return jsonify(
+                    {"ok": False, "error": "that is Io's own cell"}
+                )
+        else:
+            candidates = [
+                (r, c)
+                for r in range(size)
+                for c in range(size)
+                if loaded.grid[r][c] == 0
+                and max(abs(r - agent_row), abs(c - agent_col)) > 1
+            ]
+            if not candidates:
+                return jsonify(
+                    {"ok": False, "error": "no empty cell available"}
+                )
+            cell = random.choice(candidates)
+        request_path = write_trigger_request(
+            run_dir / "perturbation_inbox",
+            "add_resource",
+            {"cell": [cell[0], cell[1]]},
+        )
+        return jsonify(
+            {"ok": True, "cell": list(cell), "request": request_path.name}
         )
 
     @app.route("/audit")

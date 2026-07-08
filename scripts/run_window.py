@@ -9,9 +9,13 @@ Tailscale setup handles remote access. Once it is running, point a
 browser at ``http://<mac-mini-tailscale-name>:8765/`` from any device
 on the Tailnet.
 
-Window is read-only — it opens the run's on-disk records for reading
-and writes nowhere. It makes no LLM calls and does not touch Io's
-process. Pointing it at a run that is mid-Probe-4 is safe.
+Window's GET routes are read-only — they open the run's on-disk
+records for reading and write nowhere. The one exception is the
+builder's hello button (``POST /hello``), which writes a manual
+perturbation request into the run's ``perturbation_inbox/`` for the
+live runner to drain (the plan's DP2 GUI-button convenience). It makes
+no LLM calls and does not touch Io's process. Pointing it at a run
+that is mid-biography is safe.
 """
 
 from __future__ import annotations
@@ -66,10 +70,12 @@ def main(argv: list[str] | None = None) -> int:
     app = create_app(run_id, run_dir)
     print(
         f"run_window: serving run {run_id!r} on "
-        f"http://{args.host}:{args.port}/ (read-only)",
+        f"http://{args.host}:{args.port}/",
         file=sys.stderr,
     )
-    app.run(host=args.host, port=args.port)
+    # threaded: the live view polls every 500 ms while other pages load;
+    # a single-threaded server would serialize them.
+    app.run(host=args.host, port=args.port, threaded=True)
     return 0
 
 
