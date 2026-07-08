@@ -397,15 +397,26 @@ def test_hello_wall_motif_writes_three_wall_requests(tmp_path: Path) -> None:
     ]
 
 
-def test_hello_wall_motif_refuses_occupied_cells(tmp_path: Path) -> None:
-    """The motif is gentle: it never overwrites a resource (or Io)."""
+def test_hello_wall_motif_paves_resources_but_never_io(
+    tmp_path: Path,
+) -> None:
+    """The motif may pave over food (a saturated board must stay
+    clickable) but never lands on Io or an existing wall."""
     _write_test_live_state(tmp_path)  # resource at (2, 3), Io at (1, 1)
     client = create_app("live-test", tmp_path).test_client()
-    out = client.post(
+    over_resource = client.post(
         "/hello", json={"kind": "wall_motif", "row": 1, "col": 3}
     ).get_json()  # motif cells (1,3),(2,3),(2,4) — (2,3) is a resource
-    assert out["ok"] is False
-    assert not (tmp_path / "perturbation_inbox").exists()
+    assert over_resource["ok"] is True
+    assert len(list((tmp_path / "perturbation_inbox").glob("*.json"))) == 3
+    on_io = client.post(
+        "/hello", json={"kind": "wall_motif", "row": 0, "col": 1}
+    ).get_json()  # motif cells (0,1),(1,1),(1,2) — (1,1) is Io
+    assert on_io["ok"] is False
+    over_wall = client.post(
+        "/hello", json={"kind": "wall_motif", "row": 4, "col": 5}
+    ).get_json()  # motif cells (4,5),(5,5),(5,6) — (5,5) is a wall
+    assert over_wall["ok"] is False
 
 
 def test_server_round_detail_responds_200() -> None:

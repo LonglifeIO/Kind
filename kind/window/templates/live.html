@@ -22,8 +22,8 @@
         checked> resource (one green cell — Io can eat it)</label><br>
       <label style="margin-left:5.2rem;"><input type="radio"
         name="hello-kind" value="wall_motif"> wall motif (an inedible
-        L of 3 walls — only something to wonder at; wiped at the next
-        board reshuffle)</label>
+        L of 3 walls — only something to wonder at; paves over any
+        food in its footprint; wiped at the next board reshuffle)</label>
     </p>
     <button id="hello-btn" style="font: inherit; padding: 0.4rem 1rem;
       cursor: pointer;">say hello (random spot)</button>
@@ -86,11 +86,14 @@
         body: JSON.stringify(body),
       });
       const out = await res.json();
+      ackEl.style.color = out.ok ? "" : "#b03030";
+      ackEl.style.fontWeight = out.ok ? "" : "bold";
       ackEl.textContent = out.ok
         ? `${out.kind === "wall_motif" ? "wall motif" : "hello"} queued at ` +
           JSON.stringify(out.cells) + " — watch for trigger=manual"
-        : `not sent: ${out.error}`;
+        : `NOT SENT: ${out.error}`;
     } catch (e) {
+      ackEl.style.color = "#b03030";
       ackEl.textContent = "not sent: " + e;
     }
   }

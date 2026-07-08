@@ -165,8 +165,8 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
                 return "cell out of bounds"
             if (r, c) == agent:
                 return "that is Io's own cell"
-            if kind == "wall_motif" and loaded.grid[r][c] != 0:
-                return "the motif needs empty cells — try another spot"
+            if kind == "wall_motif" and loaded.grid[r][c] == 1:
+                return "there is already a wall there"
         return cells
 
     @app.route("/hello", methods=["POST"])
