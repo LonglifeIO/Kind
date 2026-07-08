@@ -70,7 +70,13 @@ from kind.agents.views import PolicyView, split
 from kind.agents.world_model import WorldModel, WorldModelConfig, WorldModelStep
 from kind.env.env_server import EnvServer
 from kind.env.grid_world import EnvStep
+from kind.env.perturbation_generator import (
+    PerturbationGenerator,
+    PerturbationGeneratorConfig,
+)
 from kind.env.transport import EnvTransportClient
+from kind.env.trigger_inbox import drain_trigger_inbox
+from kind.observer.source_events import CONSUMPTION_JUMP_THRESHOLD
 from kind.observer.schemas import (
     PROBE_1_SCHEMA_VERSION,
     PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION,
@@ -254,6 +260,22 @@ class RunnerConfig:
     # Precision is the dominance-relevant weight (no β anywhere); the dream
     # path has no route to this config (tests/test_pragmatic_guards.py).
     energy_preference: EnergyPreferenceConfig | None = None
+
+    # Probe 4 Phase 2 (implementation plan §S-PERT). When non-None, a seeded
+    # stochastic perturbation generator is polled at every step boundary
+    # (inside ``_step_once``, between the env step and the AgentStep emit) and
+    # its planned cells are fired through the co-located env-server's mutator
+    # surface with ``trigger="generator"`` — deterministic step-boundary
+    # placement relative to the logged transitions. ``None`` (the default)
+    # changes nothing — every existing runner is byte-identical. Requires a
+    # co-located ``env_server`` (placement reads GridState; the not-self
+    # exclusion needs Io's position), same pattern as ``energy_telemetry``.
+    perturbation_generator: PerturbationGeneratorConfig | None = None
+    # Probe 4 Phase 2: the manual-trigger spool directory (the builder's CLI
+    # writes request files; the runner drains them at the same step boundary,
+    # firing with ``trigger="manual"``). ``None`` (default) disables the
+    # drain. Requires a co-located ``env_server`` when set.
+    perturbation_inbox_dir: Path | None = None
     self_prediction_target_mode: Literal[
         "online", "frozen", "environmental"
     ] = "online"
@@ -604,6 +626,31 @@ class Runner:
                 "env_server (true_energy is read from GridState); got None."
             )
         self._energy_telemetry_enabled: bool = config.energy_telemetry
+
+        # Probe 4 Phase 2 (plan §S-PERT): the step-boundary perturbation
+        # surfaces. Both are opt-in (default None → byte-identical); both
+        # need the co-located env_server (placement reads GridState; firing
+        # goes through the tested mutator surface).
+        if (
+            config.perturbation_generator is not None
+            or config.perturbation_inbox_dir is not None
+        ) and env_server is None:
+            raise ValueError(
+                "RunnerConfig.perturbation_generator / perturbation_inbox_dir "
+                "require a co-located env_server (placement reads GridState; "
+                "mutations fire through EnvServer); got None."
+            )
+        self._perturbation_generator: PerturbationGenerator | None = (
+            PerturbationGenerator(config.perturbation_generator)
+            if config.perturbation_generator is not None
+            else None
+        )
+        # Consumption co-timing detector for the generator's not-self
+        # deferral: consecutive true-energy samples, the house jump
+        # threshold (observer.source_events). Independent of the
+        # energy_telemetry flag — read directly from the co-located
+        # GridState at drain time.
+        self._perturbation_prev_true_energy: float | None = None
 
         # Probe 3.5 Phase 2: the most recent imagination-training step's
         # pragmatic/epistemic decomposition (per-training-step quantities —
@@ -1261,6 +1308,23 @@ class Runner:
         # 4. Step env.
         next_meta = self._transport.step(action_int)
 
+        # 4b. Probe 4 Phase 2 (plan §S-PERT): step-boundary perturbation
+        #     placement. The generator poll and the manual-trigger inbox
+        #     drain both run here — after the env step (so the mutation
+        #     applies to the post-step world, stamps t_event = the step
+        #     just taken, and becomes visible in the *next* observation,
+        #     the documented builder-event timing convention) and before
+        #     the AgentStep emit (so placement is deterministic relative
+        #     to the logged transitions). Direct env-server calls are safe
+        #     here for the same reason the energy-telemetry read is: the
+        #     transport server's reader thread is blocked awaiting the
+        #     next message between our synchronous step() calls.
+        if (
+            self._perturbation_generator is not None
+            or self._config.perturbation_inbox_dir is not None
+        ):
+            self._drain_perturbations(next_meta.env_step)
+
         # 5. Build & insert transition. The transition's obs/episode_id
         #    are the *from* observation's (the one this action was based
         #    on); next_obs is the env's response.
@@ -1669,6 +1733,47 @@ class Runner:
         return kl_per_dim.sum(dim=-1).mean()
 
     # ---- AgentStep emission --------------------------------------------
+
+    def _drain_perturbations(self, env_step: int) -> None:
+        """Probe 4 Phase 2 (plan §S-PERT): fire due perturbations at the
+        step boundary.
+
+        The generator is polled with the post-step world state (grid,
+        Io's position) plus the consumption co-timing flag, detected from
+        consecutive true-energy samples with the house jump threshold
+        (``observer.source_events``) — a consumption at this boundary
+        defers the generator's event (the not-self-in-time rule; the
+        generator re-attempts next boundary). Planned cells fire through
+        the co-located env-server's ``add_resource`` with
+        ``trigger="generator"``. The manual-trigger inbox drains at the
+        same boundary with ``trigger="manual"``; inbox failures become
+        archived error results, never runner exceptions.
+        """
+        assert self._env_server is not None
+        state = self._env_server.grid_world_state
+        current_true_energy = float(state.true_energy)
+        previous = self._perturbation_prev_true_energy
+        consumed_last_step = (
+            previous is not None
+            and (current_true_energy - previous) > CONSUMPTION_JUMP_THRESHOLD
+        )
+        self._perturbation_prev_true_energy = current_true_energy
+
+        if self._perturbation_generator is not None:
+            planned = self._perturbation_generator.poll(
+                env_step=env_step,
+                grid=state.grid,
+                agent_pos=state.agent_pos,
+                consumed_last_step=consumed_last_step,
+            )
+            if planned is not None:
+                for cell in planned.cells:
+                    self._env_server.add_resource(cell, trigger="generator")
+
+        if self._config.perturbation_inbox_dir is not None:
+            drain_trigger_inbox(
+                self._config.perturbation_inbox_dir, self._env_server
+            )
 
     def _emit_agent_step(
         self,
