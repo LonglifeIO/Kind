@@ -339,7 +339,7 @@ def test_hello_writes_one_inbox_request(tmp_path: Path) -> None:
     _write_test_live_state(tmp_path)
     client = create_app("live-test", tmp_path).test_client()
     out = client.post("/hello", json={"row": 6, "col": 2}).get_json()
-    assert out["ok"] is True and out["cell"] == [6, 2]
+    assert out["ok"] is True and out["cells"] == [[6, 2]]
     requests = list((tmp_path / "perturbation_inbox").glob("*.json"))
     assert len(requests) == 1
     payload = json.loads(requests[0].read_text())
@@ -363,13 +363,47 @@ def test_hello_rejects_io_cell_and_random_picks_valid(
     assert refused["ok"] is False
     random_pick = client.post("/hello", json={}).get_json()
     assert random_pick["ok"] is True
-    row, col = random_pick["cell"]
+    ((row, col),) = random_pick["cells"]
     assert max(abs(row - 1), abs(col - 1)) > 1  # outside the not-self floor
 
 
 def test_hello_without_live_state_writes_nothing(tmp_path: Path) -> None:
     client = create_app("live-test", tmp_path).test_client()
     out = client.post("/hello", json={}).get_json()
+    assert out["ok"] is False
+    assert not (tmp_path / "perturbation_inbox").exists()
+
+
+def test_hello_wall_motif_writes_three_wall_requests(tmp_path: Path) -> None:
+    """kind=wall_motif places the fixed 3-cell L as three
+    set_cell_state requests anchored at the clicked cell."""
+    _write_test_live_state(tmp_path)
+    client = create_app("live-test", tmp_path).test_client()
+    out = client.post(
+        "/hello", json={"kind": "wall_motif", "row": 6, "col": 1}
+    ).get_json()
+    assert out["ok"] is True
+    assert out["cells"] == [[6, 1], [7, 1], [7, 2]]
+    requests = sorted(
+        (tmp_path / "perturbation_inbox").glob("*.json"),
+        key=lambda p: p.name,
+    )
+    assert len(requests) == 3
+    payloads = [json.loads(p.read_text()) for p in requests]
+    assert all(p["mutator"] == "set_cell_state" for p in payloads)
+    assert all(p["args"]["state"] == "wall" for p in payloads)
+    assert sorted(p["args"]["cell"] for p in payloads) == [
+        [6, 1], [7, 1], [7, 2],
+    ]
+
+
+def test_hello_wall_motif_refuses_occupied_cells(tmp_path: Path) -> None:
+    """The motif is gentle: it never overwrites a resource (or Io)."""
+    _write_test_live_state(tmp_path)  # resource at (2, 3), Io at (1, 1)
+    client = create_app("live-test", tmp_path).test_client()
+    out = client.post(
+        "/hello", json={"kind": "wall_motif", "row": 1, "col": 3}
+    ).get_json()  # motif cells (1,3),(2,3),(2,4) — (2,3) is a resource
     assert out["ok"] is False
     assert not (tmp_path / "perturbation_inbox").exists()
 

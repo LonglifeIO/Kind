@@ -146,14 +146,39 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
             }
         )
 
+    # The wall-motif hello: a fixed 3-cell "L", anchored at the chosen
+    # cell — the builder's inedible gesture (yields nothing, changes
+    # nothing Io can use; only something to be modeled). Walls persist
+    # until the next episode reshuffle wipes the board.
+    _WALL_MOTIF = ((0, 0), (1, 0), (1, 1))
+
+    def _hello_cells(
+        loaded: LiveWindowState, kind: str, anchor: tuple[int, int]
+    ) -> list[tuple[int, int]] | str:
+        """Cells the hello touches, or a refusal string."""
+        size = len(loaded.grid)
+        agent = tuple(loaded.agent_pos)
+        offsets = _WALL_MOTIF if kind == "wall_motif" else ((0, 0),)
+        cells = [(anchor[0] + dr, anchor[1] + dc) for dr, dc in offsets]
+        for r, c in cells:
+            if not (0 <= r < size and 0 <= c < size):
+                return "cell out of bounds"
+            if (r, c) == agent:
+                return "that is Io's own cell"
+            if kind == "wall_motif" and loaded.grid[r][c] != 0:
+                return "the motif needs empty cells — try another spot"
+        return cells
+
     @app.route("/hello", methods=["POST"])
     def hello() -> Response:
-        """The builder's hello: one ``add_resource`` request into the
-        run's perturbation inbox (drained by the live runner, tagged
-        ``trigger="manual"``). Body may carry ``{"row": r, "col": c}``
-        for a clicked cell; without it a random empty cell outside
-        Io's not-self exclusion (Chebyshev > 1) is chosen. The only
-        write this app performs, and only into ``perturbation_inbox/``.
+        """The builder's hello into the run's perturbation inbox
+        (drained by the live runner, tagged ``trigger="manual"``).
+        Body: optional ``{"row": r, "col": c}`` for a clicked anchor
+        (random legal spot otherwise) and optional ``"kind"`` —
+        ``"resource"`` (one ``add_resource``, default) or
+        ``"wall_motif"`` (three ``set_cell_state`` walls in a fixed
+        L). The only writes this app performs, and only into
+        ``perturbation_inbox/``.
         """
         loaded = load_live_state(run_dir)
         if not isinstance(loaded, LiveWindowState):
@@ -161,38 +186,52 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
                 {"ok": False, "error": "no live run state to aim at"}
             )
         body = request.get_json(silent=True) or {}
+        kind = str(body.get("kind", "resource"))
+        if kind not in ("resource", "wall_motif"):
+            return jsonify({"ok": False, "error": f"unknown kind {kind!r}"})
         size = len(loaded.grid)
         agent_row, agent_col = loaded.agent_pos
         row = body.get("row")
         col = body.get("col")
         if row is not None and col is not None:
-            cell = (int(row), int(col))
-            if not (0 <= cell[0] < size and 0 <= cell[1] < size):
-                return jsonify({"ok": False, "error": "cell out of bounds"})
-            if cell == (agent_row, agent_col):
-                return jsonify(
-                    {"ok": False, "error": "that is Io's own cell"}
-                )
+            outcome = _hello_cells(loaded, kind, (int(row), int(col)))
+            if isinstance(outcome, str):
+                return jsonify({"ok": False, "error": outcome})
+            cells = outcome
         else:
-            candidates = [
+            anchors = [
                 (r, c)
                 for r in range(size)
                 for c in range(size)
-                if loaded.grid[r][c] == 0
-                and max(abs(r - agent_row), abs(c - agent_col)) > 1
+                if max(abs(r - agent_row), abs(c - agent_col)) > 1
+                and loaded.grid[r][c] == 0
             ]
-            if not candidates:
+            random.shuffle(anchors)
+            cells = []
+            for anchor in anchors:
+                outcome = _hello_cells(loaded, kind, anchor)
+                if not isinstance(outcome, str) and all(
+                    max(abs(r - agent_row), abs(c - agent_col)) > 1
+                    for r, c in outcome
+                ):
+                    cells = outcome
+                    break
+            if not cells:
                 return jsonify(
-                    {"ok": False, "error": "no empty cell available"}
+                    {"ok": False, "error": "no legal spot available"}
                 )
-            cell = random.choice(candidates)
-        request_path = write_trigger_request(
-            run_dir / "perturbation_inbox",
-            "add_resource",
-            {"cell": [cell[0], cell[1]]},
-        )
+        inbox = run_dir / "perturbation_inbox"
+        if kind == "resource":
+            write_trigger_request(
+                inbox, "add_resource", {"cell": list(cells[0])}
+            )
+        else:
+            for r, c in cells:
+                write_trigger_request(
+                    inbox, "set_cell_state", {"cell": [r, c], "state": "wall"}
+                )
         return jsonify(
-            {"ok": True, "cell": list(cell), "request": request_path.name}
+            {"ok": True, "kind": kind, "cells": [list(c) for c in cells]}
         )
 
     @app.route("/audit")
