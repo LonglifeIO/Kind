@@ -106,11 +106,28 @@ def torpor_hint(actions: np.ndarray) -> str:
 
 
 def dream_sessions(telemetry_dir: Path) -> str:
-    path = telemetry_dir / "dream_session.jsonl"
-    if not path.exists() or path.stat().st_size == 0:
-        return "no dream sessions recorded yet"
-    lines = sum(1 for line in path.read_text().splitlines() if line.strip())
-    return f"{lines} dream-session records"
+    """Counted from the line-flushed ``world_event`` state transitions —
+    ``dream_rollout`` parquet lags by up to one unflushed shard."""
+    import json
+
+    path = telemetry_dir / "world_event.jsonl"
+    if not path.exists():
+        return "no world_event stream"
+    sessions: set[str] = set()
+    last_wake: int | None = None
+    for line in path.read_text().splitlines():
+        if not line.strip() or '"state_transition"' not in line:
+            continue
+        payload = json.loads(line).get("payload", {})
+        if payload.get("to_state") == "dreaming":
+            sid = payload.get("dream_session_id")
+            if isinstance(sid, str):
+                sessions.add(sid)
+        if payload.get("to_state") == "waking":
+            last_wake = json.loads(line).get("t_event")
+    if not sessions:
+        return "no dream sessions yet"
+    return f"{len(sessions)} dream sessions (last wake at t={last_wake})"
 
 
 def main(run_dir: Path) -> int:
