@@ -268,9 +268,62 @@ def test_server_routes_respond_200() -> None:
     _require(_PHASE_13)
     app = create_app("phase_13_calibration", _PHASE_13)
     client = app.test_client()
-    for route in ("/", "/rounds", "/audit"):
+    for route in ("/", "/rounds", "/audit", "/live"):
         response = client.get(route)
         assert response.status_code == 200, f"{route} -> {response.status_code}"
+
+
+def test_live_route_renders_written_state(tmp_path: Path) -> None:
+    """A snapshot written by the runner-side producer renders on /live:
+    grid, Io marker, event feed, energy."""
+    from kind.window.live import (
+        LiveEventRow,
+        LiveWindowState,
+        write_live_state,
+    )
+
+    grid = [[0] * 8 for _ in range(8)]
+    grid[2][3] = 2  # a resource
+    grid[5][5] = 1  # a wall
+    write_live_state(
+        tmp_path,
+        LiveWindowState(
+            run_id="live-test",
+            env_step=123,
+            episode_id=4,
+            step_in_episode=56,
+            wallclock_ms=0,
+            grid=grid,
+            agent_pos=(1, 1),
+            true_energy=0.5,
+            recent_events=[
+                LiveEventRow(
+                    t_event=120,
+                    source="builder",
+                    event_type="builder_perturbation",
+                    detail="add_resource [0, 7]",
+                )
+            ],
+        ),
+    )
+    app = create_app("live-test", tmp_path)
+    response = app.test_client().get("/live")
+    assert response.status_code == 200
+    page = response.get_data(as_text=True)
+    assert "env step" in page and "123" in page
+    assert "builder_perturbation" in page
+    assert "0.500" in page
+
+
+def test_live_route_surfaces_malformed_state(tmp_path: Path) -> None:
+    from kind.window.live import live_state_path
+
+    path = live_state_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    response = create_app("live-test", tmp_path).test_client().get("/live")
+    assert response.status_code == 200
+    assert "unreadable" in response.get_data(as_text=True)
 
 
 def test_server_round_detail_responds_200() -> None:
@@ -314,6 +367,7 @@ def test_server_opens_no_file_for_write(
     client = app.test_client()
     for route in (
         "/",
+        "/live",
         "/rounds",
         f"/rounds/{_PHASE_13_ROUND_ID}",
         "/audit",

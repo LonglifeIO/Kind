@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %} — live{% endblock %}
+{% block content %}
+<meta http-equiv="refresh" content="2">
+<h2>Live</h2>
+{% if error %}
+  <div class="err">live_state.json is unreadable: {{ error }}</div>
+{% elif state is none %}
+  <p class="empty">No live state yet — no running driver has written
+  <code>window/live_state.json</code> for this run. When the biography
+  run is active this page shows the grid, Io, and the recent event
+  feed, refreshing every 2&nbsp;seconds.</p>
+{% else %}
+  <dl class="kv">
+    <dt>env step</dt><dd>{{ state.env_step }}</dd>
+    <dt>episode</dt><dd>{{ state.episode_id }}
+      (step {{ state.step_in_episode }} in episode)</dd>
+    {% if state.true_energy is not none %}
+    <dt>energy</dt><dd>{{ "%.3f"|format(state.true_energy) }}</dd>
+    {% endif %}
+    <dt>last update</dt>
+    <dd>
+      {{ "%.1f"|format(age_s) }} s ago
+      {% if age_s > 10 %}
+        <span class="note">(stale — Io is dreaming, dormant, paused, or
+        the run has stopped; see the overview state)</span>
+      {% endif %}
+    </dd>
+  </dl>
+
+  <table style="border-collapse: collapse; width: auto; margin-top: 1rem;">
+    {% for row in state.grid %}
+    {% set row_index = loop.index0 %}
+    <tr>
+      {% for cell in row %}
+      {% set col_index = loop.index0 %}
+      {% set io_here = state.agent_pos[0] == row_index
+                        and state.agent_pos[1] == col_index %}
+      <td style="width: 2.2rem; height: 2.2rem; text-align: center;
+                 border: 1px solid #ccc;
+                 background:
+                   {%- if cell == 1 %} #444
+                   {%- elif cell == 2 %} #b6d7a8
+                   {%- else %} #fbfbf9
+                   {%- endif %};">
+        {% if io_here %}<span title="Io" style="color:#3465a4;
+          font-size:1.3rem;">&#9679;</span>{% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="note">dark = wall, green = resource, blue dot = Io</p>
+
+  <h2>Recent world events</h2>
+  {% if state.recent_events %}
+  <table>
+    <tr><th>t</th><th>source</th><th>type</th><th>detail</th></tr>
+    {% for event in state.recent_events | reverse %}
+    <tr>
+      <td>{{ event.t_event }}</td>
+      <td>{% if event.source == "builder" %}<b>{{ event.source }}</b>
+          {% else %}{{ event.source }}{% endif %}</td>
+      <td>{{ event.event_type }}</td>
+      <td>{{ event.detail }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="note">Source labels are the builder's ground truth from the
+  world_event stream. Io's observation carries no such marker.</p>
+  {% else %}
+  <p class="empty">no events yet</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -31,6 +31,7 @@ from flask import Flask, abort, render_template
 
 from kind.mirror import compute_admissibility
 from kind.window import loaders
+from kind.window.live import LiveWindowState, load_live_state
 from kind.window.state import (
     IoState,
     build_overview,
@@ -107,6 +108,22 @@ def create_app(run_id: str, run_dir: Path) -> Flask:
         if match is None:
             abort(404)
         return render_template("judgment.html", judgment=match)
+
+    @app.route("/live")
+    def live() -> str:
+        loaded = load_live_state(run_dir)
+        state: LiveWindowState | None = None
+        error: str | None = None
+        if isinstance(loaded, LiveWindowState):
+            state = loaded
+        elif isinstance(loaded, str):
+            error = loaded
+        age_s: float | None = None
+        if state is not None:
+            age_s = max(0.0, (_now_ms() - state.wallclock_ms) / 1000.0)
+        return render_template(
+            "live.html", state=state, error=error, age_s=age_s
+        )
 
     @app.route("/audit")
     def audit() -> str:
