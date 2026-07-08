@@ -658,3 +658,33 @@ runs/probe4_phase4_biography` renders the frozen indicators
 rise across 3 dream cycles) plus torpor/dream info vantages,
 disaggregated; it flags and advises per the §7 ladder and never stops
 the run. To run at every check-in.
+
+**Day-1 addenda (2026-07-08, same session):**
+
+- The window gained realtime polling (500 ms), a clickable **hello**
+  (resource at any cell) and a **wall-motif hello** (a fixed 3-cell L
+  of walls — the builder's first *inedible* gesture; paves over food,
+  never Io's cell; wiped at the next episode reshuffle). `POST /hello`
+  is the Window's one write surface, scoped by test to
+  `perturbation_inbox/`. The builder used both channels day-1 (47+
+  manual events, including a four-round feeding loop at one cell —
+  contingent responsiveness through the manual arm, which carries no
+  probe claim and is exactly the presence the channel is for).
+- Day-1 curves: PE 397→15; the curiosity signal dipped (0.09), surged
+  (0.81 at ~10k), and eased (~0.61) — an entropy-collapse rut in block
+  1 (policy entropy 0.014, 5 meals/2k) that the disagreement drive
+  un-stuck without any reward. Peak eating 256 meals/2k vs ~353
+  break-even *in an abundant world*: behavior, not scarcity, is the
+  binding constraint. 18 dream sessions, 2 per block, metabolic gate
+  cycling visibly.
+- **Scarcity change deferred** (builder, in session): the want is
+  richer objects for curiosity, not food-centrality — a world change
+  now goes through the **world-v2 research cycle**
+  (`docs/prompts/worldv2_research.md`, outputs to
+  `docs/research/worldv2/`). Feeling-labeled resources explicitly
+  rejected (install-vs-afford; reification).
+- Known quirk: `world_event.jsonl` flushes in bursts (~1–4 min lag),
+  so the live event feed trails the realtime grid; fix at next
+  restart. **Next build task before any world change: checkpoint
+  resume wiring** (a world-v2 enrichment must arrive as an event in a
+  continuing life, not a fresh instance).
