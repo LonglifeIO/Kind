@@ -39,6 +39,22 @@ the per-episode regrowth-event count, the mean drift step magnitude, and
 the final ``p`` value. The asymmetry — full ground truth in the
 ``world_event`` stream, no marker in the agent's observation — is the
 Probe 4 affordance the harness exists to provide.
+
+**Per-event internal stochasticity (Probe 4 Phase 1, plan §S-CTRL).** When
+``EnvServerConfig.emit_internal_stochasticity_events`` is on (default off —
+legacy emission byte-identical), each regrowth resource-addition
+(EMPTY→RESOURCE) additionally emits one granular ``WorldEvent``
+(``source="environment"``, ``event_type="internal_stochasticity_event"``,
+record version ``PROBE_4_WORLD_EVENT_SCHEMA_VERSION``) whose payload's
+comparison keys (``cell`` / ``pre_state`` / ``post_state``) exactly match a
+builder ``add_resource`` payload — the ENVIRONMENT class of the three-way
+matched control (pre-registration §1), directly comparable per-event with
+the BUILDER class. The per-episode aggregate is emitted unchanged either
+way. Two inherited scope notes carry over from the aggregate's
+diff-counting: builder mutations between steps are rolled into the pre-step
+snapshot (never misattributed as internal events), and the episode-boundary
+closing step's regrowth is not counted (grid reset before the diff; ~0.6
+events per ~120-event episode at p=0.01, inside the noise floor).
 """
 
 from __future__ import annotations
@@ -60,7 +76,11 @@ from kind.env.grid_world import (
     GridWorld,
     GridWorldConfig,
 )
-from kind.observer.schemas import PROBE_1_SCHEMA_VERSION, WorldEvent
+from kind.observer.schemas import (
+    PROBE_1_SCHEMA_VERSION,
+    PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+    WorldEvent,
+)
 
 __all__ = [
     "EnvServer",
@@ -104,6 +124,11 @@ class EnvServerConfig:
     seed: int
     world_event_handler: WorldEventHandler
     run_id: str
+    # Probe 4 Phase 1 (plan §S-CTRL): when True, each regrowth
+    # resource-addition emits one granular ``internal_stochasticity_event``
+    # record (see module docstring). Default False keeps legacy emission
+    # byte-identical — the house opt-in pattern.
+    emit_internal_stochasticity_events: bool = False
 
 
 # ---- the harness ---------------------------------------------------------
@@ -112,8 +137,15 @@ class EnvServerConfig:
 _BUILDER_PERTURBATION: Final[str] = "builder_perturbation"
 _ENV_RESET: Final[str] = "env_reset"
 _INTERNAL_STOCHASTICITY_AGGREGATE: Final[str] = "internal_stochasticity_aggregate"
+_INTERNAL_STOCHASTICITY_EVENT: Final[str] = "internal_stochasticity_event"
 _SOURCE_BUILDER: Final[str] = "builder"
 _SOURCE_ENVIRONMENT: Final[str] = "environment"
+
+# Probe 4 Phase 2 (plan §S-PERT / prereg §1): the stratification tag on
+# builder perturbations — payload["trigger"] ∈ {"generator", "manual"}.
+# ``None`` (the default on every mutator method) emits the legacy payload
+# with no tag, keeping all pre-Probe-4 callers byte-identical.
+_VALID_TRIGGERS: Final[frozenset[str]] = frozenset({"generator", "manual"})
 
 
 class EnvServer:
@@ -251,37 +283,69 @@ class EnvServer:
 
     # ---- mutators (the four named) ---------------------------------------
 
-    def add_resource(self, cell: tuple[int, int]) -> None:
+    def add_resource(
+        self, cell: tuple[int, int], *, trigger: str | None = None
+    ) -> None:
         """Builder mutator: set ``cell`` to ``RESOURCE``."""
         grid_world = self._require_started()
         payload = mutators.add_resource(grid_world, cell)
-        self._emit_builder_perturbation(payload)
+        self._emit_builder_perturbation(self._tag_trigger(payload, trigger))
 
     def remove_object(
-        self, cell: tuple[int, int], object_type: CellType
+        self,
+        cell: tuple[int, int],
+        object_type: CellType,
+        *,
+        trigger: str | None = None,
     ) -> None:
         """Builder mutator: remove the matching object at ``cell``."""
         grid_world = self._require_started()
         payload = mutators.remove_object(grid_world, cell, object_type)
-        self._emit_builder_perturbation(payload)
+        self._emit_builder_perturbation(self._tag_trigger(payload, trigger))
 
     def set_cell_state(
-        self, cell: tuple[int, int], state: CellType
+        self,
+        cell: tuple[int, int],
+        state: CellType,
+        *,
+        trigger: str | None = None,
     ) -> None:
         """Builder mutator: write ``state`` to ``cell`` unconditionally."""
         grid_world = self._require_started()
         payload = mutators.set_cell_state(grid_world, cell, state)
-        self._emit_builder_perturbation(payload)
+        self._emit_builder_perturbation(self._tag_trigger(payload, trigger))
 
     def move_object(
         self,
         cell_from: tuple[int, int],
         cell_to: tuple[int, int],
+        *,
+        trigger: str | None = None,
     ) -> None:
         """Builder mutator: move the object from ``cell_from`` to ``cell_to``."""
         grid_world = self._require_started()
         payload = mutators.move_object(grid_world, cell_from, cell_to)
-        self._emit_builder_perturbation(payload)
+        self._emit_builder_perturbation(self._tag_trigger(payload, trigger))
+
+    @staticmethod
+    def _tag_trigger(
+        payload: dict[str, Any], trigger: str | None
+    ) -> dict[str, Any]:
+        """Merge the Probe 4 stratification tag into a mutator payload.
+
+        ``trigger=None`` (every pre-Probe-4 caller) returns the payload
+        untouched — legacy emission byte-identical. Non-None values are
+        validated against the prereg §1 vocabulary so a typo cannot
+        silently produce an unstratifiable event class.
+        """
+        if trigger is None:
+            return payload
+        if trigger not in _VALID_TRIGGERS:
+            raise ValueError(
+                f"trigger must be one of {sorted(_VALID_TRIGGERS)}, got "
+                f"{trigger!r}"
+            )
+        return {**payload, "trigger": trigger}
 
     # ---- sham perturbation (Probe 2 calibration protocol) --------------
 
@@ -392,9 +456,10 @@ class EnvServer:
         event_type: str,
         source: str,
         payload: dict[str, Any],
+        schema_version: str = PROBE_1_SCHEMA_VERSION,
     ) -> None:
         record = WorldEvent(
-            schema_version=PROBE_1_SCHEMA_VERSION,
+            schema_version=schema_version,
             run_id=self._config.run_id,
             checkpoint_id=self._checkpoint_id,
             t_event=t_event,
@@ -483,6 +548,20 @@ class EnvServer:
         and then regrows in the same step (pre==RESOURCE, post==RESOURCE),
         but at Probe 1's regrowth rate that under-count is a fraction of an
         event per episode.
+
+        Probe 4 Phase 1 (plan §S-CTRL): when
+        ``emit_internal_stochasticity_events`` is on, the same diff that
+        feeds the aggregate also emits one granular
+        ``internal_stochasticity_event`` per regrowth cell, in row-major
+        cell order (deterministic given the seed). ``t_event`` is the
+        env-step whose ``EnvStep`` first reflects the regrowth — the
+        regrowth happened *during* that step. (Builder events, by the
+        existing convention, stamp the env-step *before* their mutation is
+        applied and become visible at ``t_event + 1``; the analysis joins
+        each class at its documented visibility step.) The pre-step
+        snapshot discipline in :meth:`step` already excludes builder
+        mutations from this diff, so the granular ENVIRONMENT class can
+        never contain a misattributed BUILDER event.
         """
         grid_world = self._require_started()
         post_state = grid_world.state
@@ -491,8 +570,27 @@ class EnvServer:
         if pre_grid is not None:
             empty_pre = pre_grid == CellType.EMPTY.value
             resource_post = post_state.grid == CellType.RESOURCE.value
-            regrowth_count = int((empty_pre & resource_post).sum())
+            regrowth_mask = empty_pre & resource_post
+            regrowth_count = int(regrowth_mask.sum())
             self._regrowth_events_this_episode += regrowth_count
+            if (
+                self._config.emit_internal_stochasticity_events
+                and regrowth_count > 0
+            ):
+                # np.argwhere is row-major: deterministic emission order.
+                for row, col in np.argwhere(regrowth_mask):
+                    self._emit_world_event(
+                        t_event=self._latest_env_step,
+                        event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                        source=_SOURCE_ENVIRONMENT,
+                        payload={
+                            "process": "regrowth",
+                            "cell": [int(row), int(col)],
+                            "pre_state": "empty",
+                            "post_state": "resource",
+                        },
+                        schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                    )
         if pre_p is not None:
             magnitude = abs(float(post_state.regrowth_p) - pre_p)
             self._drift_step_magnitudes_this_episode.append(magnitude)

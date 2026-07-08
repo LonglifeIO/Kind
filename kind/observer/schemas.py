@@ -109,6 +109,22 @@ when new event types are added. The conventions accumulated to date:
 - ``payload["internal_stochasticity_aggregate"]: dict`` — per-episode
   aggregate emitted on ``"internal_stochasticity_aggregate"`` events
   (Probe 1 plan §3.4).
+- ``"internal_stochasticity_event"`` payload (Probe 4 Phase 1, plan
+  §S-CTRL): ``{process, cell, pre_state, post_state}`` — one granular
+  record per regrowth resource-addition (EMPTY→RESOURCE), emitted with
+  ``source="environment"`` when
+  ``EnvServerConfig.emit_internal_stochasticity_events`` is on (default
+  off — legacy emission byte-identical). The three comparison keys
+  ``cell`` / ``pre_state`` / ``post_state`` exactly match a builder
+  ``add_resource`` payload so the ENVIRONMENT and BUILDER event classes
+  are directly comparable per-event (the three-way matched control,
+  pre-registration §1); the discriminator key is ``process`` (value
+  ``"regrowth"``) rather than ``mutator`` because no mutator fired — the
+  class label lives in ``source``, and the payload names the causal
+  process honestly. Unlike other payload conventions this shape is
+  **validator-enforced** at the Probe 4 record version (the matched
+  control's comparability is load-bearing, so the writer-side check is
+  worth the departure from documented-only).
 - ``"state_transition"`` payload (Probe 3, plan §2.1): ``{from_state,
   to_state, dream_session_id, trigger, wallclock_ms_in_prev_state,
   env_step_at_transition}``. ``from_state`` and ``to_state`` are one
@@ -177,6 +193,21 @@ PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION: str = "0.5.0"
 # export-file is ``schemas/v0.7.0.json``
 # (:data:`PROBE_3_5_PHASE3_EXPORT_VERSION`).
 PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION: str = "0.4.0"
+# Probe 4 Phase 1 record-level **WorldEvent** version (the per-event
+# internal-stochasticity generation): the closed ``WorldEventType`` Literal
+# gains ``"internal_stochasticity_event"`` — one granular record per regrowth
+# resource-addition, the ENVIRONMENT class of the three-way matched control
+# (pre-registration §1; plan §S-CTRL). WorldEvent record lineage: "0.1.0"
+# (Probe 1 env-server writers) → "0.3.0" (Probe 3 state-machine writers) →
+# "0.4.0" (this). **Collision note (fifth instance of the plan §3.3
+# pattern):** the string "0.4.0" is also the AgentStep record version
+# :data:`PROBE_3_5_TELEMETRY_SCHEMA_VERSION`, the DreamRollout record version
+# :data:`PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION`, and the Probe-3 *export-file*
+# version :data:`PROBE_3_EXPORT_VERSION` — four namespaces sharing one
+# string; the disambiguating constant names keep writer-side code pointed at
+# the right one. The matching export-file is ``schemas/v0.8.0.json``
+# (:data:`PROBE_4_EXPORT_VERSION`), preserving the +1 offset.
+PROBE_4_WORLD_EVENT_SCHEMA_VERSION: str = "0.4.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -519,10 +550,22 @@ WorldEventType = Literal[
     "builder_perturbation",
     "env_reset",
     "internal_stochasticity_aggregate",
+    "internal_stochasticity_event",
     "mirror_marker",
     "state_transition",
     "dormant_heartbeat",
 ]
+
+# The validator-enforced payload shape of ``"internal_stochasticity_event"``
+# records (module docstring, payload conventions): the three comparison keys
+# match a builder ``add_resource`` payload; ``process`` is the honest
+# discriminator (no mutator fired).
+_INTERNAL_STOCHASTICITY_EVENT_PAYLOAD_KEYS: tuple[str, ...] = (
+    "process",
+    "cell",
+    "pre_state",
+    "post_state",
+)
 
 
 class WorldEvent(RecordEnvelope):
@@ -540,6 +583,43 @@ class WorldEvent(RecordEnvelope):
     source: Literal["builder", "environment", "system"]
     payload: dict[str, Any]
     wallclock_ms: int
+
+    @model_validator(mode="after")
+    def _enforce_probe_4_granular_event(self) -> "WorldEvent":
+        """Probe 4 Phase 1 writer-side discipline (plan §S-TEL).
+
+        ``"internal_stochasticity_event"`` records must stamp
+        :data:`PROBE_4_WORLD_EVENT_SCHEMA_VERSION` (the mixed-version
+        writer rejection the AgentStep validators established) and must
+        carry the matched-control payload shape — the per-event
+        comparability with builder ``add_resource`` records is what the
+        event type *means* (pre-registration §1), so it is enforced, not
+        merely documented. All other event types, at every version,
+        bypass this check; older shards deserialize unchanged.
+        """
+        if self.event_type != "internal_stochasticity_event":
+            return self
+        if self.schema_version != PROBE_4_WORLD_EVENT_SCHEMA_VERSION:
+            raise ValueError(
+                f"WorldEvent with event_type='internal_stochasticity_event' "
+                f"requires schema_version=="
+                f"{PROBE_4_WORLD_EVENT_SCHEMA_VERSION!r} (got "
+                f"{self.schema_version!r}) — granular internal-stochasticity "
+                f"logging is the Probe 4 WorldEvent generation."
+            )
+        missing = [
+            key
+            for key in _INTERNAL_STOCHASTICITY_EVENT_PAYLOAD_KEYS
+            if key not in self.payload
+        ]
+        if missing:
+            raise ValueError(
+                f"internal_stochasticity_event payload is missing {missing}; "
+                f"the matched control requires the builder-comparable shape "
+                f"{{process, cell, pre_state, post_state}} (pre-registration "
+                f"§1)."
+            )
+        return self
 
 
 RECORD_MODELS: tuple[type[RecordEnvelope], ...] = (
@@ -574,6 +654,7 @@ PROBE_3_EXPORT_VERSION: str = "0.4.0"
 PROBE_3_5_EXPORT_VERSION: str = "0.5.0"
 PROBE_3_5_PHASE2_EXPORT_VERSION: str = "0.6.0"
 PROBE_3_5_PHASE3_EXPORT_VERSION: str = "0.7.0"
+PROBE_4_EXPORT_VERSION: str = "0.8.0"
 
 
 def export_json_schema_v0_3_0() -> bytes:
@@ -631,31 +712,41 @@ def export_json_schema_v0_6_0() -> bytes:
 
 
 def export_json_schema_v0_7_0() -> bytes:
-    """Return a byte-stable JSON Schema export covering Probe 3.5 Phase 3.
+    """Return the frozen Probe 3.5 Phase-3 export (``schemas/v0.7.0.json``).
 
-    Builds on the frozen v0.6.0 export and refreshes the telemetry models
-    (DreamRollout gains ``sequence_decoded_energy`` + the Phase-3 dream
-    record version). The mirror-side and conditioning models are carried
-    unchanged. The export-file version is
-    :data:`PROBE_3_5_PHASE3_EXPORT_VERSION` (``"0.7.0"``); the record-level
-    versions it advertises are
-    :data:`PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION` (AgentStep, ``"0.5.0"``)
-    and :data:`PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION` (DreamRollout,
-    ``"0.4.0"``).
+    Probe 4 Phase 1 widens the live telemetry models (``WorldEventType``
+    gains ``"internal_stochasticity_event"``), so — per the house pattern —
+    the Phase-3 export is now a **frozen historical artifact**: reading the
+    checked-in bytes keeps it byte-stable rather than regenerating it from
+    the now-wider models. The Probe 4 live export is
+    :func:`export_json_schema_v0_8_0`.
+    """
+
+    return _read_frozen_schema("v0.7.0.json")
+
+
+def export_json_schema_v0_8_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 4 Phase 1.
+
+    Builds on the frozen v0.7.0 export and refreshes the telemetry models
+    (``WorldEventType`` gains ``"internal_stochasticity_event"``; the
+    ``WorldEvent`` model gains the granular-event writer-side validator).
+    The mirror-side, conditioning, and dream-session models are carried
+    unchanged. The export-file version is :data:`PROBE_4_EXPORT_VERSION`
+    (``"0.8.0"``); the new record-level version it advertises is
+    :data:`PROBE_4_WORLD_EVENT_SCHEMA_VERSION` (WorldEvent, ``"0.4.0"``);
+    the AgentStep / DreamRollout record versions are unchanged from the
+    v0.7.0 export.
     """
 
     from kind.observer.dream_session import DreamSessionMeta
 
-    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.6.0.json"))
-    base_document["title"] = "Kind Probe 3.5 Phase 3 Schemas"
-    base_document["schema_version"] = PROBE_3_5_PHASE3_EXPORT_VERSION
-    base_document["telemetry_schema_version"] = (
-        PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION
+    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.7.0.json"))
+    base_document["title"] = "Kind Probe 4 Phase 1 Schemas"
+    base_document["schema_version"] = PROBE_4_EXPORT_VERSION
+    base_document["world_event_schema_version"] = (
+        PROBE_4_WORLD_EVENT_SCHEMA_VERSION
     )
-    base_document["dream_rollout_schema_version"] = (
-        PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION
-    )
-    base_document["dream_schema_version"] = "0.1.0"
     base_document["models"]["telemetry"] = {
         model.__name__: model.model_json_schema() for model in RECORD_MODELS
     }
@@ -673,11 +764,13 @@ __all__ = [
     "PROBE_3_5_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION",
+    "PROBE_4_WORLD_EVENT_SCHEMA_VERSION",
     "PROBE_2_EXPORT_VERSION",
     "PROBE_3_EXPORT_VERSION",
     "PROBE_3_5_EXPORT_VERSION",
     "PROBE_3_5_PHASE2_EXPORT_VERSION",
     "PROBE_3_5_PHASE3_EXPORT_VERSION",
+    "PROBE_4_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -691,4 +784,5 @@ __all__ = [
     "export_json_schema_v0_5_0",
     "export_json_schema_v0_6_0",
     "export_json_schema_v0_7_0",
+    "export_json_schema_v0_8_0",
 ]
