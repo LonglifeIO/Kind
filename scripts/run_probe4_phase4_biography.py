@@ -35,6 +35,7 @@ way). Telemetry records everything regardless.
 
 from __future__ import annotations
 
+import argparse
 import threading
 import time
 from pathlib import Path
@@ -47,6 +48,10 @@ from kind.env.grid_world import GridWorldConfig
 from kind.env.perturbation_generator import PerturbationGeneratorConfig
 from kind.env.transport import EnvTransportClient, EnvTransportServer
 from kind.observer.schemas import WorldEvent
+from kind.training.resume import (
+    continuation_counters,
+    resume_from_latest_checkpoint,
+)
 from kind.training.runner import Runner, RunnerConfig, RunnerStepInfo
 from kind.window.live import LiveEventRow, LiveWindowState, write_live_state
 
@@ -87,11 +92,14 @@ class LiveStateWriter:
     outside telemetry, touches nothing Io sees."""
 
     _TAIL_BYTES = 16_384
+    _CONSUMPTION_JUMP = 0.03  # house threshold (seek-classification §1)
 
     def __init__(self, env_server: EnvServer, run_dir: Path) -> None:
         self._env_server = env_server
         self._run_dir = run_dir
         self._started = time.monotonic()
+        self._prev_energy: float | None = None
+        self._derived_rows: list[LiveEventRow] = []
 
     def _recent_events(self) -> list[LiveEventRow]:
         path = self._run_dir / "telemetry" / "world_event.jsonl"
@@ -126,8 +134,30 @@ class LiveStateWriter:
             )
         return rows
 
+    def _track_consumption(self, env_step: int, energy: float) -> None:
+        """Derived builder-eye row: a consumption's energy jump made
+        visible in the feed (the grid pixel often lives < one poll).
+        View-state only — never telemetry."""
+        prev = self._prev_energy
+        self._prev_energy = energy
+        if prev is not None and energy - prev > self._CONSUMPTION_JUMP:
+            self._derived_rows.append(
+                LiveEventRow(
+                    t_event=env_step,
+                    source="io",
+                    event_type="consumption (derived)",
+                    detail=f"energy +{energy - prev:.3f}",
+                )
+            )
+            del self._derived_rows[:-EVENT_FEED_LEN]
+
     def __call__(self, info: RunnerStepInfo) -> None:
         state = self._env_server.grid_world_state
+        self._track_consumption(info.env_step, float(state.true_energy))
+        feed = sorted(
+            self._recent_events() + self._derived_rows,
+            key=lambda row: row.t_event,
+        )[-EVENT_FEED_LEN:]
         write_live_state(
             self._run_dir,
             LiveWindowState(
@@ -139,7 +169,7 @@ class LiveStateWriter:
                 grid=[[int(v) for v in row] for row in state.grid],
                 agent_pos=(int(state.agent_pos[0]), int(state.agent_pos[1])),
                 true_energy=float(state.true_energy),
-                recent_events=self._recent_events(),
+                recent_events=feed,
             ),
         )
         if info.env_step > 0 and info.env_step % 1_000 == 0:
@@ -152,14 +182,45 @@ class LiveStateWriter:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="The Probe 4 biography.")
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Continue the paused biography from its latest checkpoint "
+        "(same mind, fresh world process; counters seeded from the "
+        "run's own telemetry; a resume marker lands in world_event).",
+    )
+    parser.add_argument(
+        "--session-steps",
+        type=int,
+        default=TOTAL_WAKING_STEPS,
+        help="Waking steps to run this session.",
+    )
+    args = parser.parse_args()
+
     torch.manual_seed(20260708)
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     RUN_DIR.mkdir(parents=True, exist_ok=True)
 
+    initial_env_step = 0
+    initial_episode_id = 0
+    if args.resume:
+        initial_env_step, initial_episode_id = continuation_counters(
+            RUN_DIR / "telemetry"
+        )
+        print(
+            f"resuming: counters seeded t={initial_env_step}, "
+            f"episode={initial_episode_id}",
+            flush=True,
+        )
+
     env_server = EnvServer(
         EnvServerConfig(
-            grid_world_config=GridWorldConfig(),  # the real world config
-            seed=WORLD_SEED,
+            grid_world_config=GridWorldConfig(  # the real world config
+                initial_env_step=initial_env_step,
+                initial_episode_id=initial_episode_id,
+            ),
+            seed=WORLD_SEED + initial_episode_id,  # fresh env RNG per session
             world_event_handler=lambda _r: None,  # transport rewires this
             run_id=RUN_ID,
             emit_internal_stochasticity_events=True,
@@ -203,13 +264,21 @@ def main() -> None:
         step_callback=live_writer,
         host_signal_source=CyclicDreamClock(WAKING_BLOCK),
     )
+    if args.resume:
+        resumed_from = resume_from_latest_checkpoint(
+            runner,
+            client,
+            env_server,
+            marker_extra={"session_steps": args.session_steps},
+        )
+        print(f"resumed from {resumed_from}", flush=True)
     print(
-        f"biography starting: {TOTAL_WAKING_STEPS} waking steps target, "
+        f"biography session: {args.session_steps} waking steps, "
         f"device={device}, inbox={inbox_dir}",
         flush=True,
     )
     try:
-        runner.run(TOTAL_WAKING_STEPS)
+        runner.run(args.session_steps)
     finally:
         runner.close()
         client.close()

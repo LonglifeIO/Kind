@@ -46,10 +46,14 @@ class SchemaMismatchError(TypeError):
 class JsonlSink:
     """Append-only JSON-Lines writer for a single Pydantic record type.
 
-    One record per line — ``record.model_dump_json()`` followed by ``"\\n"``.
-    The file is flushed and ``os.fsync``-ed on ``close()`` so a clean shutdown
-    leaves the data on disk regardless of when the OS would otherwise flush
-    its page cache.
+    One record per line — ``record.model_dump_json()`` followed by ``"\\n"``,
+    **flushed per write** so concurrent readers (the live window's event
+    feed, check-in greps against a running biography) see each record as
+    soon as it is written — Python's default 8 KiB text buffer otherwise
+    lags the stream by minutes at biography event rates (observed
+    2026-07-08). ``os.fsync`` still happens only on ``close()`` (flush
+    reaches the OS page cache, which is what a same-host reader needs;
+    per-write fsync would buy nothing but latency).
     """
 
     def __init__(self, path: Path, schema: type[BaseModel]) -> None:
@@ -68,6 +72,7 @@ class JsonlSink:
                 f"{type(record).__name__}"
             )
         self._file.write(record.model_dump_json() + "\n")
+        self._file.flush()
 
     def close(self) -> None:
         if self._closed:
@@ -123,7 +128,15 @@ class ParquetSink:
         self._buffer: list[dict[str, Any]] = []
         self._arrow_schema: pa.Schema = _arrow_schema_from_pydantic(schema)
         self._json_fields: frozenset[str] = json_encoded_field_names(schema)
-        self._next_shard_index = 0
+        # Append semantics for a continued run (biography resume): a
+        # fresh sink over a directory with existing shards continues the
+        # numbering instead of overwriting shard-000000 (C1 finding
+        # 2026-07-08 — a resumed session silently clobbered session 1's
+        # first shard).
+        existing = sorted(dir.glob("shard-*.parquet"))
+        self._next_shard_index = (
+            int(existing[-1].stem.split("-")[1]) + 1 if existing else 0
+        )
         self._closed = False
 
     def write(self, record: BaseModel) -> None:

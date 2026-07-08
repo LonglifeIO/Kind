@@ -114,6 +114,15 @@ class GridWorldConfig:
     start_cell: tuple[int, int] | None = None
     walls: tuple[tuple[int, int], ...] = ()
 
+    # Biography continuation (continuation plan C1): a resumed session's
+    # fresh world process seeds its counters past the previous session's
+    # telemetry so ``t`` stays monotonic and ``episode_id`` unique across
+    # the whole biography (both restarted at 0 otherwise, silently
+    # colliding session 2's telemetry with session 1's). Defaults
+    # preserve fresh-run behavior byte-identically.
+    initial_env_step: int = 0
+    initial_episode_id: int = 0
+
     # Probe 3.5 energy economy (implementation plan §S-ENV; pre-registration
     # 2026-06-10 §"Energy units"). Energy is **Io's own homeostatic variable**,
     # distinct from the world: it depletes per step (a base decay plus an
@@ -261,8 +270,8 @@ class GridWorld:
         ``p`` across.
         """
         self._regrowth_p = self.config.initial_regrowth_p
-        self._env_step = 0
-        self._episode_id = 0
+        self._env_step = self.config.initial_env_step
+        self._episode_id = self.config.initial_episode_id
         self._step_in_episode = 0
         # Energy is re-initialised here — this is the *only* path that resets
         # it. The soft 200-step episode boundary (in ``step``) carries it.
@@ -360,6 +369,16 @@ class GridWorld:
             raise ValueError(
                 f"n_initial_resources must be non-negative, got "
                 f"{c.n_initial_resources}"
+            )
+        if c.initial_env_step < 0:
+            raise ValueError(
+                f"initial_env_step must be non-negative, got "
+                f"{c.initial_env_step}"
+            )
+        if c.initial_episode_id < 0:
+            raise ValueError(
+                f"initial_episode_id must be non-negative, got "
+                f"{c.initial_episode_id}"
             )
 
         # Probe 3.5 energy economy validation.

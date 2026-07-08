@@ -198,6 +198,18 @@ def test_jsonl_roundtrip_small_batch(tmp_path: Path) -> None:
     assert reconstructed == originals
 
 
+def test_jsonl_write_is_immediately_readable(tmp_path: Path) -> None:
+    """Per-write flush: a concurrent same-host reader (the live window's
+    event feed) sees each record without waiting for close() — the
+    biography-continuation plan's C2 lag fix."""
+    path = tmp_path / "events.jsonl"
+    with JsonlSink(path, schema=WorldEvent) as sink:
+        sink.write(make_world_event(1))
+        lines = path.read_text().splitlines()
+        assert len(lines) == 1
+        assert WorldEvent.model_validate_json(lines[0]).t_event == 1
+
+
 def test_parquet_roundtrip_with_column_dtypes(tmp_path: Path) -> None:
     directory = tmp_path / "agent_step"
     originals = [make_agent_step(t) for t in range(8)]

@@ -136,8 +136,14 @@
     let rows = "<tr><th>t</th><th>source</th><th>type</th><th>detail</th></tr>";
     const events = (s.recent_events || []).slice().reverse();
     for (const ev of events) {
-      const src = ev.source === "builder" ? `<b>${ev.source}</b>` : ev.source;
-      rows += `<tr><td>${ev.t_event}</td><td>${src}</td>` +
+      let src = ev.source;
+      let style = "";
+      if (ev.source === "builder") src = `<b>${ev.source}</b>`;
+      if (ev.source === "io")
+        { src = `<b style="color:#3465a4;">Io</b>`; }
+      if (ev.event_type === "env_reset")
+        { style = ' style="background:#efe3c8;font-weight:bold;"'; }
+      rows += `<tr${style}><td>${ev.t_event}</td><td>${src}</td>` +
               `<td>${ev.event_type}</td><td>${ev.detail}</td></tr>`;
     }
     eventsEl.innerHTML = rows;
