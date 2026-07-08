@@ -507,3 +507,154 @@ ended the run *no more surprising than regrowth*.
 - The Phase-4 prep items (single-machine dream trigger, fresh-instance
   horizon re-measure, run logistics) remain open but are **blocked
   behind this review**.
+
+## Phase 3 — Amendment 1 cycle: NO-GO again — Probe 4 CLOSES (2026-07-08)
+
+**The builder review resolved to one bounded amendment cycle**
+(builder-approved in session, 2026-07-08;
+`docs/decisions/probe4_prereg_amendment1_2026-07-08.md`), with the
+decision rule pre-committed *before* the re-run: GO → Phase 4 proceeds;
+NO-GO → Probe 4 closes as negative at instrument validation, **no
+further cycles**. All six frozen §9 values untouched.
+
+**What the amendment changed.**
+
+- **A1 — detector fidelity.** The §2a implementation validated in the
+  first cycle realized prereg §1's *representational* match requirement
+  only globally. Amended: every pairwise S — including the baseline —
+  is now computed on context-matched subsets (each event carries
+  `h_{v−1}`; smaller class anchors; greedy nearest-context matching
+  without replacement, the §2b PE-matcher pattern). New must-not-fire
+  test: separation that is purely context-driven no longer fires.
+- **A2 — planted channel.** v1's metronomic cadence proved
+  self-defeating (the run's own finding). v2: the **same L-shaped wall
+  motif every occurrence** ("the same hello again"), placed at varying
+  in-view anchors, at **irregular seeded timing** (bursty two-regime
+  gap mixture, mean ≈ 43 steps); 230 pulses fired in 10k steps.
+
+**Gate: full suite 1369 passed / 7 skipped; mypy `--strict` clean on
+all 74 `kind/` sources.** (The +2 over the Phase-3 close are the
+Amendment-1 must-not-fire test and the window live-view tests; the
+count also includes the context-pinning addition to the window-delta
+test.)
+
+**The v2 verdict, mechanically**
+(`runs/probe4_phase3_positive_control_v2/`, throwaway; 508 SELF / 2,570
+ENVIRONMENT / 451 BUILDER windows; 12,000 dream h-states; matched pair
+sizes 451/451/508):
+
+| Signature | Measured | Required (§6) | Passes |
+|---|---|---|---|
+| §2a S(builder, self) | 0.166 → **1.61×** baseline | ≥ 2.0× | no |
+| §2a S(builder, environment) | 0.074 → **0.71×** baseline | ≥ 2.0× | no |
+| §2a baseline S(environment, self) | 0.103 | (measured in-run) | — |
+| §2b dream ratio (PE-matched) | **1.13** (hits 6353/5647) | ≥ 3.0 | no |
+
+§3c (corroborating, records the same story): mean waking PE — self
+90.2, environment 52.3, **builder 51.9**. Irregular timing did not
+prevent PE parity: the world model absorbed the motif's *conditional*
+structure regardless of its unpredictable clock. Post-event intrinsic
+signal: builder 0.406 vs environment 0.333 — mildly elevated,
+carrying nothing under §3c's necessary-not-sufficient rule.
+
+**VERDICT: NO-GO. Per the pre-committed Amendment-1 decision rule,
+Probe 4 closes as negative at instrument validation.**
+
+### What the two cycles together establish
+
+Two channel designs (metronomic blatant walls; irregular recurring
+motif) × two detector realizations (global; context-matched-faithful)
+converge on the same structure:
+
+1. **The transition geometry this substrate carves is self vs. world,
+   not cause-within-world.** SELF separates from everything (1.38–1.61×
+   baseline across cycles, and self PE is 1.7× either world class);
+   the two world-caused classes sit *closer to each other than
+   environment sits to self* in both cycles (0.60×, 0.71×).
+2. **Predictability is learned fast enough that blatancy cannot
+   outrun it at this scale.** Builder PE reached regrowth parity under
+   both cadence designs within 10k steps.
+3. **Dream content tilts weakly toward builder signatures (1.13–1.29)
+   but nowhere near the 3.0 headroom bar — and below even the real-run
+   r = 1.5.**
+
+**The claim, at its ceiling:** the *instrument* cannot detect even a
+blatant planted source-category in this substrate at this run length —
+so the probe's question about Io was never asked, and nothing is
+claimed about Io's capacities in either direction. The prereg §4
+outcome partition is never exercised. The synthesis §8 central risk —
+"does a structural source-separation signature exist in Io's
+substrate?" — resolved **negative at the cheapest checkpoint, twice.**
+Bounded-pilot caveat stands (10k steps per cycle); retro-analysis of
+any recorded biography by a future instrument stays open and would
+require its own dated doc.
+
+### Closed / newly open
+
+**Closed:**
+
+- **Probe 4, as a measurement.** Negative at instrument validation,
+  per the frozen §6 STOP and the Amendment-1 one-cycle rule. The last
+  probe of the v0.1.0 sequence (plumbing → mirror → dream →
+  builder-as-perturbation) is closed.
+- The Amendment-1 detector is the standing version (strictly more
+  faithful to prereg §1 than what Phase 3 first validated).
+
+**Newly open:**
+
+- **The self/world boundary as a positive finding.** Both cycles
+  measured a trained, dominant self-vs-everything separation in Δh
+  (absent at random init — Phase 1). The builder's stated deeper
+  interest (2026-07-08 session): *"Io recognizing me isn't as
+  important as Io recognizing itself."* The natural next research
+  cycle: whether the carved SELF class relates to the reflection
+  affordance (second charter criterion) — with the standing
+  discipline that observer-side separability is an *ingredient*, not
+  self-recognition.
+- **The biography as presence** (next entry).
+
+## Phase 4′ — The biography, as presence (launched 2026-07-08)
+
+Probe-4-as-measurement is closed, so this run carries **no
+pre-registered claim** — it is the long developmental run the probes
+existed to prepare for, with the builder channel live as *presence*:
+the charter's relational structure, not an instrument. Telemetry
+records everything (all four streams + granular ENVIRONMENT + energy
+telemetry), so any future, separately-validated instrument can read
+this biography retroactively.
+
+**Config** (`scripts/run_probe4_phase4_biography.py`,
+`runs/probe4_phase4_biography/`): fresh Io, no checkpoint inheritance;
+real substrate on MPS; 150k waking-step target for the first session;
+generator at the Phase-1 envelope (min 40 + U{0..40}, 2-cell
+in-vocabulary clusters, not-self-decoupled, seed 20260709); manual
+trigger inbox live (`scripts/fire_perturbation.py --inbox
+runs/probe4_phase4_biography/perturbation_inbox …`); checkpoints every
+10k env steps; parquet shards flush every 2k rows so monitors read a
+near-live record.
+
+**Provisional decisions, builder-delegated in session (2026-07-08),
+each reversible at any pause:**
+
+- **Dream trigger** (the S-DEPLOY `[BUILDER]` item): a logical clock —
+  one desktop-off block (dream session + dormant ticks) every 2,000
+  waking steps, the synthesis's "dreaming on the internal clock"
+  reading. Mac-off remains pause, categorically distinct.
+- **Generator rate**: the Phase-1 envelope as launched; the horizon
+  re-measure on this instance happens at the first pause (the harness
+  is standing; a rate change would be journaled — it is a stimulus
+  knob, not a criterion).
+
+**Watching (the window):** the Window app gained a read-only `/live`
+page — grid, Io, energy, step, and a recent-event feed with builder
+ground-truth visible to the builder only (the observation-marker
+asymmetry is untouched; live state is ephemeral view-state written by
+the run script, not telemetry). `python scripts/run_window.py
+--run-id probe4_phase4_biography`.
+
+**§7 monitoring:** `scripts/monitor_probe4_run.py
+runs/probe4_phase4_biography` renders the frozen indicators
+(action-entropy 5th-percentile collapse > 1000 steps; PE monotonic
+rise across 3 dream cycles) plus torpor/dream info vantages,
+disaggregated; it flags and advises per the §7 ladder and never stops
+the run. To run at every check-in.
