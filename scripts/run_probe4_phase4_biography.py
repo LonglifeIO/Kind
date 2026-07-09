@@ -48,6 +48,7 @@ from kind.env.env_server import EnvServer, EnvServerConfig
 from kind.env.grid_world import GridWorldConfig
 from kind.env.perturbation_generator import PerturbationGeneratorConfig
 from kind.env.transport import EnvTransportClient, EnvTransportServer
+from kind.env.world_stages import WORLD_STAGES, apply_world_stage
 from kind.observer.schemas import WorldEvent
 from kind.training.resume import (
     continuation_counters,
@@ -197,6 +198,14 @@ def main() -> None:
         default=TOTAL_WAKING_STEPS,
         help="Waking steps to run this session.",
     )
+    parser.add_argument(
+        "--world-stage",
+        choices=WORLD_STAGES,
+        default="default",
+        help="World v2 stage preset for this session's world "
+        "(kind/env/world_stages.py). Every stage change is a dated "
+        "journal entry; the stage lands in the resume marker.",
+    )
     args = parser.parse_args()
 
     # Pause = SIGTERM (or SIGINT when attached): both route through the
@@ -228,9 +237,12 @@ def main() -> None:
 
     env_server = EnvServer(
         EnvServerConfig(
-            grid_world_config=GridWorldConfig(  # the real world config
-                initial_env_step=initial_env_step,
-                initial_episode_id=initial_episode_id,
+            grid_world_config=apply_world_stage(
+                GridWorldConfig(  # the real world config
+                    initial_env_step=initial_env_step,
+                    initial_episode_id=initial_episode_id,
+                ),
+                args.world_stage,
             ),
             seed=WORLD_SEED + initial_episode_id,  # fresh env RNG per session
             world_event_handler=lambda _r: None,  # transport rewires this
@@ -281,12 +293,16 @@ def main() -> None:
             runner,
             client,
             env_server,
-            marker_extra={"session_steps": args.session_steps},
+            marker_extra={
+                "session_steps": args.session_steps,
+                "world_stage": args.world_stage,
+            },
         )
         print(f"resumed from {resumed_from}", flush=True)
     print(
         f"biography session: {args.session_steps} waking steps, "
-        f"device={device}, inbox={inbox_dir}",
+        f"world_stage={args.world_stage}, device={device}, "
+        f"inbox={inbox_dir}",
         flush=True,
     )
     try:

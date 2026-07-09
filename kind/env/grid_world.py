@@ -106,6 +106,16 @@ class GridWorldConfig:
     view_size: int = 7
     obs_resolution: int = 32
     episode_length: int = 200
+    # World v2 E0 (synthesis DP1; plan W1): when False the world never
+    # resamples — ``step()`` skips the soft-boundary block entirely, so
+    # ``episode_id`` stays at ``initial_episode_id``, ``step_in_episode``
+    # grows without bound, walls and placed objects persist indefinitely,
+    # and no ``env_reset`` events are emitted after the initial one.
+    # Consumption, regrowth, and drift continue unchanged. The runner's
+    # boundary h zero-reset is keyed to ``episode_id`` change, so h
+    # continuity follows with no runner change (DP6 b-variant, confirmed
+    # in the W0 inventory). ``episode_length`` becomes inert when False.
+    episode_resample: bool = True
     initial_regrowth_p: float = 0.01
     drift_magnitude_per_step: float = 1e-5
     drift_p_min: float = 0.001
@@ -308,11 +318,15 @@ class GridWorld:
         self._env_step += 1
         self._step_in_episode += 1
 
-        if self._step_in_episode >= self.config.episode_length:
+        if (
+            self.config.episode_resample
+            and self._step_in_episode >= self.config.episode_length
+        ):
             # Episode boundary. Drift carries; resources are resampled fresh;
             # agent is replaced at the start cell. The returned EnvStep
             # reflects the new (post-reset) world — there is no terminal-state
-            # signal in the observation.
+            # signal in the observation. With ``episode_resample=False``
+            # (world v2 e0+) this block never runs: the world continues.
             self._reset_episode_world()
             self._step_in_episode = 0
             self._episode_id += 1
