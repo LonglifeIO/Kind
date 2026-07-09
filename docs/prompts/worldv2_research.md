@@ -34,6 +34,17 @@ substrate at 10k-step scale — likely because the world is so simple that
 everything becomes well-predicted quickly, and the latent capacity (z=16)
 is small.
 
+**Update after the first full 150k-step session (2026-07-09):** late in
+the run the agent fell into ~30k steps of near-total action-stasis,
+parked on the episode-reset cell with its ensemble-disagreement signal
+climbing to record levels (~4× its earlier peak) — apparently because
+the scheduled 200-step board-resample delivers free novelty to a
+stationary agent ("reset-camping," plausibly a scheduled-novelty cousin
+of the noisy-TV trap). It then partially self-recovered in the final 8k
+steps, the second self-resolved stasis of the run. Treat this as a
+live, observed failure mode your proposals must address: Q2 and Q4 are
+not hypothetical.
+
 **The builder's direction (verbatim intent):** *"I don't want Io to have to
 survive, but I'd like its curiosity to result in something other than
 resources."* And the agreed frame: **enrich the world's dynamics, not its
