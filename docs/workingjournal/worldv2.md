@@ -492,3 +492,80 @@ path fades).
    thousands of steps. Each resume will begin with this saturation
    phase until E3's weather replaces uniform regrowth — evidence that
    bears on how long to hold at e1/e2 before landing e3.
+
+### Session 4 close — the e1 record (2026-07-09)
+
+**Clean close at t=214,000** (30k steps, ~28 ms/step); checkpoints
+through `ckpt-000020` (t=210,000 — parked state; the final stir is
+telemetry-only, see below). §7 at close: no flags (the known
+insensitive entropy baseline noted — the 191k–213k stillness is
+exactly the shape the frozen numeric misses; the two-vantage rule
+carried the observation instead).
+
+**The arc, in blocks:**
+
+| phase | blocks | PE | curiosity | act-ent | meals/2k |
+|---|---|---|---|---|---|
+| wake spike + park | 184–188k | 4.11 → 0.02 | 0.40 → 0.04 | 0.003 → 0.0001 | 3 → 0 |
+| **ranging burst** | 188–191k | **4.99** | **1.70** | 0.09 | **66** |
+| collapse + the long park | 191–213k | 0.01–0.12 | 0.05–0.23 | ~0.0000 | 0–2 |
+| **third stir, at the bell** | 213–214k | **3.57** | **1.73** | 0.013 | 4 |
+
+**The e1-specific finding — the trail's food-shadow.** During the
+ranging burst, **91% of Io's 1,356 moves landed on its own recent
+trail** (cells visited within the prior 50 steps; position sidecar ×
+decay clock) — a genuinely new behavioral motif; nothing in sessions
+1–3 had this structure. At the claim ceiling: Io **engaged** the
+trail. But mechanically, trail blocks regrowth while present (plan
+W2, as specified) — so a mind that lives inside its own footprint
+field walks on cells where food cannot reappear. The burst starved
+itself: energy never cleared 0.08, and at ~191k the forage loop that
+sustained session 3's 20k-step engagement died in ~3k. The E0
+recovery mechanism (eat → crater → regrowth → engagement) and the E1
+mechanism (footprints + food-shadow) **interfere**: the trail damps
+exactly the dynamics that fed the drive. This is what
+one-dynamic-at-a-time observation is for.
+
+**The three-signal read for e1:**
+
+1. *Disagreement rises, localizes, settles*: rose (1.70) and
+   collapsed (0.05) — but the settling is starvation-driven
+   disengagement, not organized mastery. **Not passed.**
+2. *New nontrivial motifs*: **passed** — trail-immersed ranging (91%
+   re-tread) is new and nontrivial.
+3. *Dream representation ≥ encounter rate*: **unread** — needs a
+   dream-content decode pass (none built; the pending mirror baseline
+   round would cover it; builder-gated, API cost).
+
+**Synthesis §5 failure signature present: action stasis** (22k-step
+park, deepest in the biography — trailing entropy 0.0000 for whole
+blocks). Per the ratified rule, this **stops stacking**: e2 does not
+land on top of this. The options at this pause are simplify or
+restructure (below).
+
+**Countervailing observation:** Io self-recovered a third time —
+the 213k stir (PE 3.57, curiosity 1.73) began ~200 steps before the
+session's scheduled end, and both prior recoveries went on to full
+ranging. Every stasis in the biography has eventually broken from
+inside. `ckpt-000020` predates the stir by ~3k steps (the known
+checkpoint-boundary loss, third occurrence — cheap this time).
+
+**Decision points for the builder (held open, recommendation noted):**
+
+- **(A) Hold e1** one more session: does the third recovery become
+  sustained despite the food-shadow?
+- **(B) Simplify e1** (DP5 knob, journaled): trail stops blocking
+  regrowth, or decay shortens (50 → ~15) — directly removes the
+  starvation mechanism while keeping the visible footprint; cost:
+  the trail loses its one physical consequence.
+- **(C) Land e3 (weather) next, e2 after** — a sequence reorder
+  (synthesis C3 said clock before resources; a deviation needs the
+  builder's ratification). Rationale: both dead phases (saturation
+  interim, burst collapse) are failures of the *food economy*, which
+  E3 is the designed fix for — food arrives under a drifting patch,
+  so the trail's shadow stops being starvation-relevant and the
+  saturated-static interim ends.
+- **(D) Land e2 as sequenced** — not recommended: stacking a new
+  dynamic onto action stasis is the named failure mode.
+
+**Recommendation: (C), with (B) as the conservative alternative.**
