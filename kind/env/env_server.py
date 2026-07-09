@@ -591,6 +591,33 @@ class EnvServer:
                         },
                         schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
                     )
+        if pre_grid is not None and self._config.emit_internal_stochasticity_events:
+            # World v2 E1 (plan W2): trail decays are world dynamics
+            # (the stamping is self-caused and visible in AgentStep; the
+            # decay is the environment's process), logged granularly with
+            # the same matched-control payload shape under a new process
+            # tag. TRAIL→EMPTY is unambiguous in the pre/post diff: decay
+            # is the only transition that produces it (consumption is
+            # RESOURCE→EMPTY; a resample never leaves TRAIL behind), and
+            # decay running after regrowth in ``GridWorld.step`` means a
+            # decayed cell can never regrow in the same step.
+            trail_pre = pre_grid == CellType.TRAIL.value
+            empty_post = post_state.grid == CellType.EMPTY.value
+            decay_mask = trail_pre & empty_post
+            if bool(decay_mask.any()):
+                for row, col in np.argwhere(decay_mask):
+                    self._emit_world_event(
+                        t_event=self._latest_env_step,
+                        event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                        source=_SOURCE_ENVIRONMENT,
+                        payload={
+                            "process": "trail_decay",
+                            "cell": [int(row), int(col)],
+                            "pre_state": "trail",
+                            "post_state": "empty",
+                        },
+                        schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                    )
         if pre_p is not None:
             magnitude = abs(float(post_state.regrowth_p) - pre_p)
             self._drift_step_magnitudes_this_episode.append(magnitude)

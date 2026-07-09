@@ -214,3 +214,104 @@ states is the candidate mechanism). Trailing-2000 modal fraction for
 block's edge); PE falling across blocks (8.6 → 2.4); no §7 flags.
 Stirring, not yet recovery — the sustained-eating watch (8+ craters)
 is armed.
+
+**Boundary read at ~162k (builder asked "so we just wait?"):** after
+saturation, PE fell to 0.02–0.09 (lowest in the record) and the
+intrinsic signal flatlined at ~0.11–0.16 (vs 4.0 in torpor, 1.2–2.0
+through the recent record) — S1 F2/F4 played out live: disagreement
+extinguished on the mastered, static world. No pathology: action
+entropy rose to 0.21–0.26 (highest in ~20k steps; the policy
+softened rather than collapsed), meals steady ~36/2k = exactly the
+two-cell refill arithmetic. At the claim ceiling: the e0 world is
+now largely **ignored** — finished, not broken. Io's observed
+behavior: a two-cell pace-harvest loop at (1,0)–(2,0); the two open
+cells are its own refill craters (empty count = eat rate ÷ regrowth
+rate). Builder decision in chat: **build W2 now; land at the pause.**
+
+## W2 — E1: the somatic trail (2026-07-09)
+
+**The phase's question** (plan W2): does Io's own movement leaving
+decaying visible traces land as learnable self-caused structure? (The
+live half of the question begins at the e1 landing; this entry is the
+build.)
+
+**Gate: full suite 1405 passed / 7 skipped (W1 close: 1388 / 7);
+mypy `--strict` clean on all 76 `kind/` sources.** Pixel-equality
+gate, PolicyView field-set, metabolic content-blindness, and
+pragmatic/dream guards all green.
+
+### What was built
+
+- **`CellType.TRAIL = 4` — a deliberate deviation from the plan's
+  "render value 3" wording, recorded here:** 3 is the out-of-bounds
+  *view* sentinel (`_OOB_SENTINEL`), a render-contract value baked
+  into every observation Io has ever seen at a grid edge. TRAIL takes
+  4; the OOB contract (value 3 → gray 64) is untouched and
+  test-pinned. TRAIL renders at gray 192 (a stimulus knob, distinct
+  from all four existing levels).
+- **Mechanics** (`grid_world.py`): `trail_enabled` (default False,
+  byte-identical — pinned) + `trail_decay_steps` (default 50).
+  Stamping: the vacated cell on a successful move becomes TRAIL iff it
+  is EMPTY or already TRAIL — food that regrew under the agent and
+  walls are never overwritten; `stay`, wall collisions, and off-grid
+  moves stamp nothing; re-vacating refreshes the clock. Decay: a
+  deterministic per-cell TTL (no RNG touched — enabled worlds stay
+  fully reproducible), ticked after regrowth so a decayed cell is
+  regrowth-eligible only from the next step and the observer diff sees
+  a clean TRAIL→EMPTY. A footprint persists exactly
+  `trail_decay_steps` steps beyond its stamping step. Trail is
+  passable and inedible; it blocks regrowth while present (regrowth
+  targets EMPTY only — test-pinned both directions: no TRAIL→RESOURCE
+  ever; decayed cells do regrow).
+- **Granular events** (`env_server.py`): each decay emits one
+  `internal_stochasticity_event` with `process="trail_decay"`,
+  `pre_state="trail"`, `post_state="empty"` under the existing
+  validated matched-control payload shape (grounding fact 4 — new
+  process tag, no schema change). Stamping emits nothing: it is
+  self-caused and visible in AgentStep. TRAIL→EMPTY is unambiguous in
+  the pre/post diff (consumption is RESOURCE→EMPTY; builder mutations
+  are inside the snapshot).
+- **Builder-channel discipline** (`mutators.py`): `cell_type_name`
+  knows "trail" (a mutator touching a trail cell names its pre-state
+  honestly instead of raising); builders may **pave over** or
+  **remove** trail (`remove_object --object-type trail` added to the
+  CLI) but may not **fabricate** (`set_cell_state` TRAIL rejected) or
+  **move** it (`move_object` from a trail cell rejected) — trail is
+  Io's own footprint by definition; a builder-written trail would put
+  SELF-attributable state into the world from the BUILDER class. A
+  stale decay clock never stomps a paved cell (guard + test).
+- **Stage preset** `e1` (cumulative: e0 + `trail_enabled=True`,
+  `trail_decay_steps=50`); launcher choices update automatically.
+- **Window**: `/live` cellStyle for value 4 (tan `#d9cfae`), legend
+  text, and a stale-caption fix — the wall-motif hello no longer says
+  "wiped at the next board reshuffle" (untrue since e0); it persists
+  until removed. **The window server needs its manual restart at the
+  e1 landing** (template changed).
+- **Tests** (`tests/test_trail.py`, 17): byte-identity off; stamp /
+  no-stamp cases; exact decay schedule; refresh-on-revacate; food
+  survives vacating; regrowth exclusion both ways; passable/inedible;
+  render contract (TRAIL=4, OOB=3→64, five distinct levels); trail
+  visible in the observation; validated granular decay events (count,
+  cells, shape); pave/remove/fabricate/move mutator discipline;
+  cumulative e1 preset; live-template style pin.
+
+**Session-3 event, landed during the W2 gate (t≈167,320): the loop
+broke.** The sustained-eating watch fired — 10 empty cells, consumption
+outpacing regrowth — and a 130-step live sample at ~167.7k reads: 15
+distinct cells visited (vs 2 in the loop), 10–15 craters open, energy
+0.58–0.98 (mean 0.75) — **off the absolute floor for the first time
+since ~110k** and above break-even. The torpor retest's answer is
+taking shape: in a continuing world with no reset lottery, the 140k
+torpor mind stirred at ~2.6k steps, idled in a two-cell loop while the
+drive extinguished on the mastered static world, and then broke into
+ranging-and-feeding at ~13k steps in — a recovery *stronger* than the
+142k partial escape (which never left the floor). Formal three-signal
+/ §7 reads at the session close (t=184,000).
+
+**Closed:** W2's build question; the trail mechanism, its events, its
+stage, its builder-channel semantics. **Newly open:** the e1 landing —
+pause (session 3 self-closes at t=184,000) → `--resume --world-stage
+e1` with the builder's go → restart the window server → the
+three-signal read on the trail (disagreement localizes around
+footprints and settles; new motifs beyond the two-cell loop; trail
+representation in dream content at/above encounter rate).

@@ -1,6 +1,7 @@
 """Phase 2a env-server core.
 
-A bounded 8×8 grid with three cell types (empty, wall, resource), a single
+A bounded 8×8 grid with four cell types (empty, wall, resource, trail —
+the last world-v2 E1, off by default), a single
 agent (Io) at a fixed start cell by default, two independent stochastic
 processes — per-cell regrowth and aperiodic random-walk drift in the
 regrowth rate — and fixed-length 200-step episodes that auto-reset with no
@@ -41,11 +42,20 @@ class CellType(IntEnum):
     Stored as ``uint8`` in the grid array. The integer values are part of
     the contract: rendering and out-of-bounds sentinel logic indexes a
     fixed lookup table by cell value.
+
+    ``TRAIL`` (world v2 E1, plan W2) is 4, not 3, because 3 is the
+    out-of-bounds *view* sentinel — a render-contract value that never
+    appears in the grid but shares the lookup table. Trail cells are
+    Io's own decaying footprints: stamped on the vacated cell when Io
+    moves (if the vacated cell is empty or already trail), passable,
+    inedible, excluded from regrowth while present, and decayed back to
+    ``EMPTY`` after ``GridWorldConfig.trail_decay_steps`` steps.
     """
 
     EMPTY = 0
     WALL = 1
     RESOURCE = 2
+    TRAIL = 4
 
 
 # Out-of-bounds sentinel value used when an ego-centric view extends past the
@@ -54,11 +64,13 @@ class CellType(IntEnum):
 _OOB_SENTINEL: Final[int] = 3
 
 
-# Grayscale rendering table indexed by cell-or-sentinel value (0..3).
+# Grayscale rendering table indexed by cell-or-sentinel value (0..4).
 # EMPTY → 128 (mid gray), WALL → 0 (black), RESOURCE → 255 (white),
-# OOB → 64 (dark gray, distinct from every in-bounds cell).
+# OOB → 64 (dark gray, distinct from every in-bounds cell),
+# TRAIL → 192 (light gray between empty and resource; a stimulus knob,
+# journaled — distinct from every other level so the trail is visible).
 _RENDER_TABLE: Final[NDArray[np.uint8]] = np.array(
-    [128, 0, 255, 64], dtype=np.uint8
+    [128, 0, 255, 64, 192], dtype=np.uint8
 )
 
 
@@ -116,6 +128,18 @@ class GridWorldConfig:
     # continuity follows with no runner change (DP6 b-variant, confirmed
     # in the W0 inventory). ``episode_length`` becomes inert when False.
     episode_resample: bool = True
+    # World v2 E1 (synthesis DP2; plan W2): the somatic trail. When
+    # enabled, the cell Io vacates on a successful move is stamped
+    # ``CellType.TRAIL`` (only if it is EMPTY or already TRAIL — food
+    # and walls are never overwritten) and decays back to EMPTY after
+    # ``trail_decay_steps`` steps. Trail cells are passable, inedible,
+    # and block regrowth while present (regrowth targets EMPTY only).
+    # Re-vacating a trail cell refreshes its decay clock. Stamping and
+    # decay are deterministic — no RNG stream is touched, so default
+    # worlds stay byte-identical and enabled worlds stay reproducible.
+    # ``trail_decay_steps`` is a stimulus knob (DP5), journaled.
+    trail_enabled: bool = False
+    trail_decay_steps: int = 50
     initial_regrowth_p: float = 0.01
     drift_magnitude_per_step: float = 1e-5
     drift_p_min: float = 0.001
@@ -270,6 +294,11 @@ class GridWorld:
         self._energy: float = config.energy_init
         self._norm_history: deque[float] = deque(maxlen=config.energy_obs_lag + 1)
 
+        # World v2 E1 trail state: remaining decay steps per TRAIL cell.
+        # Insertion-ordered dict; stamping and decay draw no RNG, so the
+        # map's evolution is a pure function of the seed + action sequence.
+        self._trail_ttl: dict[tuple[int, int], int] = {}
+
     # ---- public API -------------------------------------------------------
 
     def reset(self) -> EnvStep:
@@ -314,6 +343,11 @@ class GridWorld:
         self._update_energy(action, consumed_resource)
         self._update_drift()
         self._update_regrowth()
+        # Trail decay runs after regrowth so a cell decaying this step
+        # becomes EMPTY only once regrowth has already run — a decayed
+        # cell is regrowth-eligible from the *next* step, and the
+        # observer-side pre/post diff sees a clean TRAIL→EMPTY.
+        self._update_trail_decay()
 
         self._env_step += 1
         self._step_in_episode += 1
@@ -393,6 +427,11 @@ class GridWorld:
             raise ValueError(
                 f"initial_episode_id must be non-negative, got "
                 f"{c.initial_episode_id}"
+            )
+        if c.trail_decay_steps <= 0:
+            raise ValueError(
+                f"trail_decay_steps must be positive, got "
+                f"{c.trail_decay_steps}"
             )
 
         # Probe 3.5 energy economy validation.
@@ -477,6 +516,9 @@ class GridWorld:
         """
         wall_set = set(self.config.walls)
 
+        # A resample wipes the grid, so any live trail cells go with it.
+        self._trail_ttl.clear()
+
         # Place agent. Random start cell draws from the regrowth stream so
         # there is no third RNG to seed — spatial events on cells share one
         # source of randomness. Wall rejection consults ``wall_set`` from
@@ -553,6 +595,19 @@ class GridWorld:
             return False
 
         self._agent_pos = (new_r, new_c)
+        # World v2 E1: stamp the vacated cell with a fresh trail (only if
+        # it is EMPTY or already TRAIL — a resource that regrew under the
+        # agent is never destroyed, and walls are unreachable as the
+        # agent's own cell). Re-vacating a trail cell refreshes its TTL.
+        if self.config.trail_enabled and self._grid[r, c] in (
+            CellType.EMPTY.value,
+            CellType.TRAIL.value,
+        ):
+            self._grid[r, c] = CellType.TRAIL.value
+            # +1 because the decay tick later in this same step consumes
+            # one unit — the footprint then persists exactly
+            # ``trail_decay_steps`` steps beyond the stamping step.
+            self._trail_ttl[(r, c)] = self.config.trail_decay_steps + 1
         if self._grid[new_r, new_c] == CellType.RESOURCE.value:
             self._grid[new_r, new_c] = CellType.EMPTY.value
             return True
@@ -672,13 +727,41 @@ class GridWorld:
         regrowth_mask = empty_mask & (coin_flips < self._regrowth_p)
         self._grid[regrowth_mask] = CellType.RESOURCE.value
 
+    def _update_trail_decay(self) -> None:
+        """Tick every trail cell's TTL; expire to ``EMPTY`` at zero.
+
+        Deterministic — no RNG. The TTL map is insertion-ordered and the
+        grid write is idempotent per cell, so decay order cannot affect
+        the resulting state. A trail cell decays on schedule whether or
+        not Io is standing on it (the cell under the agent is grid
+        state, not the agent).
+        """
+        if not self._trail_ttl:
+            return
+        dropped: list[tuple[int, int]] = []
+        for cell in self._trail_ttl:
+            if self._grid[cell] != CellType.TRAIL.value:
+                # The cell was overwritten out from under the map (a
+                # builder mutator can pave a trail cell with a wall or
+                # resource). Drop the stale entry without touching the
+                # grid — decay must never stomp a non-trail cell.
+                dropped.append(cell)
+                continue
+            self._trail_ttl[cell] -= 1
+            if self._trail_ttl[cell] <= 0:
+                dropped.append(cell)
+                self._grid[cell] = CellType.EMPTY.value
+        for cell in dropped:
+            del self._trail_ttl[cell]
+
     # ---- observation rendering -------------------------------------------
 
     def _extract_view(self) -> NDArray[np.uint8]:
         """7×7 ego-centric view of the underlying grid, padded with OOB.
 
         Padding with ``_OOB_SENTINEL`` ensures every cell in the returned
-        view is one of {EMPTY, WALL, RESOURCE, OOB}. The agent's position
+        view is one of {EMPTY, WALL, RESOURCE, OOB, TRAIL}. The agent's
+        position
         is always at the geometric center of the view; cells beyond the
         grid boundary in the view are rendered as OOB, distinct from
         every in-bounds cell.
@@ -704,7 +787,7 @@ class GridWorld:
     def _render_observation(self) -> NDArray[np.uint8]:
         """Render the 7×7 view into a 32×32 grayscale ``uint8`` image.
 
-        Cell values 0..3 are mapped through ``_RENDER_TABLE`` to grayscale
+        Cell values 0..4 are mapped through ``_RENDER_TABLE`` to grayscale
         intensities. The 7×7 → 32×32 expansion uses nearest-neighbor
         repetition with cell sizes derived from ``np.linspace(0, 32, 8)``
         so the boundaries of the 7×7 view align exactly with pixel

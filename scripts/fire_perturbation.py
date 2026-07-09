@@ -60,7 +60,9 @@ def _build_parser() -> argparse.ArgumentParser:
     remove_object = sub.add_parser("remove_object")
     remove_object.add_argument("--cell", type=int, nargs=2, required=True)
     remove_object.add_argument(
-        "--object-type", choices=["wall", "resource"], required=True
+        "--object-type",
+        choices=["wall", "resource", "trail"],
+        required=True,
     )
 
     set_cell_state = sub.add_parser("set_cell_state")

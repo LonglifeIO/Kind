@@ -54,11 +54,12 @@ CELL_TYPE_NAMES: dict[int, str] = {
     CellType.EMPTY.value: "empty",
     CellType.WALL.value: "wall",
     CellType.RESOURCE.value: "resource",
+    CellType.TRAIL.value: "trail",
 }
 
 
 def cell_type_name(value: int) -> str:
-    """Map an underlying-grid cell value (0/1/2) to its lowercase name.
+    """Map an underlying-grid cell value (0/1/2/4) to its lowercase name.
 
     ``WorldEvent`` payloads encode pre/post state as strings, not enum
     instances, so JSONL roundtrip stays clean.
@@ -149,7 +150,7 @@ def remove_object(
     if target == CellType.EMPTY:
         raise ValueError(
             "remove_object: object_type must be a non-empty cell type "
-            "(WALL or RESOURCE)"
+            "(WALL, RESOURCE, or TRAIL)"
         )
     r, c = cell
     pre_value = int(grid_world._grid[r, c])
@@ -187,6 +188,16 @@ def set_cell_state(
     """
     _validate_cell(grid_world, cell)
     new_state = _validate_cell_type(state, "state")
+    if new_state == CellType.TRAIL:
+        # World v2 E1: trail is Io's own footprint by definition — a
+        # builder-written trail cell would put SELF-attributable state
+        # into the world from the BUILDER class (and, having no decay
+        # clock, would never fade). Builders may pave over or remove
+        # trail; they may not fabricate it.
+        raise ValueError(
+            "set_cell_state: TRAIL cannot be written by a builder "
+            "mutator — trail cells are Io's own footprints"
+        )
     r, c = cell
     pre_value = int(grid_world._grid[r, c])
     grid_world._grid[r, c] = new_state.value
@@ -227,6 +238,14 @@ def move_object(
     if pre_from == CellType.EMPTY.value:
         raise ValueError(
             f"move_object: cell_from {cell_from!r} is empty (nothing to move)"
+        )
+    if pre_from == CellType.TRAIL.value:
+        # World v2 E1: a moved trail cell would be a builder-fabricated
+        # footprint at the destination (and would detach from its decay
+        # clock). Trail is not a movable object; pave or remove instead.
+        raise ValueError(
+            "move_object: TRAIL is not a movable object — trail cells "
+            "are Io's own footprints"
         )
     if pre_to != CellType.EMPTY.value:
         raise ValueError(

@@ -15,9 +15,14 @@ Stages defined so far:
   corridor of wall cells that does not partition the grid (S3's
   trivial-loop confound is the constraint; connectivity is
   test-enforced).
+* ``e1`` — + the somatic trail (synthesis E1): cells Io vacates are
+  stamped ``CellType.TRAIL`` and decay back over ``TRAIL_DECAY_STEPS``
+  steps — self-caused, spatially extended, frequently observed
+  dynamics (S1's verified capacity preference), the cheapest contact
+  pilot (C1-cautious).
 
-Later stages (e1 trail, e2 hidden clock, e3 weather-food, e4 mover)
-are added by their own phases; requesting an undefined stage raises.
+Later stages (e2 hidden clock, e3 weather-food, e4 mover) are added
+by their own phases; requesting an undefined stage raises.
 """
 
 from __future__ import annotations
@@ -40,7 +45,11 @@ E0_WALLS: Final[tuple[tuple[int, int], ...]] = (
     (5, 4),
 )
 
-WORLD_STAGES: Final[tuple[str, ...]] = ("default", "e0")
+# The e1 decay horizon (steps a footprint persists): the synthesis's
+# ~40–60 band, taken at the plan's midpoint. A stimulus knob (DP5).
+TRAIL_DECAY_STEPS: Final[int] = 50
+
+WORLD_STAGES: Final[tuple[str, ...]] = ("default", "e0", "e1")
 
 
 def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
@@ -57,6 +66,12 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             config,
             episode_resample=False,
             walls=E0_WALLS,
+        )
+    if stage == "e1":
+        return dataclasses.replace(
+            apply_world_stage(config, "e0"),
+            trail_enabled=True,
+            trail_decay_steps=TRAIL_DECAY_STEPS,
         )
     raise ValueError(
         f"unknown world stage {stage!r}; defined stages: {WORLD_STAGES}"

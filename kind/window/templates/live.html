@@ -13,7 +13,8 @@
 <div style="display:flex; gap:2rem; align-items:flex-start; flex-wrap:wrap;">
   <div>
     <table id="grid" style="border-collapse:collapse; width:auto; margin-top:1rem;"></table>
-    <p class="note">dark = wall, green = resource, blue dot = Io.<br>
+    <p class="note">dark = wall, green = resource, tan = trail
+      (Io's fading footprints), blue dot = Io.<br>
       <b>Click any cell to say hello there</b> — lands next step, tagged
       <code>manual</code>.</p>
     <p style="margin:0.4rem 0;">
@@ -23,7 +24,8 @@
       <label style="margin-left:5.2rem;"><input type="radio"
         name="hello-kind" value="wall_motif"> wall motif (an inedible
         L of 3 walls — only something to wonder at; paves over any
-        food in its footprint; wiped at the next board reshuffle)</label>
+        food in its footprint; persists in the continuing world until
+        removed)</label>
     </p>
     <button id="hello-btn" style="font: inherit; padding: 0.4rem 1rem;
       cursor: pointer;">say hello (random spot)</button>
@@ -49,6 +51,7 @@
   function cellStyle(v) {
     if (v === 1) return "#444";
     if (v === 2) return "#9fce91";
+    if (v === 4) return "#d9cfae";
     return "#fbfbf9";
   }
 
