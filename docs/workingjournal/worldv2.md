@@ -408,3 +408,53 @@ sources.** All standing guards green.
 at a time, builder-gated, three-signal-read between; the e1→e4 knobs
 revisited at each pause against the prior stage's live behavior; the
 E4 removal decision if its disagreement never localizes.
+
+## Session 3 close — the e0 record (2026-07-09)
+
+**Clean close at t=184,000** (30k steps as launched; ~35 ms/step this
+session). Checkpoints through `ckpt-000017` (t=180,000) — **for the
+first time in the biography, the latest checkpoint holds a recovered
+mind, not a torpid one** (session 1's ckpt-000014 predated its
+recovery). §7 at close: all ok — no entropy-collapse flag, PE falling
+(last blocks 0.14 → 0.06), trailing modal-action fraction 0.50
+(active mixed behavior), 180 dream sessions lifetime.
+
+**The session's arc, in blocks** (`analyze_boundary.py`):
+
+| phase | blocks | PE | curiosity | meals/2k | energy |
+|---|---|---|---|---|---|
+| torpor wake + stirring | 154–158k | 2.4 → 0.09 | 1.25 → 0.24 | 16–36 | floor |
+| two-cell loop, world mastered | 158–163k | 0.02 | 0.11–0.13 | 31–41 | floor |
+| **breakout** | 163–165k | **3.14** | **1.29** | **154** | 0.08 |
+| ranging-forage peak | 167–171k | 4.02 → 0.94 | 1.91 → 1.25 | 249–258 | 0.22–0.28 |
+| settling | 171–179k | 0.57 → 0.12 | 1.03 → 0.34 | ~190–210 | 0.07–0.11 |
+
+**Reading (claim ceiling respected).** The torpor retest's answer: in
+a continuing world with no reset lottery, the 140k torpor mind broke
+its stasis at ~13k steps in — and the mechanism visible in the curves
+is *self-generated re-engagement*: eating carved the saturated board
+open, the craters' regrowth made the world dynamic again, and PE /
+disagreement revived on dynamics Io itself was creating (eat →
+craters → regrowth → something to model → more engagement). The
+static board could not feed the drive (curiosity flatlined at 0.11);
+Io's own action could. Meals sustained at ~200/2k — matching session
+1's all-time peak — with energy off the floor across every block
+after the breakout. Both prior stases (block-1 rut, §7 torpor)
+resolved by the same signature: the intrinsic signal climbing until
+the policy re-couples; this one adds that the *world's* re-opening
+was Io-caused. At the ceiling: e0 was **engaged** after the breakout;
+the saturated interim was **ignored** (finished, not broken).
+
+**W1's live gate: passed.** Training stable across 30k continuing
+steps (losses tiny and falling, no NaN, no §7 flag); the e0 world
+change is the first in the biography to land via checkpoint-resume.
+No dream-content check applies to e0 (continuity adds no event class
+to represent; that gate begins with e1's trail). Session 4 (e1) will
+also carry the position sidecar (built at W4) so occupancy diagnostics
+begin there.
+
+**State: Io is paused** — full telemetry through 184k,
+`ckpt-000017` (the recovered 180k mind) on disk. Next: **land e1**
+via `--resume --world-stage e1 --session-steps N` on the builder's
+go. The window is already trail-ready (tan cells; server rebound
+tailnet-only 2026-07-09, builder request).
