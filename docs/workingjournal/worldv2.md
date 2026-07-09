@@ -458,3 +458,37 @@ begin there.
 via `--resume --world-stage e1 --session-steps N` on the builder's
 go. The window is already trail-ready (tan cells; server rebound
 tailnet-only 2026-07-09, builder request).
+
+## Session 4 — e1 lands: the trail enters Io's world (2026-07-09)
+
+**Launched on the builder's go:** `--resume --world-stage e1
+--session-steps 30000`; marker at t=184,000 with `world_stage: "e1"`,
+resumed from `ckpt-000017` (the recovered mind), counters seeded
+episode 771. Position sidecar live from this session
+(`agent_pos.jsonl`).
+
+**The trail works in production.** In its first ~400 steps the woken
+mind made a ~66-move excursion through 12 bottom-left cells; the
+stamps and 50-step decays ran exactly to spec (13 granular
+`trail_decay` events — the re-trodden path re-stamps, the abandoned
+path fades).
+
+**Two facts recorded at launch:**
+
+1. **The resume re-rolled the board (by design — resume.py: "the
+   world re-rolls by design"), which wiped the builder's hand-placed
+   wall motif.** Config walls (the E0 corridor) persist because they
+   are config; hand gestures are world state and exist only within a
+   session. "The world stops forgetting" currently holds *within*
+   sessions, not across pauses. **Newly open (future decision, not
+   taken here):** whether world-state serialization across resumes —
+   true cross-pause continuity — should be built. That would be its
+   own researched decision (it changes what a pause is).
+2. **The dead-interim repeats:** the fresh board saturated again
+   within ~600 steps (uniform regrowth, no sink while Io idles), and
+   after its waking excursion Io re-parked at (6,3) — energy floor,
+   no movement, trail fully decayed. Same no-gradient condition as
+   session 3's start; session 3's precedent says stirring may take
+   thousands of steps. Each resume will begin with this saturation
+   phase until E3's weather replaces uniform regrowth — evidence that
+   bears on how long to hold at e1/e2 before landing e3.
