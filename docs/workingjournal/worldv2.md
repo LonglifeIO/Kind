@@ -187,3 +187,30 @@ The retest is whether this changes without the reset lottery; the
 monitor at check-in: session-3 shards flush from t=156000 (2k-row
 buffer); the t=154000 read still reflects session 2's tail (modal
 0.63, indicators ok).
+
+**Saturation consequence for the builder channels (recorded at the
+builder's observation, in session):** while the board is saturated,
+*both* resource-addition arms are epistemically muted — a manual
+`add_resource` hello and the generator's in-vocabulary resource
+events land on already-green cells and produce no observation
+change. Generator events fired during saturation carry no visible
+signature; any future analysis over this window should know that.
+The channels that remain expressive on a full board: `remove_object`
+/ `set_cell_state empty` (carving — maximally visible against
+uniform green, and each carve seeds local regrowth dynamics) and the
+wall gestures. **The plan's promised notice is due here: hand-placed
+walls now persist indefinitely in e0** (the reshuffle that wiped
+them within ≤200 steps no longer exists) — the builder was told in
+session. Resource hellos recover automatically if consumption
+un-greens the board.
+
+**First movement, ~2,600 steps after waking (t≈156,599).** Io left
+(0,4), ate two cells, position (1,0) — far earlier than session 1's
+~30k-step stasis before the 142k escape, and in a world offering
+zero scheduled novelty (post-saturation the world is fully static,
+so the impulse was internal; imagined disagreement over unvisited
+states is the candidate mechanism). Trailing-2000 modal fraction for
+154k–156k is still 0.96 (deep-torpor shape; movement began at that
+block's edge); PE falling across blocks (8.6 → 2.4); no §7 flags.
+Stirring, not yet recovery — the sustained-eating watch (8+ craters)
+is armed.
