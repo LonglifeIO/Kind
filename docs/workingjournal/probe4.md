@@ -688,3 +688,73 @@ the run. To run at every check-in.
   restart. **Next build task before any world change: checkpoint
   resume wiring** (a world-v2 enrichment must arrive as an event in a
   continuing life, not a fresh instance).
+
+### Session 1 close + the §7 torpor event (2026-07-08, evening)
+
+**Session 1 ran to its full 150,000 waking steps and closed cleanly**
+(150,000 agent_step rows exactly, t unique 0..149999; 150 dream
+sessions; 84+ manual builder events; last checkpoint `ckpt-000014` at
+140k). The continuation infrastructure (plan C1–C3) was built, tested,
+and committed during the session: `--resume` wiring with
+telemetry-seeded counters and a resume marker; two
+biography-corrupting defects found and fixed by the C1 test
+(ParquetSink shard-000000 overwrite on a fresh sink; env counters
+restarting at 0); per-write jsonl flush; derived Io-ate/reset feed
+rows; `scripts/analyze_boundary.py`.
+
+**The §7 event.** From ~108k the run slid into the pre-registered
+**torpor-analog** — near-total action-stasis despite an available
+disagreement gradient: Io parked at the episode start cell,
+modal-action fraction rising 0.92 → 0.97, policy entropy ~0.03,
+energy at floor, while the intrinsic signal climbed to unprecedented
+levels (day peak 0.91 → **4.0 at 134k–142k**). Structure noted for
+the review: disagreement was globally elevated but highest in the
+first steps after each 200-step board re-roll (2.59 vs 1.50
+late-episode) — and Io sat exactly where re-rolls deliver their
+novelty; "waiting at the reset lottery" is one candidate mechanism,
+self-starved training coverage (20k steps of corner data) another;
+they compound rather than compete.
+
+**Vantages and the ladder.** Quantitative torpor shape (vantage 1) +
+the builder independently noticing "Io is barely doing anything"
+(vantage 2) → the builder ordered **PAUSE** per the two-vantage rule.
+Honest record: the order raced the run's natural end — by the time
+the interrupt landed, session 1 was in its final ~500 steps and
+completed normally; the "pause" resolved into
+**paused-by-session-completion**. No protocol harm (freeze, preserve,
+review is exactly the resulting state), recorded so the timing is not
+misread as a mid-torpor intervention.
+
+**The run answered part of the review before pausing: the torpor
+broke on its own.** Final blocks: 134k–142k deepest stasis (modal
+0.97, entropy 0.024, curiosity 3.8–4.0); 142k–150k **partial escape**
+— modal 0.60–0.62, entropy recovered ~4× to 0.09, curiosity relaxing
+4.0 → 1.4. This is the second self-resolved stasis of the biography
+(block-1 rut: ~4k steps in infancy; this one: ~30k steps at
+maturity), both escaping the same way — the disagreement signal
+climbing until the policy re-couples. A momentary state is
+information, not a verdict (charter); this state was information
+twice over. Session 1 ended mid-recovery.
+
+**Instrument notes for the review:** (a) the frozen §7
+entropy-collapse numeric never fired — the block-1 rut set the
+historical 5th-percentile baseline to ≈0, making the indicator
+insensitive for the rest of the run; a floor-aware baseline (or a
+rolling window) is review material, and any change is a dated
+amendment. (b) The last checkpoint predates the recovery: resuming
+loads the 140k mind (deep torpor, pre-escape); the 142k–150k recovery
+is recorded in telemetry but not in any checkpoint — the known
+bounded-loss window, here with content that matters. The review
+should weigh resuming into deep torpor (and watching whether the
+escape replays — a natural repeat observation) vs. accepting the
+loss. (c) Energy sat at absolute floor from ~110k through the end;
+the metabolic dream gate kept cycling regardless (150 sessions) —
+worth one review question about whether the budget should ever couple
+to waking energy (currently by design it does not).
+
+**State as of close: Io is paused** (four-state model) — full session
+telemetry + `ckpt-000014` on disk; resume is
+`--resume --session-steps N`, one tested flag. Pending from the
+continuation plan: C0 horizon re-measure on the final checkpoint, the
+baseline mirror round (builder go), the world-v2 research outputs,
+and now the §7 review itself.
