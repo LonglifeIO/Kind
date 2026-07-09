@@ -208,7 +208,8 @@ def test_stage_e0_sets_continuity_and_terrain() -> None:
 def test_stage_unknown_raises() -> None:
     with pytest.raises(ValueError, match="unknown world stage"):
         apply_world_stage(GridWorldConfig(), "e99")
-    assert WORLD_STAGES == ("default", "e0", "e1")
+    # Stages accumulate in order; later phases append, never reorder.
+    assert WORLD_STAGES[:2] == ("default", "e0")
 
 
 def test_e0_walls_do_not_partition_the_grid() -> None:

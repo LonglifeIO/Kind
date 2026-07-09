@@ -185,6 +185,7 @@ class EnvServer:
         # ``EMPTY → RESOURCE`` transitions. The previous-step ``p`` lets
         # the harness compute ``|Δp|`` per step for the drift aggregate.
         self._pre_step_grid: NDArray[np.uint8] | None = None
+        self._pre_step_bloom_cells: frozenset[tuple[int, int]] = frozenset()
         self._pre_step_p: float | None = None
 
         # The current episode id, updated on episode boundary.
@@ -538,6 +539,9 @@ class EnvServer:
         # step.
         self._pre_step_grid = state.grid
         self._pre_step_p = float(state.regrowth_p)
+        # World v2 E2: bloom provenance, so a TRAIL→EMPTY in the diff is
+        # classified as the clock's fade vs Io's footprint decay.
+        self._pre_step_bloom_cells = grid_world.bloom_cells
 
     def _accumulate_step_stats(self) -> None:
         """Update the per-episode aggregate accumulators from the last step.
@@ -600,24 +604,98 @@ class EnvServer:
             # is the only transition that produces it (consumption is
             # RESOURCE→EMPTY; a resample never leaves TRAIL behind), and
             # decay running after regrowth in ``GridWorld.step`` means a
-            # decayed cell can never regrow in the same step.
+            # decayed cell can never regrow in the same step. World v2 E2
+            # (plan W3): the same fade is classified by provenance — a
+            # cell the clock stamped fades as ``bloom_fade``, never as
+            # Io's footprint decaying.
             trail_pre = pre_grid == CellType.TRAIL.value
             empty_post = post_state.grid == CellType.EMPTY.value
             decay_mask = trail_pre & empty_post
             if bool(decay_mask.any()):
                 for row, col in np.argwhere(decay_mask):
+                    cell = (int(row), int(col))
+                    process = (
+                        "bloom_fade"
+                        if cell in self._pre_step_bloom_cells
+                        else "trail_decay"
+                    )
                     self._emit_world_event(
                         t_event=self._latest_env_step,
                         event_type=_INTERNAL_STOCHASTICITY_EVENT,
                         source=_SOURCE_ENVIRONMENT,
                         payload={
-                            "process": "trail_decay",
-                            "cell": [int(row), int(col)],
+                            "process": process,
+                            "cell": [cell[0], cell[1]],
                             "pre_state": "trail",
                             "post_state": "empty",
                         },
                         schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
                     )
+            # World v2 E2 (plan W3): each cell the hidden clock stamped
+            # this step is one granular ``process="bloom"`` event — the
+            # world object reports its own stamps (ground truth), so
+            # Io's self-caused trail stamping (also EMPTY→TRAIL in the
+            # diff) can never be misattributed to the clock.
+            for row_i, col_i in grid_world.last_bloom_stamps:
+                self._emit_world_event(
+                    t_event=self._latest_env_step,
+                    event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                    source=_SOURCE_ENVIRONMENT,
+                    payload={
+                        "process": "bloom",
+                        "cell": [int(row_i), int(col_i)],
+                        "pre_state": "empty",
+                        "post_state": "trail",
+                    },
+                    schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                )
+            # World v2 E3 (plan W4): one granular event per patch move.
+            # A process event, not a cell mutation — the matched-control
+            # keys anchor it (``cell`` = the new center; pre/post name
+            # the patch's presence at that cell) and ``center_from`` /
+            # ``center_to`` carry the move (payload is schemaless;
+            # extra keys are legal).
+            # World v2 E4 (plan W5): one granular event per *autonomous*
+            # mover step. Contact displacements are deliberately not
+            # emitted: they are Io-caused and visible in AgentStep (the
+            # trail-stamping precedent), and WorldEvent.source has no
+            # self class — logging them as "environment" would pollute
+            # the matched control's ENVIRONMENT stream. They remain
+            # derivable (mover position changes without a mover_step
+            # event) and exposed mirror-side.
+            mover_step = grid_world.last_mover_step
+            if mover_step is not None:
+                (m_from_r, m_from_c), (m_to_r, m_to_c) = mover_step
+                self._emit_world_event(
+                    t_event=self._latest_env_step,
+                    event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                    source=_SOURCE_ENVIRONMENT,
+                    payload={
+                        "process": "mover_step",
+                        "cell": [m_to_r, m_to_c],
+                        "pre_state": "empty",
+                        "post_state": "wall",
+                        "cell_from": [m_from_r, m_from_c],
+                    },
+                    schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                )
+            patch_move = grid_world.last_patch_move
+            if patch_move is not None:
+                (from_r, from_c), (to_r, to_c) = patch_move
+                self._emit_world_event(
+                    t_event=self._latest_env_step,
+                    event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                    source=_SOURCE_ENVIRONMENT,
+                    payload={
+                        "process": "patch_drift",
+                        "cell": [to_r, to_c],
+                        "pre_state": "patch_absent",
+                        "post_state": "patch_present",
+                        "center_from": [from_r, from_c],
+                        "center_to": [to_r, to_c],
+                    },
+                    schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                )
         if pre_p is not None:
             magnitude = abs(float(post_state.regrowth_p) - pre_p)
             self._drift_step_magnitudes_this_episode.append(magnitude)

@@ -20,9 +20,23 @@ Stages defined so far:
   steps — self-caused, spatially extended, frequently observed
   dynamics (S1's verified capacity preference), the cheapest contact
   pilot (C1-cautious).
+* ``e2`` — + the hidden clock (synthesis E2): an unobserved phase at
+  ``BLOOM_CELL`` blooms its Moore ring in the trail vocabulary every
+  ``BLOOM_PERIOD`` steps for ``BLOOM_DURATION`` steps — the cleanest
+  "exercise h as a clock" structure; one clock only (the
+  temporal-superposition warning).
+* ``e3`` — + weather-food (synthesis E3): uniform regrowth replaced by
+  one drifting 3×3 patch on a deterministic bounce law — regrowth
+  concentrated under it, sparse elsewhere. Food reads as process, not
+  confetti; break-even stays possible but not ambient. Crowd-out (C4)
+  is watched by the boundary analyzer's occupancy-share diagnostic.
+* ``e4`` — + one autonomous mover (synthesis E4): a wandering
+  WALL-vocabulary cell, displaced one cell by Io's contact. **A pilot,
+  removable at any pause without ceremony (DP3)** — if its
+  disagreement never localizes, removal is a capacity finding, not a
+  failure.
 
-Later stages (e2 hidden clock, e3 weather-food, e4 mover) are added
-by their own phases; requesting an undefined stage raises.
+Requesting an undefined stage raises.
 """
 
 from __future__ import annotations
@@ -49,7 +63,40 @@ E0_WALLS: Final[tuple[tuple[int, int], ...]] = (
 # ~40–60 band, taken at the plan's midpoint. A stimulus knob (DP5).
 TRAIL_DECAY_STEPS: Final[int] = 50
 
-WORLD_STAGES: Final[tuple[str, ...]] = ("default", "e0", "e1")
+# The e2 clock (stimulus knobs, DP5): the source sits in the open
+# quadrant away from the E0 corridor — its 8-cell Moore ring is fully
+# in bounds and wall-free. Period ~12 (the plan's value; inside the
+# measured h-trace horizon of ~40 and the BPTT window of 32, so the
+# phase is carryable); blooms last 2 steps.
+BLOOM_CELL: Final[tuple[int, int]] = (6, 6)
+BLOOM_PERIOD: Final[int] = 12
+BLOOM_DURATION: Final[int] = 2
+
+# The e3 weather (stimulus knobs, DP5; plan preset values). At these
+# rates an 8×8 board carries ~9 patch cells at 0.06 and ~49 outside
+# cells at 0.001 → ~0.6 regrowths/step near the patch, ~0.05 far from
+# it: foraging under the weather is comfortably above break-even
+# (~0.18 meals/step), grazing far from it is not — possible, never
+# ambient. The patch starts at the grid center heading (1,1); its size
+# and law live in GridWorldConfig defaults.
+PATCH_STEP_EVERY: Final[int] = 20
+PATCH_P_INSIDE: Final[float] = 0.06
+PATCH_P_OUTSIDE: Final[float] = 0.001
+
+# The e4 mover (stimulus knobs, DP5): starts in the corner opposite
+# the E0 corridor, moves every 2 steps with the plan's turn hazard.
+MOVER_START: Final[tuple[int, int]] = (0, 7)
+MOVER_STEP_EVERY: Final[int] = 2
+MOVER_TURN_HAZARD: Final[float] = 0.02
+
+WORLD_STAGES: Final[tuple[str, ...]] = (
+    "default",
+    "e0",
+    "e1",
+    "e2",
+    "e3",
+    "e4",
+)
 
 
 def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
@@ -72,6 +119,29 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             apply_world_stage(config, "e0"),
             trail_enabled=True,
             trail_decay_steps=TRAIL_DECAY_STEPS,
+        )
+    if stage == "e2":
+        return dataclasses.replace(
+            apply_world_stage(config, "e1"),
+            bloom_cell=BLOOM_CELL,
+            bloom_period=BLOOM_PERIOD,
+            bloom_duration=BLOOM_DURATION,
+        )
+    if stage == "e3":
+        return dataclasses.replace(
+            apply_world_stage(config, "e2"),
+            regrowth_mode="patch",
+            patch_step_every=PATCH_STEP_EVERY,
+            patch_p_inside=PATCH_P_INSIDE,
+            patch_p_outside=PATCH_P_OUTSIDE,
+        )
+    if stage == "e4":
+        return dataclasses.replace(
+            apply_world_stage(config, "e3"),
+            mover_enabled=True,
+            mover_start=MOVER_START,
+            mover_step_every=MOVER_STEP_EVERY,
+            mover_turn_hazard=MOVER_TURN_HAZARD,
         )
     raise ValueError(
         f"unknown world stage {stage!r}; defined stages: {WORLD_STAGES}"

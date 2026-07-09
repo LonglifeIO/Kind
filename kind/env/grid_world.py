@@ -140,6 +140,50 @@ class GridWorldConfig:
     # ``trail_decay_steps`` is a stimulus knob (DP5), journaled.
     trail_enabled: bool = False
     trail_decay_steps: int = 50
+    # World v2 E2 (synthesis DP2; plan W3): the hidden clock. When
+    # ``bloom_cell`` is set, an *unobserved* phase counter advances one
+    # tick per step; each time it completes ``bloom_period`` ticks, the
+    # EMPTY cells of the Moore neighborhood around ``bloom_cell`` are
+    # stamped with short-lived trail-vocabulary cells that fade after
+    # ``bloom_duration`` steps. The source cell itself never changes and
+    # the phase is never rendered — the cause is distinguishable only
+    # dynamically (the house no-markers move). Deterministic: no RNG.
+    # All three values are stimulus knobs (DP5), journaled.
+    bloom_cell: tuple[int, int] | None = None
+    bloom_period: int = 12
+    bloom_duration: int = 2
+    # World v2 E3 (synthesis DP2; plan W4): food becomes weather. In
+    # ``"patch"`` mode, regrowth concentrates under a ``patch_size``²
+    # square whose center advances every ``patch_step_every`` steps
+    # along a deterministic bouncing law (reflect at the edge the patch
+    # would leave; no RNG). Inside the patch each empty cell regrows at
+    # ``patch_p_inside`` per step; elsewhere at ``patch_p_outside``.
+    # The patch itself is never rendered — the weather is visible only
+    # as where food appears. The uniform-mode drift process still ticks
+    # (stream discipline) but its ``p`` is unused in patch mode;
+    # ``GridState.regrowth_p`` keeps reporting the drifting latent.
+    # All values are stimulus knobs (DP5); break-even arithmetic is a
+    # knob, not a criterion — nothing dies, energy stays observational.
+    regrowth_mode: str = "uniform"
+    patch_size: int = 3
+    patch_step_every: int = 20
+    patch_p_inside: float = 0.06
+    patch_p_outside: float = 0.001
+    # World v2 E4 (synthesis DP3; plan W5): one autonomous mover — a
+    # PILOT, removable at any pause without ceremony (S1's verifiers
+    # refused to bless contact dynamics at this capacity). A single
+    # WALL-vocabulary cell that wanders: every ``mover_step_every``
+    # steps it advances along its heading (persistent, with a small
+    # ``mover_turn_hazard`` chance of picking a fresh cardinal), bounces
+    # off walls/edges/objects/Io, and is displaced one cell when Io
+    # moves into it (push direction = Io's direction; if the push
+    # target is blocked, the mover blocks like a wall). Its randomness
+    # draws from a fourth spawned RNG stream, so the original three
+    # streams are byte-identical whether or not it exists.
+    mover_enabled: bool = False
+    mover_step_every: int = 2
+    mover_turn_hazard: float = 0.02
+    mover_start: tuple[int, int] = (0, 7)
     initial_regrowth_p: float = 0.01
     drift_magnitude_per_step: float = 1e-5
     drift_p_min: float = 0.001
@@ -268,13 +312,21 @@ class GridWorld:
         # ``SeedSequence`` so two ``GridWorld`` instances with the same seed and
         # action sequence produce identical ``sensed_energy`` trajectories.
         seed_sequence = np.random.SeedSequence(seed)
-        regrowth_seq, drift_seq, sensing_seq = seed_sequence.spawn(3)
+        # The fourth (mover) child leaves the first three untouched —
+        # SeedSequence children are keyed by spawn index, so pre-mover
+        # worlds reproduce byte-identically.
+        regrowth_seq, drift_seq, sensing_seq, mover_seq = seed_sequence.spawn(
+            4
+        )
         self._regrowth_rng: np.random.Generator = np.random.default_rng(
             regrowth_seq
         )
         self._drift_rng: np.random.Generator = np.random.default_rng(drift_seq)
         self._sensing_rng: np.random.Generator = np.random.default_rng(
             sensing_seq
+        )
+        self._mover_rng: np.random.Generator = np.random.default_rng(
+            mover_seq
         )
 
         # Mutable state (initialized by reset()).
@@ -298,6 +350,40 @@ class GridWorld:
         # Insertion-ordered dict; stamping and decay draw no RNG, so the
         # map's evolution is a pure function of the seed + action sequence.
         self._trail_ttl: dict[tuple[int, int], int] = {}
+
+        # World v2 E2 bloom state. Bloom cells share the TRAIL grid value
+        # but live in their own TTL map so telemetry provenance stays
+        # honest (a bloom fading is not Io's footprint decaying). The
+        # phase counter is world state that no observation ever carries.
+        self._bloom_phase: int = 0
+        self._bloom_ttl: dict[tuple[int, int], int] = {}
+        self._last_bloom_stamps: tuple[tuple[int, int], ...] = ()
+
+        # World v2 E3 patch state. Center starts at the grid's center
+        # cell with a diagonal heading — a fixed, journaled initial
+        # condition (no RNG; the drift law is fully deterministic).
+        half = config.patch_size // 2
+        center = (config.grid_size - 1) // 2
+        self._patch_center: tuple[int, int] = (center, center)
+        self._patch_velocity: tuple[int, int] = (1, 1)
+        self._patch_half: int = half
+        self._patch_step_counter: int = 0
+        self._last_patch_move: (
+            tuple[tuple[int, int], tuple[int, int]] | None
+        ) = None
+
+        # World v2 E4 mover state. ``None`` until placed by reset when
+        # enabled. Heading starts into the grid from the start corner —
+        # a fixed, journaled initial condition.
+        self._mover_pos: tuple[int, int] | None = None
+        self._mover_heading: tuple[int, int] = (1, 0)
+        self._mover_step_counter: int = 0
+        self._last_mover_step: (
+            tuple[tuple[int, int], tuple[int, int]] | None
+        ) = None
+        self._last_mover_displacement: (
+            tuple[tuple[int, int], tuple[int, int]] | None
+        ) = None
 
     # ---- public API -------------------------------------------------------
 
@@ -339,10 +425,21 @@ class GridWorld:
                 f"action must be in [0, {NUM_ACTIONS}); got {action}"
             )
 
+        self._last_mover_displacement = None
         consumed_resource = self._apply_action(action)
         self._update_energy(action, consumed_resource)
         self._update_drift()
+        # The patch moves before regrowth so this step's regrowth is
+        # drawn under the patch's current position; the mover likewise
+        # moves before regrowth (a resource can appear in its path and
+        # block it next move, never under it).
+        self._update_patch_drift()
+        self._update_mover()
         self._update_regrowth()
+        # Bloom fires after regrowth (its stamps target the post-regrowth
+        # EMPTY set) and before decay so a fresh bloom's +1 stamping
+        # convention matches the trail's.
+        self._update_bloom()
         # Trail decay runs after regrowth so a cell decaying this step
         # becomes EMPTY only once regrowth has already run — a decayed
         # cell is regrowth-eligible from the *next* step, and the
@@ -366,6 +463,61 @@ class GridWorld:
             self._episode_id += 1
 
         return self._make_env_step()
+
+    @property
+    def last_bloom_stamps(self) -> tuple[tuple[int, int], ...]:
+        """Cells the hidden clock stamped on the most recent step.
+
+        Observer-side ground truth for granular ``process="bloom"``
+        emission — empty on every step the clock did not fire. Never
+        rendered; Io's observation carries only the cells' TRAIL value.
+        """
+        return self._last_bloom_stamps
+
+    @property
+    def bloom_cells(self) -> frozenset[tuple[int, int]]:
+        """Cells currently trail-valued by the clock (not by Io).
+
+        Observer-side provenance so a bloom's fade is never logged as
+        Io's footprint decaying.
+        """
+        return frozenset(self._bloom_ttl)
+
+    @property
+    def last_patch_move(
+        self,
+    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        """The weather patch's ``(from_center, to_center)`` if it moved
+        on the most recent step, else ``None``. Observer-side ground
+        truth for granular ``process="patch_drift"`` emission — the
+        patch is never rendered."""
+        return self._last_patch_move
+
+    @property
+    def mover_pos(self) -> tuple[int, int] | None:
+        """The mover's cell (``None`` when no mover). Mirror-side ground
+        truth; Io sees only the WALL value the mover renders as."""
+        return self._mover_pos
+
+    @property
+    def last_mover_step(
+        self,
+    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        """The mover's autonomous ``(from, to)`` move on the most recent
+        step, else ``None``. Ground truth for granular
+        ``process="mover_step"`` emission. Contact displacements are
+        deliberately *not* environment events (they are Io-caused and
+        visible in AgentStep — the trail-stamping precedent); see
+        ``last_mover_displacement``."""
+        return self._last_mover_step
+
+    @property
+    def last_mover_displacement(
+        self,
+    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        """The mover's Io-caused ``(from, to)`` displacement on the most
+        recent step, else ``None``. Mirror-side ground truth only."""
+        return self._last_mover_displacement
 
     @property
     def state(self) -> GridState:
@@ -433,6 +585,81 @@ class GridWorld:
                 f"trail_decay_steps must be positive, got "
                 f"{c.trail_decay_steps}"
             )
+        if c.regrowth_mode not in ("uniform", "patch"):
+            raise ValueError(
+                f"regrowth_mode must be 'uniform' or 'patch', got "
+                f"{c.regrowth_mode!r}"
+            )
+        if c.regrowth_mode == "patch":
+            if c.patch_size <= 0 or c.patch_size % 2 == 0:
+                raise ValueError(
+                    f"patch_size must be positive and odd, got "
+                    f"{c.patch_size}"
+                )
+            if c.patch_size > c.grid_size:
+                raise ValueError(
+                    f"patch_size {c.patch_size} exceeds grid_size "
+                    f"{c.grid_size}"
+                )
+            if c.patch_step_every <= 0:
+                raise ValueError(
+                    f"patch_step_every must be positive, got "
+                    f"{c.patch_step_every}"
+                )
+            for name, rate in (
+                ("patch_p_inside", c.patch_p_inside),
+                ("patch_p_outside", c.patch_p_outside),
+            ):
+                if not 0.0 <= rate <= 1.0:
+                    raise ValueError(
+                        f"{name} must be in [0, 1], got {rate}"
+                    )
+        if c.mover_enabled:
+            mr, mc = c.mover_start
+            if not (0 <= mr < c.grid_size and 0 <= mc < c.grid_size):
+                raise ValueError(
+                    f"mover_start {c.mover_start} is out of bounds for "
+                    f"grid_size {c.grid_size}"
+                )
+            if c.mover_start in c.walls:
+                raise ValueError(
+                    f"mover_start {c.mover_start} collides with a wall"
+                )
+            if c.start_cell is not None and c.start_cell == c.mover_start:
+                raise ValueError(
+                    f"mover_start {c.mover_start} collides with the "
+                    f"agent's start_cell"
+                )
+            if c.mover_step_every <= 0:
+                raise ValueError(
+                    f"mover_step_every must be positive, got "
+                    f"{c.mover_step_every}"
+                )
+            if not 0.0 <= c.mover_turn_hazard <= 1.0:
+                raise ValueError(
+                    f"mover_turn_hazard must be in [0, 1], got "
+                    f"{c.mover_turn_hazard}"
+                )
+        if c.bloom_cell is not None:
+            br, bc = c.bloom_cell
+            if not (0 <= br < c.grid_size and 0 <= bc < c.grid_size):
+                raise ValueError(
+                    f"bloom_cell {c.bloom_cell} is out of bounds for "
+                    f"grid_size {c.grid_size}"
+                )
+            if c.bloom_cell in c.walls:
+                raise ValueError(
+                    f"bloom_cell {c.bloom_cell} collides with a wall"
+                )
+            if c.bloom_period <= 0:
+                raise ValueError(
+                    f"bloom_period must be positive, got {c.bloom_period}"
+                )
+            if not 0 < c.bloom_duration < c.bloom_period:
+                raise ValueError(
+                    f"bloom_duration must be in (0, bloom_period); got "
+                    f"{c.bloom_duration} with period {c.bloom_period}"
+                )
 
         # Probe 3.5 energy economy validation.
         if not c.energy_norm_min < c.energy_norm_max:
@@ -516,8 +743,13 @@ class GridWorld:
         """
         wall_set = set(self.config.walls)
 
-        # A resample wipes the grid, so any live trail cells go with it.
+        # A resample wipes the grid, so any live trail/bloom cells go
+        # with it. The hidden phase also restarts — the clock is world
+        # state and the world is being resampled.
         self._trail_ttl.clear()
+        self._bloom_ttl.clear()
+        self._bloom_phase = 0
+        self._last_bloom_stamps = ()
 
         # Place agent. Random start cell draws from the regrowth stream so
         # there is no third RNG to seed — spatial events on cells share one
@@ -525,10 +757,13 @@ class GridWorld:
         # config rather than the (possibly stale or freshly-zeroed) grid
         # buffer, so the first reset with non-empty walls also rejects
         # them correctly.
+        mover_cell: tuple[int, int] | None = (
+            self.config.mover_start if self.config.mover_enabled else None
+        )
         if self.config.start_cell is None:
             r = int(self._regrowth_rng.integers(0, self.config.grid_size))
             c = int(self._regrowth_rng.integers(0, self.config.grid_size))
-            while (r, c) in wall_set:
+            while (r, c) in wall_set or (r, c) == mover_cell:
                 r = int(self._regrowth_rng.integers(0, self.config.grid_size))
                 c = int(self._regrowth_rng.integers(0, self.config.grid_size))
             self._agent_pos = (r, c)
@@ -539,6 +774,17 @@ class GridWorld:
         self._grid[:] = CellType.EMPTY.value
         for wr, wc in self.config.walls:
             self._grid[wr, wc] = CellType.WALL.value
+
+        # World v2 E4: place (or re-place) the mover; it occupies its
+        # cell as the WALL it renders as. Heading and cadence restart —
+        # mover state is world state and the world is being resampled.
+        if mover_cell is not None:
+            self._mover_pos = mover_cell
+            self._grid[mover_cell] = CellType.WALL.value
+            self._mover_heading = (1, 0)
+            self._mover_step_counter = 0
+            self._last_mover_step = None
+            self._last_mover_displacement = None
 
         # Sample initial-resource cells from non-wall, non-agent cells.
         # Using an exact count rather than per-cell Bernoulli at p — the
@@ -552,6 +798,8 @@ class GridWorld:
                 if (r, c) == (ar, ac):
                     continue
                 if (r, c) in wall_set:
+                    continue
+                if (r, c) == mover_cell:
                     continue
                 available.append((r, c))
 
@@ -591,6 +839,27 @@ class GridWorld:
         gs = self.config.grid_size
         if not (0 <= new_r < gs and 0 <= new_c < gs):
             return False
+        # World v2 E4: moving into the mover displaces it one cell in
+        # the push direction if that cell is free; otherwise the mover
+        # blocks exactly like the wall it renders as. Checked before the
+        # wall test — the mover *is* a WALL value in the grid.
+        if self._mover_pos is not None and (new_r, new_c) == self._mover_pos:
+            push_r, push_c = new_r + dr, new_c + dc
+            if (
+                0 <= push_r < gs
+                and 0 <= push_c < gs
+                and self._grid[push_r, push_c] == CellType.EMPTY.value
+            ):
+                self._grid[push_r, push_c] = CellType.WALL.value
+                self._grid[new_r, new_c] = CellType.EMPTY.value
+                self._last_mover_displacement = (
+                    (new_r, new_c),
+                    (push_r, push_c),
+                )
+                self._mover_pos = (push_r, push_c)
+                # Io proceeds into the vacated cell below.
+            else:
+                return False
         if self._is_wall(new_r, new_c):
             return False
 
@@ -608,6 +877,10 @@ class GridWorld:
             # one unit — the footprint then persists exactly
             # ``trail_decay_steps`` steps beyond the stamping step.
             self._trail_ttl[(r, c)] = self.config.trail_decay_steps + 1
+            # Vacating a bloom cell makes it a genuine footprint: the
+            # provenance transfers to the trail map so its fade is
+            # logged as Io's, not the clock's.
+            self._bloom_ttl.pop((r, c), None)
         if self._grid[new_r, new_c] == CellType.RESOURCE.value:
             self._grid[new_r, new_c] = CellType.EMPTY.value
             return True
@@ -709,8 +982,102 @@ class GridWorld:
         )
         self._regrowth_p = clipped
 
+    def _update_patch_drift(self) -> None:
+        """Advance the weather patch on its deterministic bounce law.
+
+        No-op in uniform mode. Every ``patch_step_every`` steps the
+        center moves one cell along its heading; a component that would
+        push the patch edge past the grid boundary reflects. No RNG.
+        ``_last_patch_move`` reports the move for observer-side granular
+        emission (``None`` on steps with no move).
+        """
+        self._last_patch_move = None
+        if self.config.regrowth_mode != "patch":
+            return
+        self._patch_step_counter += 1
+        if self._patch_step_counter < self.config.patch_step_every:
+            return
+        self._patch_step_counter = 0
+        gs = self.config.grid_size
+        half = self._patch_half
+        old = self._patch_center
+        vr, vc = self._patch_velocity
+        new_r = old[0] + vr
+        if not half <= new_r <= gs - 1 - half:
+            vr = -vr
+            new_r = old[0] + vr
+        new_c = old[1] + vc
+        if not half <= new_c <= gs - 1 - half:
+            vc = -vc
+            new_c = old[1] + vc
+        self._patch_velocity = (vr, vc)
+        self._patch_center = (new_r, new_c)
+        self._last_patch_move = (old, self._patch_center)
+
+    def _update_mover(self) -> None:
+        """Advance the mover on its cadence (world v2 E4 pilot).
+
+        Two RNG draws per move-step regardless of outcome (hazard and
+        direction — the direction draw is discarded unless the hazard
+        fires), so the mover stream's consumption is a pure function of
+        the step count. The mover moves only into EMPTY cells that are
+        not under Io; a blocked heading reverses (bounce) and, if the
+        reverse is also blocked, the mover stays put this cadence.
+        """
+        self._last_mover_step = None
+        if self._mover_pos is None:
+            return
+        self._mover_step_counter += 1
+        if self._mover_step_counter < self.config.mover_step_every:
+            return
+        self._mover_step_counter = 0
+        u_hazard = float(self._mover_rng.random())
+        u_direction = float(self._mover_rng.random())
+        if u_hazard < self.config.mover_turn_hazard:
+            cardinals = ((-1, 0), (1, 0), (0, -1), (0, 1))
+            self._mover_heading = cardinals[int(u_direction * 4.0) % 4]
+
+        gs = self.config.grid_size
+
+        def _free(r: int, c: int) -> bool:
+            return (
+                0 <= r < gs
+                and 0 <= c < gs
+                and self._grid[r, c] == CellType.EMPTY.value
+                and (r, c) != self._agent_pos
+            )
+
+        old_r, old_c = self._mover_pos
+        dr, dc = self._mover_heading
+        if not _free(old_r + dr, old_c + dc):
+            dr, dc = -dr, -dc
+            self._mover_heading = (dr, dc)
+            if not _free(old_r + dr, old_c + dc):
+                return
+        new_pos = (old_r + dr, old_c + dc)
+        self._grid[new_pos] = CellType.WALL.value
+        self._grid[old_r, old_c] = CellType.EMPTY.value
+        self._mover_pos = new_pos
+        self._last_mover_step = ((old_r, old_c), new_pos)
+
+    def _regrowth_p_map(self) -> NDArray[np.float64]:
+        """Per-cell regrowth probability under the active mode."""
+        gs = self.config.grid_size
+        if self.config.regrowth_mode != "patch":
+            return np.full((gs, gs), self._regrowth_p, dtype=np.float64)
+        p_map = np.full(
+            (gs, gs), self.config.patch_p_outside, dtype=np.float64
+        )
+        r, c = self._patch_center
+        half = self._patch_half
+        p_map[
+            max(0, r - half) : r + half + 1,
+            max(0, c - half) : c + half + 1,
+        ] = self.config.patch_p_inside
+        return p_map
+
     def _update_regrowth(self) -> None:
-        """Per-cell Bernoulli with the current ``p`` over all empty cells.
+        """Per-cell Bernoulli over all empty cells.
 
         Action-independent and per-cell. Regrowth applies to every empty
         cell regardless of whether the agent is standing on it — the
@@ -719,40 +1086,86 @@ class GridWorld:
         If a resource regrows under the agent, the agent is not "entering"
         it and so does not consume it; the agent must move away and back
         to consume.
+
+        The per-cell probability comes from ``_regrowth_p_map`` — the
+        drifting uniform ``p`` in uniform mode, the patch's inside /
+        outside rates in patch mode (world v2 E3). The full-grid draw is
+        mode-independent, so the RNG stream advances identically under
+        either mode.
         """
         empty_mask = self._grid == CellType.EMPTY.value
         if not bool(empty_mask.any()):
+            # No draw on a full board — the RNG stream's step count is
+            # part of the reproducibility contract (byte-identity).
             return
         coin_flips = self._regrowth_rng.random(size=self._grid.shape)
-        regrowth_mask = empty_mask & (coin_flips < self._regrowth_p)
+        regrowth_mask = empty_mask & (coin_flips < self._regrowth_p_map())
         self._grid[regrowth_mask] = CellType.RESOURCE.value
 
-    def _update_trail_decay(self) -> None:
-        """Tick every trail cell's TTL; expire to ``EMPTY`` at zero.
+    def _update_bloom(self) -> None:
+        """Advance the hidden phase; on the terminal phase, stamp the
+        bloom ring.
 
-        Deterministic — no RNG. The TTL map is insertion-ordered and the
-        grid write is idempotent per cell, so decay order cannot affect
-        the resulting state. A trail cell decays on schedule whether or
-        not Io is standing on it (the cell under the agent is grid
-        state, not the agent).
+        Deterministic — no RNG. Stamps only EMPTY cells in the Moore
+        neighborhood of ``bloom_cell`` (walls, resources, live trail,
+        and the source cell itself are untouched); each stamped cell
+        gets the bloom's own short TTL (+1 for the same-step decay tick,
+        the trail's stamping convention). ``_last_bloom_stamps`` reports
+        this step's stamps for observer-side granular emission.
         """
-        if not self._trail_ttl:
+        self._last_bloom_stamps = ()
+        if self.config.bloom_cell is None:
             return
-        dropped: list[tuple[int, int]] = []
-        for cell in self._trail_ttl:
-            if self._grid[cell] != CellType.TRAIL.value:
-                # The cell was overwritten out from under the map (a
-                # builder mutator can pave a trail cell with a wall or
-                # resource). Drop the stale entry without touching the
-                # grid — decay must never stomp a non-trail cell.
-                dropped.append(cell)
+        self._bloom_phase += 1
+        if self._bloom_phase < self.config.bloom_period:
+            return
+        self._bloom_phase = 0
+        br, bc = self.config.bloom_cell
+        gs = self.config.grid_size
+        stamps: list[tuple[int, int]] = []
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                if dr == 0 and dc == 0:
+                    continue
+                r, c = br + dr, bc + dc
+                if not (0 <= r < gs and 0 <= c < gs):
+                    continue
+                if self._grid[r, c] != CellType.EMPTY.value:
+                    continue
+                self._grid[r, c] = CellType.TRAIL.value
+                self._bloom_ttl[(r, c)] = self.config.bloom_duration + 1
+                stamps.append((r, c))
+        self._last_bloom_stamps = tuple(stamps)
+
+    def _update_trail_decay(self) -> None:
+        """Tick every trail-vocabulary cell's TTL; expire to ``EMPTY``.
+
+        Deterministic — no RNG. Ticks both provenance maps (Io's trail
+        and the bloom's) with identical mechanics; the maps exist so
+        observers can tell the two apart, not to make them behave
+        differently. The grid write is idempotent per cell, so decay
+        order cannot affect the resulting state. A cell decays on
+        schedule whether or not Io is standing on it (the cell under
+        the agent is grid state, not the agent).
+        """
+        for ttl_map in (self._trail_ttl, self._bloom_ttl):
+            if not ttl_map:
                 continue
-            self._trail_ttl[cell] -= 1
-            if self._trail_ttl[cell] <= 0:
-                dropped.append(cell)
-                self._grid[cell] = CellType.EMPTY.value
-        for cell in dropped:
-            del self._trail_ttl[cell]
+            dropped: list[tuple[int, int]] = []
+            for cell in ttl_map:
+                if self._grid[cell] != CellType.TRAIL.value:
+                    # The cell was overwritten out from under the map (a
+                    # builder mutator can pave a trail cell with a wall
+                    # or resource). Drop the stale entry without touching
+                    # the grid — decay must never stomp a non-trail cell.
+                    dropped.append(cell)
+                    continue
+                ttl_map[cell] -= 1
+                if ttl_map[cell] <= 0:
+                    dropped.append(cell)
+                    self._grid[cell] = CellType.EMPTY.value
+            for cell in dropped:
+                del ttl_map[cell]
 
     # ---- observation rendering -------------------------------------------
 

@@ -315,3 +315,96 @@ e1` with the builder's go → restart the window server → the
 three-signal read on the trail (disagreement localizes around
 footprints and settles; new motifs beyond the two-cell loop; trail
 representation in dream content at/above encounter rate).
+
+## W3–W5 — the clock, the weather, the mover: built ahead (2026-07-09)
+
+**Builder decision (in chat):** build the remaining enrichments now —
+code only, all off by default, no effect on the running session
+(loaded code is immutable per process) — while **landings stay
+one-at-a-time** through pause → `--resume --world-stage <next>`, each
+with the builder's go, each gated on the three-signal read. The
+sequencing discipline (DP2) is about what enters Io's world, not when
+code is written. Cost, acknowledged: E3/E4 knobs were set before
+seeing E1/E2 live; every knob is revisable at a pause (DP5).
+
+**Gate (all three phases together): full suite 1439 passed / 7
+skipped (W2 close: 1405 / 7); mypy `--strict` clean on all 76 `kind/`
+sources.** All standing guards green.
+
+### W3 — E2: the hidden clock
+
+- `bloom_cell` (default None = off) + `bloom_period` / `bloom_duration`.
+  An unobserved phase counter (pure world state, never rendered, no
+  RNG) fires every `bloom_period` steps, stamping the EMPTY cells of
+  the source's Moore ring in the **trail vocabulary** for exactly
+  `bloom_duration` observations. The source cell itself never changes
+  — the cause is invisible even spatially (the house no-markers move).
+  Walls, resources, live trail, and out-of-bounds are never stamped.
+- **Provenance is honest end to end:** bloom cells live in their own
+  TTL map; stamps emit granular `process="bloom"` events (from the
+  world's own report — Io's EMPTY→TRAIL stamps can't be misattributed);
+  fades emit `process="bloom_fade"`, never `trail_decay`; a bloom cell
+  Io walks through and vacates becomes Io's own footprint (provenance
+  transfers, tested). `bloom_fade` is a tag the plan didn't name,
+  added so the SELF-adjacent trail_decay stream stays pure.
+- Stage `e2`: bloom at (6,6) — ring fully in-bounds and wall-free
+  (test-pinned) — period 12 (inside the measured ~40-step h-trace and
+  32-step BPTT window), duration 2. 11 tests.
+
+### W4 — E3: food becomes weather
+
+- `regrowth_mode` ("uniform" default / "patch"): a `patch_size`² (3×3)
+  square drifting on a deterministic bounce law every
+  `patch_step_every` steps (no RNG; reflected at the edges; pinned
+  against a hand-computed trajectory), regrowth `patch_p_inside=0.06`
+  under it / `patch_p_outside=0.001` elsewhere. The patch is never
+  rendered — weather is visible only as where food appears (Io and
+  builder alike). The uniform drift process still ticks (stream
+  discipline) but is unused in patch mode, journaled. The full-grid
+  RNG draw is mode-independent. Break-even arithmetic (knob, not
+  criterion): ~0.6 regrowths/step under the patch vs ~0.05 far away —
+  foraging possible, never ambient.
+- Granular `process="regrowth"` unchanged; each patch move emits
+  `process="patch_drift"` (a process event: `cell` = new center,
+  pre/post = patch_absent/patch_present, plus `center_from`/`center_to`
+  extras — the validator's matched keys present, extras legal).
+- **Occupancy-share diagnostic (C4 crowd-out watch)** in
+  `analyze_boundary.py`: per-block share of Io's steps inside the
+  patch square, from a new **position sidecar**
+  (`runs/<run>/agent_pos.jsonl`, written per step by the biography
+  script's live writer — run-script record, not telemetry; no schema
+  change; AgentStep carries no position). Sidecar data exists from the
+  next session onward; the analyzer degrades to no column when either
+  record is missing. 10 tests.
+
+### W5 — E4: the mover (pilot, DP3)
+
+- `mover_enabled` (default False) + cadence 2 / turn hazard 0.02 /
+  start (0,7). A single WALL-vocabulary cell: inertial heading,
+  hazard-driven turns from a **fourth spawned RNG stream** (children
+  are keyed by spawn index, so the original three streams — and every
+  pre-mover world — stay byte-identical, suite-verified), bounces off
+  walls/edges/objects/Io, moves only into EMPTY (never tramples food,
+  trail, or walls; never overlaps Io). Io's contact displaces it one
+  cell in the push direction; blocked push → the mover blocks exactly
+  like the wall it renders as. Placement excludes it from the agent's
+  random start and initial resource sampling.
+- **A deviation from the plan's file list, reasoned:** autonomous
+  moves emit granular `process="mover_step"` events; **contact
+  displacements are deliberately not world events.** They are
+  Io-caused and visible in AgentStep (the trail-stamping precedent),
+  and `WorldEvent.source` is a closed Literal {builder, environment,
+  system} with no self class — logging displacements as "environment"
+  would pollute the matched control's ENVIRONMENT stream, whose purity
+  is load-bearing (Probe 4 Phase 1). The synthesis's instrumentation
+  clause names "mover steps" only. Displacements stay exposed
+  mirror-side (`last_mover_displacement`) and are derivable from
+  telemetry (mover position change without a mover_step event).
+- Window: no change needed — the mover renders as the wall it is.
+  13 tests.
+
+**Closed:** all world-v2 code (stages default/e0/e1/e2/e3/e4;
+`--world-stage` accepts all six). **Newly open:** the landings — one
+at a time, builder-gated, three-signal-read between; the e1→e4 knobs
+revisited at each pause against the prior stage's live behavior; the
+E4 removal decision if its disagreement never localizes.

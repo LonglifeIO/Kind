@@ -102,6 +102,13 @@ class LiveStateWriter:
         self._started = time.monotonic()
         self._prev_energy: float | None = None
         self._derived_rows: list[LiveEventRow] = []
+        # World v2 W4: per-step position sidecar (run-script record, not
+        # telemetry — the derived-feed precedent). Feeds the boundary
+        # analyzer's occupancy-share diagnostic (C4 crowd-out watch).
+        # Line-buffered so monitors read a near-live record.
+        self._pos_log = (run_dir / "agent_pos.jsonl").open(
+            "a", buffering=1, encoding="utf-8"
+        )
 
     def _recent_events(self) -> list[LiveEventRow]:
         path = self._run_dir / "telemetry" / "world_event.jsonl"
@@ -155,6 +162,10 @@ class LiveStateWriter:
 
     def __call__(self, info: RunnerStepInfo) -> None:
         state = self._env_server.grid_world_state
+        self._pos_log.write(
+            f'{{"t": {info.env_step}, "pos": [{int(state.agent_pos[0])}, '
+            f"{int(state.agent_pos[1])}]}}\n"
+        )
         self._track_consumption(info.env_step, float(state.true_energy))
         feed = sorted(
             self._recent_events() + self._derived_rows,
