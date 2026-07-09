@@ -36,6 +36,7 @@ way). Telemetry records everything regardless.
 from __future__ import annotations
 
 import argparse
+import signal
 import threading
 import time
 from pathlib import Path
@@ -197,6 +198,17 @@ def main() -> None:
         help="Waking steps to run this session.",
     )
     args = parser.parse_args()
+
+    # Pause = SIGTERM (or SIGINT when attached): both route through the
+    # KeyboardInterrupt path so ``finally`` runs — sinks flush, the close
+    # is clean. Background-launched processes ignore SIGINT (observed
+    # 2026-07-09: two pause attempts silently no-opped), so SIGTERM is
+    # the documented pause signal.
+    def _pause_signal(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _pause_signal)
+    signal.signal(signal.SIGINT, _pause_signal)
 
     torch.manual_seed(20260708)
     device = "mps" if torch.backends.mps.is_available() else "cpu"
