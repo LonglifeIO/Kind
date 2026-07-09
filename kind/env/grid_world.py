@@ -169,6 +169,14 @@ class GridWorldConfig:
     patch_step_every: int = 20
     patch_p_inside: float = 0.06
     patch_p_outside: float = 0.001
+    # E3 amendment (ratified 2026-07-09,
+    # docs/decisions/worldv2_e3_amendment_offpatch_expiry_2026-07-09.md):
+    # in patch mode, resource cells NOT under the patch expire with
+    # this per-step probability — the world's first food sink besides
+    # Io, so the board can never freeze into all-green and food
+    # visibly tracks the weather. 0.0 (default) = off; preset 0.003
+    # ≈ 230-step off-patch half-life (stimulus knob, DP5).
+    patch_expiry_p: float = 0.0
     # World v2 E4 (synthesis DP3; plan W5): one autonomous mover — a
     # PILOT, removable at any pause without ceremony (S1's verifiers
     # refused to bless contact dynamics at this capacity). A single
@@ -371,6 +379,10 @@ class GridWorld:
         self._last_patch_move: (
             tuple[tuple[int, int], tuple[int, int]] | None
         ) = None
+        # E3 amendment: cells whose food expired on the most recent
+        # step (world-reported for granular emission — the
+        # RESOURCE→EMPTY diff alone would collide with consumption).
+        self._last_expiry_cells: tuple[tuple[int, int], ...] = ()
 
         # World v2 E4 mover state. ``None`` until placed by reset when
         # enabled. Heading starts into the grid from the start corner —
@@ -494,6 +506,15 @@ class GridWorld:
         return self._last_patch_move
 
     @property
+    def last_expiry_cells(self) -> tuple[tuple[int, int], ...]:
+        """Cells whose food expired on the most recent step (E3
+        amendment). Observer-side ground truth for granular
+        ``process="resource_expiry"`` emission — never inferred from
+        the RESOURCE→EMPTY diff, which is also what Io's consumption
+        looks like."""
+        return self._last_expiry_cells
+
+    @property
     def mover_pos(self) -> tuple[int, int] | None:
         """The mover's cell (``None`` when no mover). Mirror-side ground
         truth; Io sees only the WALL value the mover renders as."""
@@ -609,6 +630,7 @@ class GridWorld:
             for name, rate in (
                 ("patch_p_inside", c.patch_p_inside),
                 ("patch_p_outside", c.patch_p_outside),
+                ("patch_expiry_p", c.patch_expiry_p),
             ):
                 if not 0.0 <= rate <= 1.0:
                     raise ValueError(
@@ -1060,21 +1082,28 @@ class GridWorld:
         self._mover_pos = new_pos
         self._last_mover_step = ((old_r, old_c), new_pos)
 
+    def _patch_mask(self) -> NDArray[np.bool_]:
+        """Boolean grid mask of the cells currently under the patch."""
+        gs = self.config.grid_size
+        mask = np.zeros((gs, gs), dtype=np.bool_)
+        r, c = self._patch_center
+        half = self._patch_half
+        mask[
+            max(0, r - half) : r + half + 1,
+            max(0, c - half) : c + half + 1,
+        ] = True
+        return mask
+
     def _regrowth_p_map(self) -> NDArray[np.float64]:
         """Per-cell regrowth probability under the active mode."""
         gs = self.config.grid_size
         if self.config.regrowth_mode != "patch":
             return np.full((gs, gs), self._regrowth_p, dtype=np.float64)
-        p_map = np.full(
-            (gs, gs), self.config.patch_p_outside, dtype=np.float64
+        return np.where(
+            self._patch_mask(),
+            self.config.patch_p_inside,
+            self.config.patch_p_outside,
         )
-        r, c = self._patch_center
-        half = self._patch_half
-        p_map[
-            max(0, r - half) : r + half + 1,
-            max(0, c - half) : c + half + 1,
-        ] = self.config.patch_p_inside
-        return p_map
 
     def _update_regrowth(self) -> None:
         """Per-cell Bernoulli over all empty cells.
@@ -1092,15 +1121,44 @@ class GridWorld:
         outside rates in patch mode (world v2 E3). The full-grid draw is
         mode-independent, so the RNG stream advances identically under
         either mode.
+
+        E3 amendment (off-patch expiry): when active, one full-grid
+        draw happens unconditionally each step and serves both
+        processes — regrowth reads it against pre-step EMPTY cells,
+        expiry against pre-step off-patch RESOURCE cells. The masks are
+        disjoint by pre-state, so a cell that regrows this step cannot
+        expire this step. When expiry is inactive the legacy
+        early-return path (no draw on a full board) is untouched.
         """
+        self._last_expiry_cells = ()
         empty_mask = self._grid == CellType.EMPTY.value
-        if not bool(empty_mask.any()):
+        expiry_active = (
+            self.config.regrowth_mode == "patch"
+            and self.config.patch_expiry_p > 0.0
+        )
+        if not bool(empty_mask.any()) and not expiry_active:
             # No draw on a full board — the RNG stream's step count is
             # part of the reproducibility contract (byte-identity).
             return
         coin_flips = self._regrowth_rng.random(size=self._grid.shape)
+        if expiry_active:
+            expiry_mask = (
+                (self._grid == CellType.RESOURCE.value)
+                & ~self._patch_mask()
+                & (coin_flips < self.config.patch_expiry_p)
+            )
+            # Io's cell is grid state like any other; a resource under
+            # the parked agent may expire (it was never consumable
+            # without re-entry anyway).
+        else:
+            expiry_mask = None
         regrowth_mask = empty_mask & (coin_flips < self._regrowth_p_map())
         self._grid[regrowth_mask] = CellType.RESOURCE.value
+        if expiry_mask is not None and bool(expiry_mask.any()):
+            self._grid[expiry_mask] = CellType.EMPTY.value
+            self._last_expiry_cells = tuple(
+                (int(r), int(c)) for r, c in np.argwhere(expiry_mask)
+            )
 
     def _update_bloom(self) -> None:
         """Advance the hidden phase; on the terminal phase, stamp the

@@ -679,6 +679,22 @@ class EnvServer:
                     },
                     schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
                 )
+            # E3 amendment: one granular event per expired food cell —
+            # world-reported (the RESOURCE→EMPTY diff is also what Io's
+            # consumption looks like; consumption stays unlogged here).
+            for exp_r, exp_c in grid_world.last_expiry_cells:
+                self._emit_world_event(
+                    t_event=self._latest_env_step,
+                    event_type=_INTERNAL_STOCHASTICITY_EVENT,
+                    source=_SOURCE_ENVIRONMENT,
+                    payload={
+                        "process": "resource_expiry",
+                        "cell": [exp_r, exp_c],
+                        "pre_state": "resource",
+                        "post_state": "empty",
+                    },
+                    schema_version=PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+                )
             patch_move = grid_world.last_patch_move
             if patch_move is not None:
                 (from_r, from_c), (to_r, to_c) = patch_move

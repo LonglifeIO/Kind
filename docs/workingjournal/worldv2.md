@@ -570,6 +570,37 @@ checkpoint-boundary loss, third occurrence — cheap this time).
 
 **Recommendation: (C), with (B) as the conservative alternative.**
 
+## Session 5 (brief) + the E3 amendment: off-patch expiry (2026-07-09)
+
+Session 5 launched into e3 (marker t=214,000, from `ckpt-000020`) and
+ran ~2.3k steps. The builder's window screenshot at ~215.7k showed the
+board all-green again: **even patch regrowth saturates without a
+sink** — the off-patch trickle alone (0.001/cell/step) fills the
+board in ~2k idle steps, and Io was parked (the post-resume park is
+now a reliable pattern: sessions 3/4/5 all opened with it). E3's
+spatial structure washed out exactly when Io wasn't consuming. Also
+noted: the diagonal bounce law confines the patch center to the main
+diagonal (accepted; a knob for later).
+
+**RATIFIED (builder, in session, 2026-07-09): the off-patch expiry
+amendment**
+(`docs/decisions/worldv2_e3_amendment_offpatch_expiry_2026-07-09.md`)
+— resource cells not under the patch expire at `patch_expiry_p`
+(preset 0.003 ≈ 230-step half-life): the world's first food sink
+besides Io. Food now blooms under the weather, lingers, fades —
+sparse stays sparse regardless of Io's activity, and the weather is
+visible as pattern with no marker. Session 5 was paused by SIGTERM
+("amend and relaunch") and the amendment built in the same sitting:
+default 0.0 byte-identical (test-pinned, including the full-board
+no-draw stream contract); one shared full-grid draw serves regrowth
+and expiry with disjoint pre-state masks (a cell regrowing this step
+cannot expire this step, test-pinned); granular
+`process="resource_expiry"` events are world-reported, never inferred
+from the RESOURCE→EMPTY diff (which is what consumption looks like —
+Io's meals stay unlogged in world_event). **Gate: 1443 passed / 7
+skipped; mypy `--strict` clean.** Session 6 resumes into the amended
+e3.
+
 **RATIFIED (builder, in session, 2026-07-09): option (C) — weather
 before clock.** Landing order is now **e0 → e1 → e3 → e2 → e4**. The
 stage names keep their synthesis meanings (e2 = clock, e3 = weather);

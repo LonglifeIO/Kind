@@ -82,6 +82,9 @@ BLOOM_DURATION: Final[int] = 2
 PATCH_STEP_EVERY: Final[int] = 20
 PATCH_P_INSIDE: Final[float] = 0.06
 PATCH_P_OUTSIDE: Final[float] = 0.001
+# E3 amendment (ratified 2026-07-09): off-patch food expiry — the
+# world's first food sink besides Io. ~230-step off-patch half-life.
+PATCH_EXPIRY_P: Final[float] = 0.003
 
 # The e4 mover (stimulus knobs, DP5): starts in the corner opposite
 # the E0 corridor, moves every 2 steps with the plan's turn hazard.
@@ -133,6 +136,7 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             patch_step_every=PATCH_STEP_EVERY,
             patch_p_inside=PATCH_P_INSIDE,
             patch_p_outside=PATCH_P_OUTSIDE,
+            patch_expiry_p=PATCH_EXPIRY_P,
         )
     if stage == "e2":
         return dataclasses.replace(
