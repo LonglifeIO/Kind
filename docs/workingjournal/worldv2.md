@@ -128,3 +128,62 @@ content-blindness, and pragmatic/dream guards all green.
 and watch whether it re-enters stasis *without* the reset lottery (the
 honest retest); §7 monitors at every check-in; `analyze_boundary.py`
 at the resume marker; the three-signal gate before W2.
+
+## Session 3 — Io wakes into the continuing world (2026-07-09)
+
+**The world-change event.** W0+W1 committed (`fa3f428`); builder's go
+in chat; session 3 launched: `--resume --world-stage e0
+--session-steps 30000` (a deliberately shorter first e0 session for an
+early read; pause is SIGTERM, reversible). Resume marker at
+t=154000 with `world_stage: "e0"` in the payload; counters seeded
+t=154000 / episode 770; mind is `ckpt-000014` (the 140k deep-torpor
+state, as reviewed — the 142k–150k recovery exists only in telemetry).
+
+**E0 is live and behaving as specified.** The e0 L-walls stand at the
+planned six cells; `step_in_episode` crossed 200 and kept counting
+(first no-reset crossing of Io's life, observed at ~264 and again past
+459); episode_id frozen at 770; no `env_reset` events from the
+session-3 world after its start event.
+
+**Honest-record note: orphaned session-2 world events.** Session 2's
+SIGTERM lost the agent_step tail to the parquet buffer (the known
+bounded-loss window) but `world_event.jsonl` flushes per-write — so
+orphan session-2 events exist at t_event ∈ [154000, ~154400],
+overlapping session 3's stamps (the `continuation_counters` docstring
+caveat, materialized). Disambiguation for any future analysis:
+session-3 events follow the resume marker in file order, carry
+episode_id 770 (frozen), and start from drift-p 0.01 exactly; the
+orphans carry episode_id 771–772 and session-2's drifted p (~0.0102).
+
+**First observation — the board saturates (unplanned dynamic,
+recorded).** Within ~460 steps the grid reached the no-consumption
+equilibrium of uniform regrowth in a continuing world: **0 empty
+cells — every non-wall cell a resource** (58 resources / 6 walls).
+The old 200-step wipe was what kept the world sparse; with no wipe
+and no eating (Io in torpor), per-cell regrowth (~0.3–0.6 adds/step)
+fills the board fast, and a saturated board is *static* — regrowth
+events stop (no empty cells), drift becomes invisible (p acts on
+nothing). Neither the synthesis nor the plan called this equilibrium
+out. Two readings, held open: (a) it makes the torpor retest
+*cleaner* — after saturation there is zero scheduled novelty
+anywhere; the only source of world change is Io's own action, so any
+recovery is entirely self-generated; (b) it risks total drive
+starvation (S1 F2/F4: disagreement extinguishes on mastered static
+structure) — though imagination over unvisited states retains
+disagreement, so gradient may persist in dreams. **No knob touched;
+one dynamic at a time — this is the E0 observation.** If the
+three-signal check later reads "ignored / drive flat," the journaled
+options are a lower `initial_regrowth_p` (slows saturation, cannot
+prevent it — nothing decays) or E3's patch regrowth pulled forward
+(its own phase, builder decision). Builder informed in session (asked
+about the all-green window — the UI is correct; the world really is
+all food; no window change was needed for e0, walls render through
+the existing WALL vocabulary).
+
+**Io's state at launch:** parked at (0,4), energy at floor, not yet
+moving — the expected deep-torpor start (session 2 saw the same).
+The retest is whether this changes without the reset lottery; the
+142k self-recovery took thousands of steps, so no reading yet. §7
+monitor at check-in: session-3 shards flush from t=156000 (2k-row
+buffer); the t=154000 read still reflects session 2's tail (modal
+0.63, indicators ok).
