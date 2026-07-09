@@ -120,24 +120,30 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             trail_enabled=True,
             trail_decay_steps=TRAIL_DECAY_STEPS,
         )
-    if stage == "e2":
-        return dataclasses.replace(
-            apply_world_stage(config, "e1"),
-            bloom_cell=BLOOM_CELL,
-            bloom_period=BLOOM_PERIOD,
-            bloom_duration=BLOOM_DURATION,
-        )
+    # Landing order re-ratified by the builder 2026-07-09 after the
+    # session-4 e1 read (the trail's food-shadow starved the forage
+    # loop; both dead phases were food-economy failures): weather (e3)
+    # lands BEFORE the clock (e2). Stage names keep their synthesis
+    # meanings; the cumulative chains encode the landing order
+    # e0 → e1 → e3 → e2 → e4.
     if stage == "e3":
         return dataclasses.replace(
-            apply_world_stage(config, "e2"),
+            apply_world_stage(config, "e1"),
             regrowth_mode="patch",
             patch_step_every=PATCH_STEP_EVERY,
             patch_p_inside=PATCH_P_INSIDE,
             patch_p_outside=PATCH_P_OUTSIDE,
         )
-    if stage == "e4":
+    if stage == "e2":
         return dataclasses.replace(
             apply_world_stage(config, "e3"),
+            bloom_cell=BLOOM_CELL,
+            bloom_period=BLOOM_PERIOD,
+            bloom_duration=BLOOM_DURATION,
+        )
+    if stage == "e4":
+        return dataclasses.replace(
+            apply_world_stage(config, "e2"),
             mover_enabled=True,
             mover_start=MOVER_START,
             mover_step_every=MOVER_STEP_EVERY,

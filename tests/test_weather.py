@@ -239,10 +239,12 @@ def test_patch_validation() -> None:
 
 
 def test_stage_e3_is_cumulative() -> None:
+    """e3 lands BEFORE e2 (builder-ratified reorder, 2026-07-09): the
+    weather stage carries continuity + terrain + trail but NO clock."""
     staged = apply_world_stage(GridWorldConfig(), "e3")
     assert staged.episode_resample is False
     assert staged.trail_enabled is True
-    assert staged.bloom_cell is not None
+    assert staged.bloom_cell is None, "the clock must not land with e3"
     assert staged.regrowth_mode == "patch"
     assert staged.patch_step_every == PATCH_STEP_EVERY
     assert staged.patch_p_inside == PATCH_P_INSIDE

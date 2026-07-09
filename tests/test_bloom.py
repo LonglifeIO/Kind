@@ -272,9 +272,12 @@ def test_bloom_validation() -> None:
 
 
 def test_stage_e2_is_cumulative() -> None:
+    """e2 (clock) lands AFTER e3 (weather) — builder-ratified reorder,
+    2026-07-09 — so the e2 stage carries the patch as well."""
     staged = apply_world_stage(GridWorldConfig(), "e2")
     assert staged.episode_resample is False
     assert staged.trail_enabled is True
+    assert staged.regrowth_mode == "patch"
     assert staged.bloom_cell == BLOOM_CELL
     assert staged.bloom_period == BLOOM_PERIOD
     assert staged.bloom_duration == BLOOM_DURATION

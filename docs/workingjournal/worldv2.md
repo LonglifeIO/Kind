@@ -569,3 +569,16 @@ checkpoint-boundary loss, third occurrence — cheap this time).
   dynamic onto action stasis is the named failure mode.
 
 **Recommendation: (C), with (B) as the conservative alternative.**
+
+**RATIFIED (builder, in session, 2026-07-09): option (C) — weather
+before clock.** Landing order is now **e0 → e1 → e3 → e2 → e4**. The
+stage names keep their synthesis meanings (e2 = clock, e3 = weather);
+the preset chains were re-wired to encode the new landing order (e3
+builds on e1 with no bloom; e2 builds on e3), test-pinned both ways
+(`e3.bloom_cell is None`; `e2.regrowth_mode == "patch"`). Gate after
+the reorder: full suite 1439 passed / 7 skipped; mypy `--strict`
+clean. Deviation from the synthesis C3 ordering is builder-ratified
+on the session-4 evidence: both dead phases were food-economy
+failures, and E3 is the designed fix — the trail's shadow stops being
+starvation-relevant when food arrives under the patch instead of from
+craters.
