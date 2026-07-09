@@ -758,3 +758,24 @@ telemetry + `ckpt-000014` on disk; resume is
 continuation plan: C0 horizon re-measure on the final checkpoint, the
 baseline mirror round (builder go), the world-v2 research outputs,
 and now the §7 review itself.
+
+### Session 2 — brief (2026-07-09): resumed, then paused for world-v2
+
+Resume wiring worked in production: session 2 launched with
+`--resume`, counters seeded t=150000/episode 750, marker landed at
+t=150000, telemetry continued collision-free. First observation: the
+resumed 140k mind went straight back to the corner (the torpor is in
+the weights, not the world). At ~152k the builder decided to
+**prioritize the world-v2 change over the escape-replay observation**
+(direction 2026-07-09: pause, run the research, continue into the
+enriched world) — partly informed by not wanting to re-run the
+stasis in an unchanged world. Session 2 paused at ~154k (~4k steps;
+weights revert to `ckpt-000014` on next resume — no session-2
+checkpoint had landed; tail telemetry ≤2k rows lost to the SIGTERM
+buffer, accepted). Two operational notes: background-launched runs
+ignore SIGINT (both prior "pause" attempts silently no-opped; last
+night's close was purely the natural 150k completion — the journal
+above already records it that way); the script now converts
+SIGTERM/SIGINT to the clean-close path. The world-v2 research cycle
+is running (deep web-grounded pass, single-voice with the ≥3-voice
+caveat flagged; outputs → `docs/research/worldv2/`).
