@@ -143,6 +143,7 @@ class LiveStateWriter:
         self._started = time.monotonic()
         self._prev_energy: float | None = None
         self._derived_rows: list[LiveEventRow] = []
+        run_dir.mkdir(parents=True, exist_ok=True)  # fresh runs: dir first
         self._pos_log = (run_dir / "agent_pos.jsonl").open(
             "a", buffering=1, encoding="utf-8"
         )
