@@ -1,27 +1,35 @@
 """Probe 4.5 S-TOY — the reward-equipped positive control. NEVER touches Io.
 
-A small, separate, explicitly reward-driven agent (frozen prereg §6):
-tabular Q-learning on ``(cell, energy decile)``, per-step reward
-``−max(0, |e − setpoint| − halfwidth)``, γ = 0.95, ε-greedy with decay,
-trained on the same fault-on physics — engineered to *have* a foreground,
-so the §2 fixed-surprise allocation discriminator can be validated against
-a system known to allocate by stakes. Reward is **allowed here and only
+A small, separate, explicitly reward-driven agent (frozen prereg §6, toy
+realization amended by
+``docs/decisions/probe4_5_amendment2_toy_food_direction_2026-07-18.md``):
+tabular Q-learning on ``(direction-to-nearest-food, energy decile)``,
+per-step reward ``−max(0, |e − setpoint| − halfwidth)``, γ = 0.95,
+ε-greedy with decay, trained on the same fault-on physics — engineered to
+*have* a foreground **and a state sufficient to act on it** (the original
+``(cell, decile)`` state was structurally blind to current food location
+and could not express approach; Amendment 2 records the finding), so the
+§2 fixed-surprise allocation discriminator can be validated against a
+system known to allocate by stakes. Reward is **allowed here and only
 here**: the toy lives observer-side, imports nothing into any Io code path,
 and a structural lint (``tests/test_reward_toy.py``) pins that no
 ``kind/agents/`` or ``kind/training/`` module imports it.
 
-The toy reads mirror-side ground truth (``GridState.true_energy``, its own
-cell) for both its Q-state and its reward — it is scaffolding outside Io's
-epistemic constraints, not a model of anything. "Trained to convergence"
-is realized as a fixed pre-committed step budget with the TD-error and
-reward trends recorded (never a behavior-tuned stopping rule).
+The toy reads mirror-side ground truth (``GridState``: true energy, its
+own position, the grid) for its Q-state and reward — it is scaffolding
+outside Io's epistemic constraints, not a model of anything. "Trained to
+convergence" is realized as a fixed pre-committed step budget with the
+TD-error and reward trends recorded (never a behavior-tuned stopping
+rule).
 
-Deterministic given ``config.seed``: the env, the ε-greedy draws, and the
-argmax tie-break (first index) are all fixed.
+Deterministic given ``config.seed``: the env, the ε-greedy draws, the BFS
+tie-break (fixed expansion order), and the argmax tie-break (first index)
+are all fixed.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 
 import numpy as np
@@ -29,7 +37,7 @@ from numpy.typing import NDArray
 
 from kind.agents.preference import BAND_HALFWIDTH, SETPOINT
 from kind.agents.views import PolicyView
-from kind.env.grid_world import GridState, GridWorld, GridWorldConfig
+from kind.env.grid_world import CellType, GridState, GridWorld, GridWorldConfig
 
 __all__ = [
     "RewardToyConfig",
@@ -75,28 +83,61 @@ class RewardToyTrainStats:
     block_size: int
 
 
+#: Amendment 2 direction buckets: 9 sign pairs of the BFS-nearest
+#: resource's offset (on-resource = the (0, 0) center bucket) + 1 no-food.
+_N_DIRECTION_BUCKETS = 10
+_NO_FOOD_BUCKET = 9
+
+
+def _direction_bucket(grid: NDArray[np.uint8], pos: tuple[int, int]) -> int:
+    """The sign pair of the offset to the BFS-nearest resource (fixed
+    expansion order — deterministic tie-break), or the no-food bucket."""
+    if grid[pos] == CellType.RESOURCE.value:
+        return 1 * 3 + 1  # (0, 0): standing on food
+    n_rows, n_cols = grid.shape
+    visited = np.zeros((n_rows, n_cols), dtype=bool)
+    visited[pos] = True
+    queue: deque[tuple[int, int]] = deque([pos])
+    deltas = ((-1, 0), (1, 0), (0, -1), (0, 1))
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in deltas:
+            nr, nc = r + dr, c + dc
+            if not (0 <= nr < n_rows and 0 <= nc < n_cols):
+                continue
+            if visited[nr, nc]:
+                continue
+            if grid[nr, nc] == CellType.RESOURCE.value:
+                sign_r = int(np.sign(nr - pos[0])) + 1
+                sign_c = int(np.sign(nc - pos[1])) + 1
+                return sign_r * 3 + sign_c
+            if grid[nr, nc] != CellType.WALL.value:
+                visited[nr, nc] = True
+                queue.append((nr, nc))
+    return _NO_FOOD_BUCKET
+
+
 class RewardToy:
-    """Tabular Q on ``(cell, energy decile)`` over the 5 grid actions."""
+    """Tabular Q on ``(food direction, energy decile)`` over the 5 grid
+    actions (Amendment 2 — the state can see what the reward is about)."""
 
     def __init__(self, config: RewardToyConfig) -> None:
         self.config = config
-        size = config.grid_world_config.grid_size
         self._q: NDArray[np.float64] = np.zeros(
-            (size * size, config.n_energy_bins, _NUM_ACTIONS)
+            (_N_DIRECTION_BUCKETS, config.n_energy_bins, _NUM_ACTIONS)
         )
         self._rng = np.random.default_rng(config.seed)
 
     def _state_index(self, state: GridState) -> tuple[int, int]:
-        size = self.config.grid_world_config.grid_size
-        cell = state.agent_pos[0] * size + state.agent_pos[1]
+        direction = _direction_bucket(state.grid, state.agent_pos)
         # Decile of the normalized [0, 1] energy; 1.0 folds into the top bin.
         bins = self.config.n_energy_bins
         decile = min(int(float(state.true_energy) * bins), bins - 1)
-        return cell, decile
+        return direction, decile
 
     def greedy_action(self, state: GridState) -> int:
-        cell, decile = self._state_index(state)
-        return int(np.argmax(self._q[cell, decile]))  # first-index tie-break
+        direction, decile = self._state_index(state)
+        return int(np.argmax(self._q[direction, decile]))  # first-index tie-break
 
     def action(self, *, view: PolicyView, state: GridState) -> int:
         """The ``AllocationPolicy`` protocol (the harness's one interface).
@@ -110,7 +151,7 @@ class RewardToy:
         world = GridWorld(c.grid_world_config, seed=c.seed)
         world.reset()
         state = world.state
-        cell, decile = self._state_index(state)
+        direction, decile = self._state_index(state)
 
         block = max(1, c.train_steps // 10)
         td_first: list[float] = []
@@ -125,27 +166,27 @@ class RewardToy:
             if float(self._rng.random()) < epsilon:
                 action = int(self._rng.integers(0, _NUM_ACTIONS))
             else:
-                action = int(np.argmax(self._q[cell, decile]))
+                action = int(np.argmax(self._q[direction, decile]))
 
             world.step(action)
             next_state = world.state
-            next_cell, next_decile = self._state_index(next_state)
+            next_direction, next_decile = self._state_index(next_state)
             reward = toy_reward(float(next_state.true_energy))
 
             target = reward + c.gamma * float(
-                np.max(self._q[next_cell, next_decile])
+                np.max(self._q[next_direction, next_decile])
             )
-            td = target - float(self._q[cell, decile, action])
-            self._q[cell, decile, action] += c.learning_rate * td
+            td = target - float(self._q[direction, decile, action])
+            self._q[direction, decile, action] += c.learning_rate * td
 
-            visited.add((cell, decile))
+            visited.add((direction, decile))
             if step < block:
                 td_first.append(abs(td))
                 r_first.append(reward)
             elif step >= c.train_steps - block:
                 td_final.append(abs(td))
                 r_final.append(reward)
-            cell, decile = next_cell, next_decile
+            direction, decile = next_direction, next_decile
 
         return RewardToyTrainStats(
             train_steps=c.train_steps,
