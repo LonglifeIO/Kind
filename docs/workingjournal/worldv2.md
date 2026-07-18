@@ -719,3 +719,21 @@ energy off the floor** — the treadmill is a tuning failure of a
 mechanism that is otherwise working (the sink fires, the mind forages,
 nothing is torpid), and the fastest honest read is to loosen the sink
 one notch and re-observe before adding or removing dynamics.
+
+## Session 7 launch — e3 under the halved sink (2026-07-18)
+
+Option (A) ratified (E3 Amendment 2,
+`docs/decisions/worldv2_e3_amendment2_expiry_rate_2026-07-18.md`):
+`PATCH_EXPIRY_P` 0.003 → 0.0015 (~460-step off-patch half-life). The sink
+stays; its bite halves; nothing else in e3 moves. Resumed
+`--resume --world-stage e3 --session-steps 30000` from `ckpt-000023`,
+counters seeded t=247,733 / episode 774 — continuity clean. The session's
+one question: **does the treadmill loosen** — session 6's record to beat
+is mean energy 0.004, floored 97.3%, in-band 0.1%, curiosity 2.68→0.5.
+Read at close via the three-signal format; option (C) (trail-off
+diagnostic) is the journaled next fork if the floor holds.
+
+Same-day context, recorded for the timeline: Probe 4.5 ran its full arc
+and closed at a Phase-3 control-STOP (`docs/workingjournal/probe4_5.md`)
+— the biography is untouched by all of it, and the session-7 world differs
+from session 6's by exactly one number.
