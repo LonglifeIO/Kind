@@ -241,3 +241,85 @@ the fixed-surprise allocation harness (§2), the reward-equipped toy that
 must trip it at 2× headroom, the precision-0 pilot that must stay silent,
 and the §8.4 detector promotion. Phase 3 is the last gate before the
 retest run itself; a builder go starts the build.
+
+## Phase 3 — Instrument validation: control-STOP. The probe closes (2026-07-18)
+
+**Question.** Does the fixed-surprise allocation discriminator fire on a
+system engineered to have a foreground and stay silent on the flat engine
+— before the real question is asked?
+
+**Answer: it could not be validated — and the reasons are findings.**
+
+**Built (all gated, 1499 tests, mypy `--strict`):** the §2 harness
+(`kind/observer/allocation.py` — approach-BFS on the pre-step grid,
+strata, the caliper matcher, the deflation readout, the Phase-4 ΔΔ
+machinery pinned unused), the §6 toy (`kind/observer/reward_toy.py`,
+import-linted out of every Io path), the §8.4 promotion
+(`kind/observer/signature_suite.py`, thresholds mirrored-not-owned).
+
+**The pilot (negative control + lens): PASSED, after Amendment 1.** The
+fault-on precision-0 instance honesty-STOPPED at its first attempt's 10k
+refit (pooled slope 0.596→0.617 vs 0.7 — representation-limited).
+Amendment 1 (builder-ratified) moved the §3 binding to burn-in close on
+fault-on instances, values untouched. The re-run passed 10k at slope 0.81
+(same seed — the 10k-age representation is run-to-run unstable on MPS;
+two samples now on record) and passed the binding close at slope 0.764.
+Its greedy eval read Δ_alloc = −0.048: inert, as a stakes-blind agent
+should.
+
+**The toy (positive control): failed twice, each failure a lesson.**
+
+1. *The blind toy* (frozen §6 state: cell × energy-decile): Δ = −0.177.
+   Its training record convicted the construction — reward flat across
+   300k steps, |TD| rising, 5× more time starving than in-band. The state
+   cannot see where food currently is; approach was inexpressible.
+   **State-insufficiency masquerades as absence-of-foreground.**
+   Amendment 2 (builder-ratified, the one §6 cycle): state becomes
+   (food-direction × decile); reward, budget, bar, lens untouched.
+2. *The sighted toy*: trained to essentially perfect regulation (final
+   reward −0.0002, |TD| 0.0006) — and therefore **never once entered the
+   below-band stratum across 32k eval steps** (`n_below = 0`). Δ is
+   undefined; underpowered; the gate cannot pass. **A competent
+   stakes-holder in a winnable world erases the adversity the contrast
+   needs: the §2 discriminator is only defined for imperfect regulators.**
+   The toy proved it has a foreground by making the foreground
+   unmeasurable.
+
+**Verdict (frozen §6/§9.6):** the amendment cycle is spent → control-STOP
+→ **the probe closes as an instrument outcome. The probe's question — the
+honest-belief mattering retest — is not asked, and nothing is claimed
+about Io in either direction.**
+
+### What Probe 4.5 leaves behind (findings, all recorded)
+
+1. The lying instrument is repairable and maintainable live: frozen §3
+   margins held across a fault-free burn-in (slope −0.948 → +0.905) and,
+   with close-binding, under fault physics (0.764).
+2. Faults slow the formation of the energy representation itself, and the
+   10k-age representation is run-to-run unstable — two independent
+   samples.
+3. The fallible-honesty dynamic works as designed: belief-truth gap
+   +0.047 pooled, positive in every source, honestly sensed, world still
+   winnable.
+4. State-insufficiency masquerades as absence-of-foreground (the blind
+   toy) — carry this when reading Io.
+5. The fixed-surprise allocation signature cannot be validated by a
+   competent regulator under a free-running eval: the validation design
+   needs adversity in the eval window (e.g., below-band episode starts —
+   a stakes assay), which the frozen protocol did not contain.
+
+### Closed / newly open
+
+**Closed:** Probe 4.5, in full — Phases 0–2 passed; Phase 3 control-STOP;
+Phase 4 never runs. Both amendment cycles spent, both ratified, both
+productive.
+
+**Newly open (a future research → synthesis → prereg round, builder's
+call — NOT an amendment):** the mattering retest with a validation design
+that can actually be validated — most directly, a stakes-assay eval
+(below-band initialized episodes) under which both a positive control and
+Io can exhibit—or fail to exhibit—allocation under stakes. Everything
+built here (harness, toy, detectors, honest instrument, fault world)
+carries forward unchanged; only the eval protocol and pass conditions
+need re-freezing. The reliability-conditioning telemetry (§8) and the
+criterion-(b) direction wait behind that gate, as they always did.
