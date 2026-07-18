@@ -208,6 +208,17 @@ PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION: str = "0.4.0"
 # the right one. The matching export-file is ``schemas/v0.8.0.json``
 # (:data:`PROBE_4_EXPORT_VERSION`), preserving the +1 offset.
 PROBE_4_WORLD_EVENT_SCHEMA_VERSION: str = "0.4.0"
+# Probe 4.5 Phase 2 record-level **WorldEvent** version (implementation plan
+# §S-TEL; frozen prereg §4): the closed ``WorldEventType`` Literal gains
+# ``"energy_fault_event"`` — one granular record per fault onset/offset, the
+# observer-side ground truth for the fallible-honesty dynamic (opacity: the
+# fault has no observation marker; these records and
+# ``GridState.energy_fault_active`` are the only places it exists). WorldEvent
+# record lineage: "0.1.0" → "0.3.0" → "0.4.0" → "0.5.0" (this). The matching
+# export-file is ``schemas/v0.9.0.json``
+# (:data:`PROBE_4_5_EXPORT_VERSION`), preserving the +1 offset... which the
+# lineage now breaks by four: the offset is historical, not load-bearing.
+PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION: str = "0.5.0"
 
 
 class RecordEnvelope(BaseModel):
@@ -551,6 +562,7 @@ WorldEventType = Literal[
     "env_reset",
     "internal_stochasticity_aggregate",
     "internal_stochasticity_event",
+    "energy_fault_event",
     "mirror_marker",
     "state_transition",
     "dormant_heartbeat",
@@ -565,6 +577,15 @@ _INTERNAL_STOCHASTICITY_EVENT_PAYLOAD_KEYS: tuple[str, ...] = (
     "cell",
     "pre_state",
     "post_state",
+)
+
+# The validator-enforced payload shape of ``"energy_fault_event"`` records
+# (Probe 4.5 §S-TEL): ``transition`` is which edge fired; ``decay_multiplier``
+# pins the fault physics the record attests to, so the observer-side join
+# needs no config lookup.
+_ENERGY_FAULT_EVENT_PAYLOAD_KEYS: tuple[str, ...] = (
+    "transition",
+    "decay_multiplier",
 )
 
 
@@ -621,6 +642,45 @@ class WorldEvent(RecordEnvelope):
             )
         return self
 
+    @model_validator(mode="after")
+    def _enforce_probe_4_5_fault_event(self) -> "WorldEvent":
+        """Probe 4.5 Phase 2 writer-side discipline (plan §S-TEL).
+
+        ``"energy_fault_event"`` records must stamp
+        :data:`PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION` and carry the
+        ``{transition, decay_multiplier}`` payload with ``transition`` one of
+        ``"onset"`` / ``"offset"`` — the observer-side fault join
+        reconstructs per-step fault state from these edges alone (the fault
+        is invisible everywhere else by design), so the shape is enforced,
+        not merely documented. All other event types bypass this check.
+        """
+        if self.event_type != "energy_fault_event":
+            return self
+        if self.schema_version != PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION:
+            raise ValueError(
+                f"WorldEvent with event_type='energy_fault_event' requires "
+                f"schema_version=={PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION!r} "
+                f"(got {self.schema_version!r}) — granular fault logging is "
+                f"the Probe 4.5 WorldEvent generation."
+            )
+        missing = [
+            key
+            for key in _ENERGY_FAULT_EVENT_PAYLOAD_KEYS
+            if key not in self.payload
+        ]
+        if missing:
+            raise ValueError(
+                f"energy_fault_event payload is missing {missing}; the fault "
+                f"join requires {{transition, decay_multiplier}} (plan "
+                f"§S-TEL)."
+            )
+        if self.payload["transition"] not in ("onset", "offset"):
+            raise ValueError(
+                f"energy_fault_event transition must be 'onset' or 'offset', "
+                f"got {self.payload['transition']!r}."
+            )
+        return self
+
 
 RECORD_MODELS: tuple[type[RecordEnvelope], ...] = (
     AgentStep,
@@ -655,6 +715,7 @@ PROBE_3_5_EXPORT_VERSION: str = "0.5.0"
 PROBE_3_5_PHASE2_EXPORT_VERSION: str = "0.6.0"
 PROBE_3_5_PHASE3_EXPORT_VERSION: str = "0.7.0"
 PROBE_4_EXPORT_VERSION: str = "0.8.0"
+PROBE_4_5_EXPORT_VERSION: str = "0.9.0"
 
 
 def export_json_schema_v0_3_0() -> bytes:
@@ -726,26 +787,40 @@ def export_json_schema_v0_7_0() -> bytes:
 
 
 def export_json_schema_v0_8_0() -> bytes:
-    """Return a byte-stable JSON Schema export covering Probe 4 Phase 1.
+    """Return the frozen Probe 4 Phase-1 export (``schemas/v0.8.0.json``).
 
-    Builds on the frozen v0.7.0 export and refreshes the telemetry models
-    (``WorldEventType`` gains ``"internal_stochasticity_event"``; the
-    ``WorldEvent`` model gains the granular-event writer-side validator).
-    The mirror-side, conditioning, and dream-session models are carried
-    unchanged. The export-file version is :data:`PROBE_4_EXPORT_VERSION`
-    (``"0.8.0"``); the new record-level version it advertises is
-    :data:`PROBE_4_WORLD_EVENT_SCHEMA_VERSION` (WorldEvent, ``"0.4.0"``);
+    Probe 4.5 Phase 2 widens the live telemetry models (``WorldEventType``
+    gains ``"energy_fault_event"``; the ``WorldEvent`` model gains the fault
+    writer-side validator), so — per the house pattern — the Probe 4 export
+    is now a **frozen historical artifact**: reading the checked-in bytes
+    keeps it byte-stable rather than regenerating it from the now-wider
+    models. The Probe 4.5 live export is :func:`export_json_schema_v0_9_0`.
+    """
+
+    return _read_frozen_schema("v0.8.0.json")
+
+
+def export_json_schema_v0_9_0() -> bytes:
+    """Return a byte-stable JSON Schema export covering Probe 4.5 Phase 2.
+
+    Builds on the frozen v0.8.0 export and refreshes the telemetry models
+    (``WorldEventType`` gains ``"energy_fault_event"``; the ``WorldEvent``
+    model gains the fault-event writer-side validator). The mirror-side,
+    conditioning, and dream-session models are carried unchanged. The
+    export-file version is :data:`PROBE_4_5_EXPORT_VERSION` (``"0.9.0"``);
+    the new record-level version it advertises is
+    :data:`PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION` (WorldEvent, ``"0.5.0"``);
     the AgentStep / DreamRollout record versions are unchanged from the
-    v0.7.0 export.
+    v0.8.0 export.
     """
 
     from kind.observer.dream_session import DreamSessionMeta
 
-    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.7.0.json"))
-    base_document["title"] = "Kind Probe 4 Phase 1 Schemas"
-    base_document["schema_version"] = PROBE_4_EXPORT_VERSION
+    base_document: dict[str, Any] = json.loads(_read_frozen_schema("v0.8.0.json"))
+    base_document["title"] = "Kind Probe 4.5 Phase 2 Schemas"
+    base_document["schema_version"] = PROBE_4_5_EXPORT_VERSION
     base_document["world_event_schema_version"] = (
-        PROBE_4_WORLD_EVENT_SCHEMA_VERSION
+        PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION
     )
     base_document["models"]["telemetry"] = {
         model.__name__: model.model_json_schema() for model in RECORD_MODELS
@@ -765,12 +840,14 @@ __all__ = [
     "PROBE_3_5_PHASE2_TELEMETRY_SCHEMA_VERSION",
     "PROBE_3_5_PHASE3_DREAM_SCHEMA_VERSION",
     "PROBE_4_WORLD_EVENT_SCHEMA_VERSION",
+    "PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION",
     "PROBE_2_EXPORT_VERSION",
     "PROBE_3_EXPORT_VERSION",
     "PROBE_3_5_EXPORT_VERSION",
     "PROBE_3_5_PHASE2_EXPORT_VERSION",
     "PROBE_3_5_PHASE3_EXPORT_VERSION",
     "PROBE_4_EXPORT_VERSION",
+    "PROBE_4_5_EXPORT_VERSION",
     "RecordEnvelope",
     "AgentStep",
     "DreamRollout",
@@ -785,4 +862,5 @@ __all__ = [
     "export_json_schema_v0_6_0",
     "export_json_schema_v0_7_0",
     "export_json_schema_v0_8_0",
+    "export_json_schema_v0_9_0",
 ]

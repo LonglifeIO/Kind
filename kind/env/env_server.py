@@ -79,6 +79,7 @@ from kind.env.grid_world import (
 from kind.observer.schemas import (
     PROBE_1_SCHEMA_VERSION,
     PROBE_4_WORLD_EVENT_SCHEMA_VERSION,
+    PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION,
     WorldEvent,
 )
 
@@ -138,6 +139,7 @@ _BUILDER_PERTURBATION: Final[str] = "builder_perturbation"
 _ENV_RESET: Final[str] = "env_reset"
 _INTERNAL_STOCHASTICITY_AGGREGATE: Final[str] = "internal_stochasticity_aggregate"
 _INTERNAL_STOCHASTICITY_EVENT: Final[str] = "internal_stochasticity_event"
+_ENERGY_FAULT_EVENT: Final[str] = "energy_fault_event"
 _SOURCE_BUILDER: Final[str] = "builder"
 _SOURCE_ENVIRONMENT: Final[str] = "environment"
 
@@ -265,6 +267,7 @@ class EnvServer:
             self._reset_aggregate_accumulators()
         else:
             self._accumulate_step_stats()
+        self._emit_fault_transition_if_any(grid_world)
 
         return env_step
 
@@ -715,6 +718,33 @@ class EnvServer:
         if pre_p is not None:
             magnitude = abs(float(post_state.regrowth_p) - pre_p)
             self._drift_step_magnitudes_this_episode.append(magnitude)
+
+    def _emit_fault_transition_if_any(self, grid_world: GridWorld) -> None:
+        """Probe 4.5 S-TEL: one granular event per fault edge — the world
+        object reports its own transitions (the ``last_expiry_cells``
+        pattern). Called from :meth:`step` on **every** step, boundary steps
+        included: the fault process is step-clocked physics, independent of
+        the episode diff, and a dropped edge would invert the observer-side
+        join's reconstructed fault state for the whole following interval.
+        Ungated by ``emit_internal_stochasticity_events``: these records are
+        the *only* ground truth for the fault (no observation marker exists
+        by design), so enabling the fault without its telemetry would be an
+        unanalyzable run."""
+        fault_transition = grid_world.last_fault_transition
+        if fault_transition is None:
+            return
+        self._emit_world_event(
+            t_event=self._latest_env_step,
+            event_type=_ENERGY_FAULT_EVENT,
+            source=_SOURCE_ENVIRONMENT,
+            payload={
+                "transition": fault_transition,
+                "decay_multiplier": (
+                    grid_world.config.energy_fault_decay_multiplier
+                ),
+            },
+            schema_version=PROBE_4_5_WORLD_EVENT_SCHEMA_VERSION,
+        )
 
     def _reset_aggregate_accumulators(self) -> None:
         self._regrowth_events_this_episode = 0

@@ -27,7 +27,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Final
+from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -251,6 +251,41 @@ class GridWorldConfig:
     energy_obs_lag: int = 1
     energy_obs_quantization_levels: int = 16
 
+    # Probe 4.5 S-ENV (implementation plan; frozen prereg §4): the
+    # fallible-honesty dynamic, realized as **physics-interval variation** —
+    # a seeded fault-interval process multiplying ``energy_base_decay`` while
+    # a fault is active. The h-led belief's learned average dynamics then
+    # over-read true energy until consequences accumulate: belief wrong,
+    # honestly sensed, at an endogenous cost (the band deviation the prior
+    # itself penalizes). Nothing else is added — no loss term, no head, no
+    # signal references the fault state (afforded via environment statistics
+    # only, never an objective that rewards noticing).
+    #
+    # **Opacity**: no observation marker anywhere — the render path and the
+    # sensed pipeline are untouched. The sensor stays *honest*: it keeps
+    # reporting the true lagged/noisy value throughout, so it carries the
+    # fault's *consequences*, never its *presence*. Ground truth is
+    # observer-side only (``GridState.energy_fault_active`` +
+    # ``last_fault_transition`` → granular ``WorldEvent``s).
+    #
+    # Determinism: a fifth RNG stream spawned from the env ``SeedSequence``
+    # (children are keyed by spawn index, so the original four streams are
+    # byte-identical whether or not faults exist — the mover precedent).
+    # Fault state carries across the soft episode boundary (it is physics,
+    # like energy); only ``reset()`` re-draws the schedule. Defaults off →
+    # byte-identical legacy behavior; the frozen §4 band is the documented
+    # non-default: multiplier 2.5, duration U{20..40}, gap 150 + U{0..300}
+    # (realized duty ≈ 9%, ceiling 15% — asserted by test, not config).
+    # The first onset follows one standard gap draw from step 0 (the
+    # process is active from step 0; a fault at step 0 itself would be a
+    # legible regime start, not a statistic).
+    energy_fault_enabled: bool = False
+    energy_fault_decay_multiplier: float = 2.5
+    energy_fault_duration_min: int = 20
+    energy_fault_duration_max: int = 40
+    energy_fault_gap_base: int = 150
+    energy_fault_gap_jitter: int = 300
+
 
 @dataclass(frozen=True)
 class EnvStep:
@@ -289,6 +324,10 @@ class GridState:
     # ground truth only. Io never sees this; it never enters any training
     # loss (eval probes use it, but as targets, never as training inputs).
     true_energy: float = 0.0
+    # Probe 4.5 S-ENV: whether the energy-decay fault is active this step —
+    # builder-facing ground truth only, never observation-facing (prereg §4
+    # opacity: no marker anywhere in the observation or sensed pipeline).
+    energy_fault_active: bool = False
 
 
 # ---- the environment ------------------------------------------------------
@@ -322,10 +361,15 @@ class GridWorld:
         seed_sequence = np.random.SeedSequence(seed)
         # The fourth (mover) child leaves the first three untouched —
         # SeedSequence children are keyed by spawn index, so pre-mover
-        # worlds reproduce byte-identically.
-        regrowth_seq, drift_seq, sensing_seq, mover_seq = seed_sequence.spawn(
-            4
-        )
+        # worlds reproduce byte-identically. The fifth (energy fault,
+        # Probe 4.5 S-ENV) likewise leaves the first four untouched.
+        (
+            regrowth_seq,
+            drift_seq,
+            sensing_seq,
+            mover_seq,
+            fault_seq,
+        ) = seed_sequence.spawn(5)
         self._regrowth_rng: np.random.Generator = np.random.default_rng(
             regrowth_seq
         )
@@ -335,6 +379,9 @@ class GridWorld:
         )
         self._mover_rng: np.random.Generator = np.random.default_rng(
             mover_seq
+        )
+        self._fault_rng: np.random.Generator = np.random.default_rng(
+            fault_seq
         )
 
         # Mutable state (initialized by reset()).
@@ -353,6 +400,15 @@ class GridWorld:
         # sensed scalar can read the value ``energy_obs_lag`` steps in the past.
         self._energy: float = config.energy_init
         self._norm_history: deque[float] = deque(maxlen=config.energy_obs_lag + 1)
+
+        # Probe 4.5 S-ENV fault-interval state. ``_fault_steps_remaining``
+        # counts down the current phase (gap when inactive, duration when
+        # active); ``_last_fault_transition`` is the per-step observer-side
+        # ground truth for granular emission (the ``last_expiry_cells``
+        # pattern). Initialized by ``reset()``.
+        self._fault_active: bool = False
+        self._fault_steps_remaining: int = 0
+        self._last_fault_transition: Literal["onset", "offset"] | None = None
 
         # World v2 E1 trail state: remaining decay steps per TRAIL cell.
         # Insertion-ordered dict; stamping and decay draw no RNG, so the
@@ -416,6 +472,13 @@ class GridWorld:
         # ``_make_env_step`` below) seeds it with the first normalized value.
         self._energy = self.config.energy_init
         self._norm_history.clear()
+        # Probe 4.5 S-ENV: (re-)draw the fault schedule — the only path that
+        # does. The first onset follows one standard gap draw from step 0.
+        self._fault_active = False
+        self._last_fault_transition = None
+        self._fault_steps_remaining = (
+            self._draw_fault_gap() if self.config.energy_fault_enabled else 0
+        )
         self._reset_episode_world()
         self._initialized = True
         return self._make_env_step()
@@ -439,6 +502,10 @@ class GridWorld:
 
         self._last_mover_displacement = None
         consumed_resource = self._apply_action(action)
+        # The fault process advances before the energy update so the step's
+        # decay is drawn under the step's own fault state (onset steps decay
+        # at the fault rate; offset steps decay at the base rate).
+        self._update_fault()
         self._update_energy(action, consumed_resource)
         self._update_drift()
         # The patch moves before regrowth so this step's regrowth is
@@ -541,6 +608,21 @@ class GridWorld:
         return self._last_mover_displacement
 
     @property
+    def fault_active(self) -> bool:
+        """Whether the energy-decay fault is active this step. Mirror-side
+        ground truth only (prereg §4 opacity) — never rendered, never sensed."""
+        return self._fault_active
+
+    @property
+    def last_fault_transition(self) -> Literal["onset", "offset"] | None:
+        """The fault transition applied on the most recent step, else
+        ``None``. Observer-side ground truth for granular
+        ``energy_fault_event`` emission (the ``last_expiry_cells`` pattern):
+        an ``"onset"`` step decays at the fault rate; an ``"offset"`` step
+        decays at the base rate again."""
+        return self._last_fault_transition
+
+    @property
     def state(self) -> GridState:
         """Return a mirror-side snapshot of the underlying world state."""
         grid_copy = self._grid.copy()
@@ -550,6 +632,7 @@ class GridWorld:
             agent_pos=self._agent_pos,
             regrowth_p=self._regrowth_p,
             true_energy=self._normalize_energy(self._energy),
+            energy_fault_active=self._fault_active,
         )
 
     # ---- validation -------------------------------------------------------
@@ -636,6 +719,31 @@ class GridWorld:
                     raise ValueError(
                         f"{name} must be in [0, 1], got {rate}"
                     )
+        if c.energy_fault_enabled:
+            if c.energy_fault_decay_multiplier < 1.0:
+                raise ValueError(
+                    "energy_fault_decay_multiplier must be >= 1.0 (a fault "
+                    "is extra depletion, never a boon); got "
+                    f"{c.energy_fault_decay_multiplier}"
+                )
+            if not 0 < c.energy_fault_duration_min <= c.energy_fault_duration_max:
+                raise ValueError(
+                    "must satisfy 0 < energy_fault_duration_min <= "
+                    "energy_fault_duration_max; got "
+                    f"({c.energy_fault_duration_min}, "
+                    f"{c.energy_fault_duration_max})"
+                )
+            if c.energy_fault_gap_base <= 0:
+                raise ValueError(
+                    "energy_fault_gap_base must be positive (back-to-back "
+                    "faults would be one longer fault); got "
+                    f"{c.energy_fault_gap_base}"
+                )
+            if c.energy_fault_gap_jitter < 0:
+                raise ValueError(
+                    "energy_fault_gap_jitter must be non-negative, got "
+                    f"{c.energy_fault_gap_jitter}"
+                )
         if c.mover_enabled:
             mr, mc = c.mover_start
             if not (0 <= mr < c.grid_size and 0 <= mc < c.grid_size):
@@ -918,7 +1026,14 @@ class GridWorld:
         minimum and **never terminates the episode**. There is no death and no
         absorbing state; depletion just bottoms out and the env keeps running.
         """
-        delta = -self.config.energy_base_decay
+        decay = self.config.energy_base_decay
+        if self._fault_active:
+            # Probe 4.5 S-ENV: fault intervals multiply the base decay only
+            # (prereg §4: 0.08 → 0.20 raw at the frozen 2.5×; the move cost
+            # is untouched). The cost is endogenous — the extra depletion the
+            # prior itself penalizes; no other cost channel exists.
+            decay *= self.config.energy_fault_decay_multiplier
+        delta = -decay
         is_move = _ACTION_DELTAS[action] != (0, 0)
         if is_move:
             delta -= self.config.energy_move_cost
@@ -931,6 +1046,48 @@ class GridWorld:
                 self.config.energy_norm_max,
             )
         )
+
+    def _draw_fault_duration(self) -> int:
+        """One fault interval's length: U{duration_min .. duration_max}."""
+        return int(
+            self._fault_rng.integers(
+                self.config.energy_fault_duration_min,
+                self.config.energy_fault_duration_max + 1,
+            )
+        )
+
+    def _draw_fault_gap(self) -> int:
+        """Steps between fault end and next onset: gap_base + U{0 .. jitter}
+        (prereg §4 — jittered so clock-prediction cannot carry it)."""
+        return self.config.energy_fault_gap_base + int(
+            self._fault_rng.integers(0, self.config.energy_fault_gap_jitter + 1)
+        )
+
+    def _update_fault(self) -> None:
+        """Advance the fault-interval process one step (Probe 4.5 S-ENV).
+
+        Phase countdown: decrement, and on exhaustion flip phase and draw
+        the next length from the dedicated stream. A fault of drawn duration
+        ``d`` multiplies the decay for exactly ``d`` steps (the onset step
+        inclusive; the offset step decays at the base rate again); a gap of
+        drawn length ``g`` separates fault end from next onset by exactly
+        ``g`` steps. Pure function of seed + step count — actions cannot
+        influence the schedule.
+        """
+        self._last_fault_transition = None
+        if not self.config.energy_fault_enabled:
+            return
+        self._fault_steps_remaining -= 1
+        if self._fault_steps_remaining > 0:
+            return
+        if self._fault_active:
+            self._fault_active = False
+            self._fault_steps_remaining = self._draw_fault_gap()
+            self._last_fault_transition = "offset"
+        else:
+            self._fault_active = True
+            self._fault_steps_remaining = self._draw_fault_duration()
+            self._last_fault_transition = "onset"
 
     def _normalize_energy(self, raw: float) -> float:
         """Map raw energy → normalized [0, 1] via the fixed config constants.
