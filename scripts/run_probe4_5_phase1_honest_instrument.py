@@ -216,9 +216,6 @@ def main() -> None:
         "device": args.device,
         "refit_every_n_env_steps": args.refit_every,
         "f2_bounded_head": True,
-        "burn_in_close_coincides_with_final_scheduled_refit": (
-            args.steps % args.refit_every == 0
-        ),
     }
 
     stop: HonestyStopError | None = None
@@ -236,17 +233,22 @@ def main() -> None:
         )
         try:
             runner.run(total_env_steps=args.steps)
-            if args.steps % args.refit_every != 0:
-                # The prereg's burn-in-close refit, explicit when the loop
-                # did not end on a scheduled boundary.
-                run_scheduled_maintenance(
-                    runner._world_model,  # noqa: SLF001 — pause point; run over
-                    runner._actor,  # noqa: SLF001
-                    maintenance,
-                    env_step=args.steps,
-                    occasion="burn_in_close",
-                    run_label=run_cfg.run_id,
-                )
+            # The runner's loop covers env steps 0..steps-1, so a boundary
+            # at exactly ``steps`` never fires in-loop — the prereg's
+            # burn-in-close refit therefore ALWAYS runs explicitly here
+            # (attempt-1 lesson, 2026-07-18: the old "coincides with the
+            # final scheduled refit" branch was an off-by-one and the close
+            # refit never ran). A final checkpoint commits afterward so the
+            # honest post-close decoder persists for the Phase-2 profile.
+            run_scheduled_maintenance(
+                runner._world_model,  # noqa: SLF001 — pause point; loop over
+                runner._actor,  # noqa: SLF001
+                maintenance,
+                env_step=args.steps,
+                occasion="burn_in_close",
+                run_label=run_cfg.run_id,
+            )
+            runner._commit_checkpoint(args.steps)  # noqa: SLF001
         except HonestyStopError as e:
             stop = e
         finally:
