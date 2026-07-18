@@ -88,6 +88,10 @@ from kind.observer.schemas import (
     WorldEvent,
 )
 from kind.observer.dream_session import DreamSessionSink
+from kind.observer.maintenance_refit import (
+    MaintenanceRefitConfig,
+    run_scheduled_maintenance,
+)
 from kind.observer.pre_reg import PreRegistration, PreRegSink
 from kind.observer.sinks import JsonlSink, ParquetSink
 from kind.training.checkpoint import CheckpointContents, CheckpointManager
@@ -276,6 +280,19 @@ class RunnerConfig:
     # firing with ``trigger="manual"``). ``None`` (default) disables the
     # drain. Requires a co-located ``env_server`` when set.
     perturbation_inbox_dir: Path | None = None
+
+    # Probe 4.5 Phase 1 (implementation plan §S-DEC; prereg §3). When
+    # non-None, the scheduled decoder-head maintenance refit + honesty gate
+    # (``kind.observer.maintenance_refit``) runs at the pre-registered
+    # checkpoint-aligned cadence — at the step boundary, immediately BEFORE
+    # the checkpoint commit, so every committed checkpoint carries the
+    # refit head and a resume continues from post-refit state. The cadence
+    # must be a multiple of ``checkpoint_every_n_env_steps`` (validated at
+    # construction). A §3 honesty-STOP raises ``HonestyStopError`` out of
+    # ``run()`` — the orchestrating script records the finding; the run does
+    # not proceed on a lying belief. ``None`` (the default) changes nothing —
+    # every existing runner is byte-identical.
+    maintenance_refit: MaintenanceRefitConfig | None = None
     self_prediction_target_mode: Literal[
         "online", "frozen", "environmental"
     ] = "online"
@@ -645,6 +662,22 @@ class Runner:
             if config.perturbation_generator is not None
             else None
         )
+
+        # Probe 4.5 S-DEC: the maintenance cadence is checkpoint-aligned by
+        # pre-registration (§3) — enforce the alignment structurally so the
+        # refit can only ever fire at a checkpoint boundary.
+        if config.maintenance_refit is not None and (
+            config.maintenance_refit.refit_every_n_env_steps
+            % config.checkpoint_every_n_env_steps
+            != 0
+        ):
+            raise ValueError(
+                "RunnerConfig.maintenance_refit.refit_every_n_env_steps must "
+                "be a multiple of checkpoint_every_n_env_steps (prereg §3: "
+                "checkpoint-aligned cadence); got "
+                f"{config.maintenance_refit.refit_every_n_env_steps} vs "
+                f"{config.checkpoint_every_n_env_steps}."
+            )
         # Consumption co-timing detector for the generator's not-self
         # deferral: consecutive true-energy samples, the house jump
         # threshold (observer.source_events). Independent of the
@@ -1407,7 +1440,28 @@ class Runner:
         if dream_emitted:
             self._emit_waking_planning_rollout_for_phase3_control(env_step_now)
 
-        # 10. Checkpoint at cadence.
+        # 10. Probe 4.5 S-DEC — scheduled decoder-head maintenance at the
+        #     pre-registered checkpoint-aligned cadence (prereg §3), at the
+        #     step boundary and BEFORE the checkpoint commit so the committed
+        #     checkpoint carries the refit head (a resume continues from
+        #     post-refit state). The cadence is never behavior-triggered; a
+        #     §3 honesty-STOP propagates as ``HonestyStopError`` and ends the
+        #     run — the orchestrating script records the finding.
+        maintenance = self._config.maintenance_refit
+        if (
+            maintenance is not None
+            and env_step_now > 0
+            and env_step_now % maintenance.refit_every_n_env_steps == 0
+        ):
+            run_scheduled_maintenance(
+                self._world_model,
+                self._actor,
+                maintenance,
+                env_step=env_step_now,
+                run_label=self._config.run_id,
+            )
+
+        # 11. Checkpoint at cadence.
         checkpoint_committed = (
             env_step_now > 0
             and env_step_now % self._config.checkpoint_every_n_env_steps == 0
@@ -1415,7 +1469,7 @@ class Runner:
         if checkpoint_committed:
             self._commit_checkpoint(env_step_now)
 
-        # 11. Optional external observer hook. Last so the callback sees
+        # 12. Optional external observer hook. Last so the callback sees
         #     the post-dream / post-checkpoint state — the same envelope
         #     that just got attached to the next AgentStep record.
         if self._step_callback is not None:

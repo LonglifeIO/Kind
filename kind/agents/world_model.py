@@ -105,6 +105,17 @@ class WorldModelConfig:
     # trigger (battery D failing), journaled.
     energy_dedicated_dims: int = 0
     energy_dedicated_free_bits: float = 1.5
+    # Probe 4.5 F2 (adopted decision doc
+    # ``docs/decisions/probe4_5_f2_bounded_decoder_2026-07-13.md``). When True,
+    # ``_EnergyDecoder``'s output passes through a sigmoid, bounding
+    # ``decode_energy`` to the physical [0, 1] — removing the impossible >1
+    # regime that inverted the Probe 3.5 preference geometry (seek
+    # classification §2: oracle in-band decoded at mean 1.124, above the
+    # ceiling). Default False: every legacy instance, test, and archived
+    # artifact keeps the unbounded linear head byte-identically. Set True for
+    # all Probe 4.5 instances, which train through the sigmoid from scratch —
+    # no trained function's gradient field is retroactively altered.
+    energy_decoder_bounded: bool = False
     # Probe 2 v2 lesion plumbing (plan §2.5; synthesis §2.4 element 4).
     # Only ``"disable_self_prediction"`` affects WorldModel behavior; the
     # other Probe 2 lesion kinds operate at views.split (zero_or_randomize_
@@ -277,21 +288,31 @@ class _EnergyEncoder(nn.Module):
 class _EnergyDecoder(nn.Module):
     """Probe 3.5 proprioceptive decoder — ``(h, z)`` → scalar energy prediction.
 
-    A small ELU MLP ``(h_dim + z_dim) → hidden → 1``. The final layer has no
-    activation — the raw scalar is the prediction, paired against
+    A small ELU MLP ``(h_dim + z_dim) → hidden → 1``. By default the final
+    layer has no activation — the raw scalar is the prediction, paired against
     ``sensed_energy`` by an MSE reconstruction term (never ``true_energy``;
     plan S-ENV rule). ``WorldModel.decode_energy`` is the public entry the
     actor's Phase-2 pragmatic term and the Phase-1 interventional eval read.
+
+    Probe 4.5 F2 (``bounded=True``, config-gated, default off): the output
+    passes through a sigmoid, bounding the prediction to the physical [0, 1].
+    Same parameters, one fixed nonlinearity — not a new head, loss, or signal.
     """
 
-    def __init__(self, latent_dim: int, hidden_dim: int) -> None:
+    def __init__(
+        self, latent_dim: int, hidden_dim: int, bounded: bool = False
+    ) -> None:
         super().__init__()
         self.fc1 = nn.Linear(latent_dim, hidden_dim)
         self.head = nn.Linear(hidden_dim, 1)
+        self.bounded = bounded
 
     def forward(self, latent: Tensor) -> Tensor:
         x = F.elu(self.fc1(latent))
-        return cast(Tensor, self.head(x))
+        out = cast(Tensor, self.head(x))
+        if self.bounded:
+            return torch.sigmoid(out)
+        return out
 
 
 class WorldModel(nn.Module):
@@ -370,6 +391,7 @@ class WorldModel(nn.Module):
         self.energy_decoder = _EnergyDecoder(
             latent_dim=energy_decoder_latent_dim,
             hidden_dim=config.energy_decoder_hidden,
+            bounded=config.energy_decoder_bounded,
         )
 
         # Probe 1.5: self-prediction head + EMA-tracked target siblings.
