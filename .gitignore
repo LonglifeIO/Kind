@@ -21,6 +21,12 @@ runs/
 # Arc — separate project, archival reference, has its own .git
 Arc/
 
+# Local credentials/config (never committed; repo is public)
+config
+
+# Local agent-tool state
+.hermes/
+
 # Local Claude settings
 .claude/settings.local.json
 

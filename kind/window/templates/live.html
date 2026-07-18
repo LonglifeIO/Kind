@@ -5,7 +5,7 @@
 <div id="status" class="note">connecting…</div>
 <dl class="kv" id="stats" style="display:none;">
   <dt>env step</dt><dd id="stat-step"></dd>
-  <dt>episode</dt><dd id="stat-episode"></dd>
+  <dt>session</dt><dd id="stat-episode"></dd>
   <dt>energy</dt><dd id="stat-energy"></dd>
   <dt>last update</dt><dd id="stat-age"></dd>
 </dl>
@@ -115,8 +115,11 @@
     document.getElementById("stats").style.display = "";
     document.getElementById("stat-step").textContent =
       s.env_step.toLocaleString();
+    // In the continuing world (e0+) episodes no longer exist:
+    // episode_id freezes at the session's seed and step_in_episode
+    // counts up from the resume without ever resetting.
     document.getElementById("stat-episode").textContent =
-      `${s.episode_id} (step ${s.step_in_episode} in episode)`;
+      `${s.episode_id} (${s.step_in_episode} steps this session)`;
     document.getElementById("stat-energy").textContent =
       s.true_energy === null ? "—" : s.true_energy.toFixed(3);
     const age = data.age_s === null ? 0 : data.age_s;

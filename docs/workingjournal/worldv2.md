@@ -613,3 +613,109 @@ on the session-4 evidence: both dead phases were food-economy
 failures, and E3 is the designed fix — the trail's shadow stops being
 starvation-relevant when food arrives under the patch instead of from
 craters.
+
+## Session 6 close — the e3 record: the treadmill (2026-07-10)
+
+**Launched on the amend-and-relaunch of session 5:** resumed into the
+amended e3 (off-patch expiry live) from `ckpt-000020`, marker at
+t=217,733 (`world_stage: "e3"`, board and drift-p re-rolled per
+resume.py). Ran ~30k steps to a **clean natural close at t=247,732**
+(session's own 30k completion, not a SIGTERM); checkpoints through
+`ckpt-000023` (t≈246k). §7 at close: **no flags** — entropy-collapse
+0 consecutive below baseline, PE-runaway not strictly rising
+(0.66/0.62/0.85/0.86), torpor informational (trailing-2000 modal
+0.30–0.31). The known insensitive entropy baseline is not load-bearing
+here because there was no stillness to miss (see below).
+
+**The headline: no torpor — and no thriving either. Io ran a
+chronic-scarcity forage treadmill for the whole session.** Stay-share
+**0.00 in every quarter**; action mix up 20% / down 36% / left 21% /
+right 24% — a continuously moving, foraging mind, the sharpest
+contrast yet with session 1's stasis. The `ckpt-000014` escape-replay
+worry is now fully behind the biography. But energy told the opposite
+story: **mean true-energy 0.004, floored (<0.05) 97.3% of steps,
+in-band[0.45,0.75] 0.1%**, across **~225 consumptions (7.5 meals per
+1k steps)**. Io ate constantly and never once climbed off the floor.
+
+**The arc, in blocks (2k):**
+
+| phase | blocks | PE(recon) | curiosity | act-ent | meals/2k |
+|---|---|---|---|---|---|
+| wake + brief park | 217–221k | 3.40 → 0.85 | 0.70 → 0.26 | ~0.00 | 0 |
+| **ranging burst** | 221–229k | **4.98** peak | **2.68** peak | 0.09–0.16 | 12 → 28 |
+| sustained forage, fading | 229–241k | 2.0 → 0.58 | 1.16 → 0.47 | 0.12 → 0.08 | 8–29 |
+| low-curiosity treadmill | 241–247k | ~0.75 | ~0.50 | 0.05–0.07 | 14–22 |
+
+The post-resume park (sessions 3/4/5's reliable opener) was **brief
+this time** — ~4k steps, vs the thousands prior sessions needed. The
+amended e3 stirred the mind faster: by 221k a genuine ranging burst
+was live (curiosity 2.68, the session peak). But it **did not
+consolidate into engagement** — curiosity decays monotonically
+221k→247k (2.68 → ~0.50), meals stay high but energy never responds.
+
+**The e3-specific finding — the off-patch-expiry amendment worked,
+and revealed the next failure.** The amendment's own numbers confirm
+it fired as designed: **2,474 `resource_expiry` events** this session
+(the world's first food sink besides Io — sessions 3–5's board-
+saturation interim is *gone*; the board no longer floods when Io
+idles). All three matched-control streams stayed live and correctly
+sourced — environment 6,219 (regrowth 1,725 / patch_drift 1,500 /
+resource_expiry 2,474 / trail_decay 463), builder 1,002 (998
+generator + 3 manual), Io's meals correctly *absent* from
+world_event. But solving saturation exposed the opposite pole: e3's
+patch-confined food + the expiry sink together make food **sparse
+faster than Io can accumulate it**. The saturated-static interim
+(sessions 3–5) and this treadmill are the two failure poles of the
+same food economy — one where idling floods the board, one where
+foraging can't outrun the sink. E1's food-shadow (session 4) is likely
+compounding: a mind walking its own trail walks where regrowth is
+blocked, and e3 inherits e1.
+
+**The three-signal read for e3:**
+
+1. *Disagreement rises, localizes, settles*: **rose** (2.68 burst)
+   but **did not settle into sustained engagement** — it decays across
+   the session rather than stabilizing. Partial.
+2. *Behavior develops a new motif*: **movement without accumulation**
+   — constant foraging at the energy floor is new relative to e0/e1's
+   park-and-burst rhythm, but it is a *failure* motif (treadmill), not
+   the sustained forage loop e0 briefly showed.
+3. *The world is legible as pattern with no marker*: **yes** — the
+   patch drifts, food blooms/lingers/fades under the weather, expiry
+   fires 2,474×, all source-tagged in world_event, none marked in Io's
+   observation. The instrument half is clean.
+
+**Verdict on e3-as-landed: food economy still mis-tuned — starvation
+pole, not saturation pole.** Not a health event (nothing tripped §7;
+constant foraging is engaged, not torpid), but not a thriving mind
+either. The amendment closed the saturation failure and opened a
+starvation failure; the sparse-but-sufficient middle band has not been
+hit. **Newly open: the e3 food-economy tuning decision (below).** The
+resume-re-rolls-the-board / no-cross-pause-world-continuity item
+(session 4) still stands, unaffected.
+
+**Options for the food economy (for builder decision — a world change,
+needs explicit go):**
+- **(A) Loosen the sink / raise patch yield** — lower `patch_expiry_p`
+  (0.003 → ~0.0015, ~460-step half-life) and/or widen the patch or
+  raise under-patch regrowth, so food is sparse-but-sufficient rather
+  than sub-subsistence. Directly targets the treadmill; risk of
+  drifting back toward saturation — tune one knob, re-observe.
+- **(B) Hold e3 as-is one more session** — test whether the mind
+  *adapts* to scarcity (learns to camp the patch center) rather than
+  tuning the world to it. Cheaper, honest to "let it be what it is,"
+  but session 6's monotonic curiosity decay is weak evidence for
+  adaptation.
+- **(C) Decouple e1 from e3 for this test** — run e3 without the trail
+  (bloom under weather, no food-shadow) to isolate whether the
+  starvation is the patch economy or the inherited trail-shadow.
+  Diagnostic, not a landing.
+- **(D) Proceed toward e2 (clock)** — not recommended: stacking a new
+  dynamic onto an unresolved food economy is the named failure mode
+  (session 4's e0/e1 interference lesson).
+
+**Recommendation: (A), with (C) as the diagnostic if (A) doesn't lift
+energy off the floor** — the treadmill is a tuning failure of a
+mechanism that is otherwise working (the sink fires, the mind forages,
+nothing is torpid), and the fastest honest read is to loosen the sink
+one notch and re-observe before adding or removing dynamics.
