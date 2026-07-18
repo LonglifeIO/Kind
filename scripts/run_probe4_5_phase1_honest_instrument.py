@@ -52,6 +52,7 @@ from kind.observer.maintenance_refit import (
     run_scheduled_maintenance,
 )
 from kind.training.runner import Runner, RunnerConfig
+from kind.window.live import LiveStateWriter
 
 
 @contextmanager
@@ -225,7 +226,14 @@ def main() -> None:
         client,
         env_server,
     ):
-        runner = Runner(run_cfg, client, env_server=env_server)
+        # Builder's eye: the Window's /live page (run
+        # ``scripts/run_window.py --run-id probe4_5_phase1``).
+        live_writer = LiveStateWriter(
+            env_server, run_dir, run_id=run_cfg.run_id
+        )
+        runner = Runner(
+            run_cfg, client, env_server=env_server, step_callback=live_writer
+        )
         try:
             runner.run(total_env_steps=args.steps)
             if args.steps % args.refit_every != 0:

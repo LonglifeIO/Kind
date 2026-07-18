@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import signal
 import threading
-import time
 from pathlib import Path
 
 import torch
@@ -49,13 +48,12 @@ from kind.env.grid_world import GridWorldConfig
 from kind.env.perturbation_generator import PerturbationGeneratorConfig
 from kind.env.transport import EnvTransportClient, EnvTransportServer
 from kind.env.world_stages import WORLD_STAGES, apply_world_stage
-from kind.observer.schemas import WorldEvent
 from kind.training.resume import (
     continuation_counters,
     resume_from_latest_checkpoint,
 )
-from kind.training.runner import Runner, RunnerConfig, RunnerStepInfo
-from kind.window.live import LiveEventRow, LiveWindowState, write_live_state
+from kind.training.runner import Runner, RunnerConfig
+from kind.window.live import LiveStateWriter
 
 RUN_DIR = Path("runs/probe4_phase4_biography")
 RUN_ID = "probe4-phase4-biography"
@@ -82,116 +80,6 @@ class CyclicDreamClock:
         position = self._count % period
         self._count += 1
         return position < self._waking_polls
-
-
-class LiveStateWriter:
-    """Step callback: one atomic ``window/live_state.json`` snapshot per
-    waking step. The recent-event feed is tailed from the run's own
-    ``world_event.jsonl`` (line-flushed by the telemetry sink) — the
-    transport layer owns the in-process event handler chain
-    (``EnvTransportServer`` replaces the config-time handler), so the
-    flushed record IS the reliable source. Builder-eye only — writes
-    outside telemetry, touches nothing Io sees."""
-
-    _TAIL_BYTES = 16_384
-    _CONSUMPTION_JUMP = 0.03  # house threshold (seek-classification §1)
-
-    def __init__(self, env_server: EnvServer, run_dir: Path) -> None:
-        self._env_server = env_server
-        self._run_dir = run_dir
-        self._started = time.monotonic()
-        self._prev_energy: float | None = None
-        self._derived_rows: list[LiveEventRow] = []
-        # World v2 W4: per-step position sidecar (run-script record, not
-        # telemetry — the derived-feed precedent). Feeds the boundary
-        # analyzer's occupancy-share diagnostic (C4 crowd-out watch).
-        # Line-buffered so monitors read a near-live record.
-        self._pos_log = (run_dir / "agent_pos.jsonl").open(
-            "a", buffering=1, encoding="utf-8"
-        )
-
-    def _recent_events(self) -> list[LiveEventRow]:
-        path = self._run_dir / "telemetry" / "world_event.jsonl"
-        try:
-            size = path.stat().st_size
-        except OSError:
-            return []
-        with path.open("rb") as handle:
-            handle.seek(max(0, size - self._TAIL_BYTES))
-            lines = handle.read().decode("utf-8", errors="replace").splitlines()
-        if size > self._TAIL_BYTES and lines:
-            lines = lines[1:]  # drop the partial first line
-        rows: list[LiveEventRow] = []
-        for line in lines[-EVENT_FEED_LEN:]:
-            try:
-                record = WorldEvent.model_validate_json(line)
-            except ValueError:
-                continue
-            payload = record.payload
-            parts = [
-                f"{key}={payload[key]}"
-                for key in ("mutator", "process", "cell", "trigger")
-                if key in payload
-            ]
-            rows.append(
-                LiveEventRow(
-                    t_event=record.t_event,
-                    source=record.source,
-                    event_type=record.event_type,
-                    detail="  ".join(parts),
-                )
-            )
-        return rows
-
-    def _track_consumption(self, env_step: int, energy: float) -> None:
-        """Derived builder-eye row: a consumption's energy jump made
-        visible in the feed (the grid pixel often lives < one poll).
-        View-state only — never telemetry."""
-        prev = self._prev_energy
-        self._prev_energy = energy
-        if prev is not None and energy - prev > self._CONSUMPTION_JUMP:
-            self._derived_rows.append(
-                LiveEventRow(
-                    t_event=env_step,
-                    source="io",
-                    event_type="consumption (derived)",
-                    detail=f"energy +{energy - prev:.3f}",
-                )
-            )
-            del self._derived_rows[:-EVENT_FEED_LEN]
-
-    def __call__(self, info: RunnerStepInfo) -> None:
-        state = self._env_server.grid_world_state
-        self._pos_log.write(
-            f'{{"t": {info.env_step}, "pos": [{int(state.agent_pos[0])}, '
-            f"{int(state.agent_pos[1])}]}}\n"
-        )
-        self._track_consumption(info.env_step, float(state.true_energy))
-        feed = sorted(
-            self._recent_events() + self._derived_rows,
-            key=lambda row: row.t_event,
-        )[-EVENT_FEED_LEN:]
-        write_live_state(
-            self._run_dir,
-            LiveWindowState(
-                run_id=RUN_ID,
-                env_step=info.env_step,
-                episode_id=info.episode_id,
-                step_in_episode=info.step_in_episode,
-                wallclock_ms=int(time.time() * 1000),
-                grid=[[int(v) for v in row] for row in state.grid],
-                agent_pos=(int(state.agent_pos[0]), int(state.agent_pos[1])),
-                true_energy=float(state.true_energy),
-                recent_events=feed,
-            ),
-        )
-        if info.env_step > 0 and info.env_step % 1_000 == 0:
-            elapsed = time.monotonic() - self._started
-            print(
-                f"step {info.env_step}  episode {info.episode_id}  "
-                f"{elapsed:.0f}s  ({elapsed / info.env_step * 1000:.0f} ms/step)",
-                flush=True,
-            )
 
 
 def main() -> None:
@@ -291,7 +179,9 @@ def main() -> None:
         perturbation_inbox_dir=inbox_dir,
     )
 
-    live_writer = LiveStateWriter(env_server, RUN_DIR)
+    live_writer = LiveStateWriter(
+        env_server, RUN_DIR, run_id=RUN_ID, event_feed_len=EVENT_FEED_LEN
+    )
     runner = Runner(
         config,
         client,
