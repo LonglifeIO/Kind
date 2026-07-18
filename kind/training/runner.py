@@ -1459,6 +1459,10 @@ class Runner:
                 maintenance,
                 env_step=env_step_now,
                 run_label=self._config.run_id,
+                # Amendment 1: fault-on run scripts set stop_binding=False
+                # so mid-burn-in refits record without stopping; the
+                # burn-in-close call in the script binds explicitly.
+                binding=maintenance.stop_binding,
             )
 
         # 11. Checkpoint at cadence.

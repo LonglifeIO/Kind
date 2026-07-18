@@ -345,6 +345,28 @@ def test_maintenance_cycle_writes_round_trippable_report(
     )
 
 
+def test_non_binding_maintenance_records_without_stopping(
+    tmp_path: Path,
+) -> None:
+    """Amendment 1 (2026-07-18): with binding=False the refit runs, the
+    failing report is written, no diagnostic fires, nothing raises."""
+    wm, actor, grid_cfg = _tiny_instances()
+    config = _tiny_maintenance_config(
+        tmp_path / "maintenance", grid_cfg, margins=_IMPOSSIBLE_MARGINS
+    )
+    reports = run_scheduled_maintenance(
+        wm, actor, config, env_step=100, binding=False
+    )
+    assert len(reports) == 1
+    assert not reports[0].verdict.all_passed  # recorded...
+    assert maintenance_report_path(
+        config.out_dir, env_step=100, occasion="scheduled"
+    ).exists()
+    assert not maintenance_report_path(  # ...no diagnostic ran
+        config.out_dir, env_step=100, occasion="diagnostic_recollection"
+    ).exists()
+
+
 def test_scheduled_maintenance_stop_after_diagnostic_recollection(
     tmp_path: Path,
 ) -> None:

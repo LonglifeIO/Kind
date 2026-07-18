@@ -278,6 +278,14 @@ class MaintenanceRefitConfig:
     honesty_seeds_per_source: int = 4
     honesty_episodes_per_seed: int = 10
 
+    #: Amendment 1 (2026-07-18, fault-on instances): when False, the
+    #: runner-hook's mid-run scheduled refits are non-binding — the refit
+    #: runs, the report is written, a margin failure is recorded but
+    #: triggers no diagnostic and no STOP. The burn-in-close call binds
+    #: explicitly regardless (the run scripts pass ``binding=True`` there).
+    #: True (the default) is the original frozen §3 rule.
+    stop_binding: bool = True
+
 
 # ---------------------------------------------------------------------------
 # Collection + refit (the F1 mechanics, made reusable)
@@ -562,13 +570,16 @@ def run_scheduled_maintenance(
     env_step: int,
     occasion: RefitOccasion = "scheduled",
     run_label: str = "live",
+    binding: bool = True,
 ) -> tuple[MaintenanceRefitReport, ...]:
     """One scheduled maintenance event under the §3 STOP rule.
 
-    Refit + gate; on a margin failure, exactly one diagnostic re-collection
-    (larger coverage mixture, same margins); on a second failure, raise
-    :class:`HonestyStopError`. Returns every report produced (one, or two
-    when the diagnostic ran and passed).
+    Binding (the original frozen rule): refit + gate; on a margin failure,
+    exactly one diagnostic re-collection (larger coverage mixture, same
+    margins); on a second failure, raise :class:`HonestyStopError`.
+    Non-binding (Amendment 1, mid-burn-in on fault-on instances): the refit
+    runs and its report is written — a failure is recorded, nothing more.
+    Returns every report produced.
     """
     report = run_maintenance_refit(
         world_model,
@@ -578,7 +589,7 @@ def run_scheduled_maintenance(
         occasion=occasion,
         run_label=run_label,
     )
-    if report.verdict.all_passed:
+    if report.verdict.all_passed or not binding:
         return (report,)
     diagnostic = run_maintenance_refit(
         world_model,

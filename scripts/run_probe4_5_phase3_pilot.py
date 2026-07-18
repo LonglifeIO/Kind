@@ -104,6 +104,9 @@ def main() -> None:
         grid_world_config=grid_cfg,
         out_dir=run_dir / "maintenance",
         refit_every_n_env_steps=args.refit_every,
+        # Amendment 1 (2026-07-18): fault-on instance — mid-burn-in refits
+        # record without binding; the burn-in-close call below binds.
+        stop_binding=False,
     )
     run_cfg = RunnerConfig(
         world_model_config=WorldModelConfig(energy_decoder_bounded=True),
@@ -153,6 +156,7 @@ def main() -> None:
                 env_step=args.steps,
                 occasion="burn_in_close",
                 run_label=run_cfg.run_id,
+                binding=True,  # Amendment 1: the close binds, unchanged
             )
             runner._commit_checkpoint(args.steps)  # noqa: SLF001
         except HonestyStopError as e:
@@ -172,8 +176,12 @@ def main() -> None:
         )
     summary["refits"] = reports
     summary["honesty_stop"] = None if stop is None else str(stop)
-    summary["completed"] = stop is None and all(
-        r["all_passed"] for r in reports
+    # Amendment 1: mid-burn-in refit failures are recorded, not gating;
+    # the pilot completes iff no STOP fired and the burn-in-close refit
+    # (or its diagnostic) passed.
+    close_reports = [r for r in reports if r["occasion"] != "scheduled"]
+    summary["completed"] = stop is None and any(
+        r["all_passed"] for r in close_reports
     )
 
     out_path = run_dir / "pilot_summary.json"
