@@ -83,8 +83,12 @@ PATCH_STEP_EVERY: Final[int] = 20
 PATCH_P_INSIDE: Final[float] = 0.06
 PATCH_P_OUTSIDE: Final[float] = 0.001
 # E3 amendment (ratified 2026-07-09): off-patch food expiry — the
-# world's first food sink besides Io. ~230-step off-patch half-life.
-PATCH_EXPIRY_P: Final[float] = 0.003
+# world's first food sink besides Io. Rate re-ratified 2026-07-18
+# (session 6's treadmill finding, option A): 0.003 → 0.0015, ~460-step
+# off-patch half-life — the sink stays (boards cannot saturate), its
+# bite halves (chronic starvation was the session-6 record: mean energy
+# 0.004, floored 97.3%, in-band 0.1% despite ~225 meals).
+PATCH_EXPIRY_P: Final[float] = 0.0015
 
 # The e4 mover (stimulus knobs, DP5): starts in the corner opposite
 # the E0 corridor, moves every 2 steps with the plan's turn hazard.
