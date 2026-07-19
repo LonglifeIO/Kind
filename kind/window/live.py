@@ -141,6 +141,11 @@ class LiveStateWriter:
         self._event_feed_len = event_feed_len
         self._print_every = print_every
         self._started = time.monotonic()
+        # Session-relative pace baseline: on resumed runs the absolute
+        # env_step is far ahead of this session's own step count, and
+        # dividing elapsed by it under-reports ms/step (session-7 close
+        # note, worldv2 journal). Seeded lazily from the first callback.
+        self._first_env_step: int | None = None
         self._prev_energy: float | None = None
         self._derived_rows: list[LiveEventRow] = []
         run_dir.mkdir(parents=True, exist_ok=True)  # fresh runs: dir first
@@ -231,14 +236,17 @@ class LiveStateWriter:
                 recent_events=feed,
             ),
         )
+        if self._first_env_step is None:
+            self._first_env_step = info.env_step
         if (
             self._print_every > 0
             and info.env_step > 0
             and info.env_step % self._print_every == 0
         ):
             elapsed = time.monotonic() - self._started
+            session_steps = max(1, info.env_step - self._first_env_step + 1)
             print(
                 f"step {info.env_step}  episode {info.episode_id}  "
-                f"{elapsed:.0f}s  ({elapsed / info.env_step * 1000:.0f} ms/step)",
+                f"{elapsed:.0f}s  ({elapsed / session_steps * 1000:.0f} ms/step)",
                 flush=True,
             )

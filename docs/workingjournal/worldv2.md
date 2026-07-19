@@ -737,3 +737,50 @@ Same-day context, recorded for the timeline: Probe 4.5 ran its full arc
 and closed at a Phase-3 control-STOP (`docs/workingjournal/probe4_5.md`)
 — the biography is untouched by all of it, and the session-7 world differs
 from session 6's by exactly one number.
+
+## Session 7 close — the halved sink: Io eats twice as much and the floor holds (2026-07-18)
+
+Clean natural close: t 247,734 → 277,732 (30k waking steps, ~200 ms/step
+wall pace, 266 lifetime dream sessions, resume → close without incident;
+§7 panel clean at close — no entropy collapse, no PE runaway, no torpor,
+stay-share 0.0000).
+
+**The treadmill question, answered against the session-6 record:**
+
+| signal | session 6 (expiry 0.003) | session 7 (expiry 0.0015) |
+|---|---|---|
+| mean energy | 0.004 | 0.0084 |
+| floored (< 0.05) | 97.3% | 94.2% |
+| in-band | 0.1% | 0.1% |
+| meals | ~225 | **416** |
+| resource_expiry events | 2,474 | 1,578 |
+| curiosity (intrinsic) | 2.68 → 0.5 (decaying) | **0.48 → 4.77 (rising)** |
+
+**Reading.** The amendment did exactly what it mechanically promised —
+the sink's bite halved (expiry events −36%), more food persisted, and Io
+responded by eating **nearly twice as often**. And the floor held anyway:
+in-band unchanged at 0.1%, floored share barely moved. The arithmetic
+says why: 416 meals over 30k steps is ~0.014 meals/step against a
+constant-mover burn that needs ~0.15 to break even — Io grazes wide and
+never camps the patch, so intake runs an order of magnitude short of its
+own movement cost, at either expiry rate. **The treadmill is not the
+sink's rate; it is the spatial pattern** — a constantly-moving,
+curiosity-led forager in a patch-concentrated economy. Consistent with
+that: curiosity *rose* 10× across the session (0.48 → 4.77) — the
+slower-expiring world carries more standing food and more visible
+happenings, and Io's one drive is pointed at exactly that, not at the
+band. With no installed preference (presence-not-probe), in-band
+occupancy is nothing Io seeks — the "welfare" reading of the floor
+remains builder-side, and the §7 health panel stays clean.
+
+**Fork forward (builder's, at next pause):** the journaled fallback was
+(C) — the trail-off diagnostic — if (A) failed to lift the floor. It
+did fail to lift it. (B) revert-the-sink and simply-accept-the-economy
+(energy floors are non-terminal; the mind is healthy and lively) remain
+live options. No further sink-rate tuning without a new dated fork —
+(A) is spent and answered.
+
+**Small instrument note:** the promoted LiveStateWriter's per-step pace
+print divides by the *absolute* resumed step counter (printed "22
+ms/step" for a 200 ms/step session) — cosmetic, fixed post-close with a
+session-relative baseline.
