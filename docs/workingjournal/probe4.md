@@ -779,3 +779,39 @@ above already records it that way); the script now converts
 SIGTERM/SIGINT to the clean-close path. The world-v2 research cycle
 is running (deep web-grounded pass, single-voice with the ≥3-voice
 caveat flagged; outputs → `docs/research/worldv2/`).
+
+### The baseline mirror reading — Kind's second look (2026-07-23)
+
+The pending continuation-plan item is done: one Probe-1-style
+observational reading (gemini-2.5-pro, the plumbing caller, calibration
+stance — not the adversarial V2 instrument) over the last 600 steps of
+session 8 (`agent_step_range` 307,133–307,732), landed at
+`runs/probe4_phase4_biography/mirror/readings.jsonl`. Unblocked by the
+step-window fix (W0 item 10; `window_steps=600`, the historical
+3-episode width — comparable to the first mirror call at t≈5k).
+
+What the mirror saw, blind, from the digest alone (runs/ is
+gitignored; key content quoted here as the record):
+
+- "The action distribution is heavily skewed towards actions 0 and 1
+  … action 4 was never selected … a converged, rather than uniformly
+  random, policy." — Action 4 is ``stay``; actions 0/1 are up/down.
+  The mirror independently recovered both halves of session 8's R2
+  verdict (never-stays; the vertical corner shuttle) from the action
+  distribution, never having seen the position log.
+- "Reconstruction loss shows notable volatility … several steps more
+  than 20× the episode's mean" — punctuated surprise against a
+  converged background (plausibly meal/patch-arrival moments; not
+  established by this reading).
+- Pipeline verdict (the reading's actual job): "coherent and legible
+  signal … data density sufficient for future, more detailed
+  analyses."
+
+The before/after pair now exists: first reading (Probe 1, t≈5k,
+early-learning signal) vs this (t≈307k, converged policy with
+punctuated surprise). Claim ceiling respected: observational stance,
+no criteria, no inner-life vocabulary — the calibration instrument
+confirming the conduit still carries signal at 60× the age. A
+criteria-driven (V2) round on the biography remains a separate
+builder decision; the orchestrator's episode-partitioning assumptions
+are unvetted for e0+ worlds (inventory item 11 kin).
