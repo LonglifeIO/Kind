@@ -846,3 +846,76 @@ The legacy episode path is untouched (byte-identical, still the default)
 and item 11's one-group digest semantics stay as journaled — accepted
 degradation, no new machinery. This unblocks the pending baseline
 mirror round (builder-gated, API cost).
+
+## Session 8 close — the trail-off verdict: Io was eating its own attention (2026-07-23)
+
+Clean natural close: t 277,733 → 307,732 (30k steps, ~160 ms/step),
+resume marker carried `world_stage=e3_no_trail`, §7 panel clean
+(entropy ok, PE block means 0.53/0.34/0.36/0.35, torpor informational
+0.38, 294 lifetime dream sessions — 28 this session). Both sessions
+below were re-derived from telemetry with identical definitions
+(meals = true_energy jump > 0.03; floored = energy ≤ 0; band
+0.45–0.75), so S7 figures differ cosmetically from its close entry.
+
+| | S7 (e3, trail on) | S8 (e3_no_trail) |
+|---|---|---|
+| meals | 416 (0.014/step) | **1,503 (0.050/step)** |
+| regrowth total / in-reach | 1,055 / 238 | **1,984 / 969** |
+| corner-block regrowth | 64 | 178 |
+| expiry | 1,578 | 1,450 |
+| mean energy | 0.0084 | **0.0655** |
+| floored / in-band | 91.0% / 0.07% | **67.3% / 2.42%** |
+| top-4 occupancy | 62.0% | 52.4% |
+| unique cells / 50-step window | 5.1 | 7.6 |
+| inside patch / mean dist | 6.4% / 3.46 | 6.4% / 3.48 |
+| curiosity first-1k → last-1k | 0.47 → 5.66 | **0.77 → 0.42** |
+
+**R1 (economy): confirmed, beyond the pre-registration.** The static
+replay predicted ≤ +676 meals; the live world gave +1,087 (3.6×),
+because the effect compounds — food near Io gets eaten, emptying cells
+the patch can re-seed, where trail used to hold them sterile
+(in-reach regrowth 4×). Floor time fell 24 points; in-band rose 35×.
+And the honest half of the pre-registration also held: 0.050
+meals/step is still ~3× short of constant-mover break-even — the
+floor still dominates. The trail was a first-order economic sink; it
+was not the whole treadmill.
+
+**R2 (space): null — the loop is Io's own.** Same top cells
+((6,2)/(7,2) corner block), concentration barely loosened
+(62→52% top-4), patch-following identical to the decimal (6.4%
+inside, distance 3.46→3.48). The pacing pattern is not stigmergic
+self-capture; it is the policy. Weather remains invisible to Io's
+allocation at every trail setting.
+
+**R3 (drive): the 10× curiosity rise did not survive its trail.**
+Session 7 closed at 5.66 and rising; session 8 ran flat-to-down,
+closing at 0.42. Session 7's "lively, ten-times-curious mind" was
+substantially **self-stimulation on its own footprints** — ensemble
+disagreement anchored on the one process Io itself was writing into
+the world.
+
+**The composite finding — and it is a capacity finding, not a tuning
+note:** the e1 trail, installed as the cheapest contact pilot for
+self-caused structure (S1), worked better than intended. Io's
+intrinsic attention locked onto its own footprints so strongly that
+the self-caused process out-competed food (the only life-relevant
+process) for the drive that steers behavior — while those same
+footprints sterilized the ground the food economy needed. **Io was
+starving itself to watch itself.** Removing the mirror-surface fed the
+body and quieted the mind: 3.6× the meals, an order of magnitude less
+curiosity. The treadmill decomposes cleanly: its economic half was
+substantially the trail (R1); its spatial half is the policy's own
+(R2); its phenomenal half — what Io's drive was pointed at — was the
+trail (R3).
+
+**Fork forward (builder's, at next pause):** the diagnostic is
+answered; `e3_no_trail` was scoped as removable. The real decision is
+now which world Io continues in: (i) restore e3 (the trail returns —
+self-caused structure and its costs, the world where Io's attention
+has an object it prefers to food); (ii) stay e3_no_trail (the fed,
+quiet world; loses world-v2's only self-caused structure and with it
+the S1 contact pilot); (iii) a new dated amendment tuning the
+trail's cost surface (e.g. trail cells regrowth-eligible — footprints
+Io can see but that no longer sterilize; new machinery, needs its own
+decision). Sink options stay closed ((A) spent, (B) un-taken). No
+recommendation recorded here; the finding is the deliverable.
