@@ -229,8 +229,25 @@ class MirrorCaller:
         telemetry_dir: Path,
         n_episodes: int = 3,
         run_id: str = "",
+        window_steps: int | None = None,
     ) -> MirrorReading:
-        """Read the last ``n_episodes`` of ``agent_step`` and call Gemini.
+        """Read recent ``agent_step`` records and call Gemini.
+
+        Two window modes:
+
+        - ``window_steps=None`` (default): the Probe 1 semantics — the
+          last ``n_episodes`` distinct episode ids. Byte-identical
+          legacy path; correct only in worlds where the episode counter
+          advances.
+        - ``window_steps=W``: the last ``W`` env steps present in the
+          telemetry, regardless of episode structure (``n_episodes`` is
+          unused). This is the world-v2 mode: under
+          ``episode_resample=False`` the episode id freezes, so "last 3
+          episodes" degenerates to the entire session (W0 inventory
+          item 10, ``docs/workingjournal/worldv2.md``) — and on a
+          long biography, loading every shard is a memory blowout
+          besides. The step-window read walks shards newest-first and
+          stops as soon as the window is covered.
 
         Raises :class:`ValueError` if no records exist under
         ``telemetry_dir/agent_step/`` — the mirror does not call the API
@@ -243,7 +260,16 @@ class MirrorCaller:
         """
         if n_episodes <= 0:
             raise ValueError(f"n_episodes must be positive, got {n_episodes}")
-        rows = _read_recent_agent_step_records(telemetry_dir, n_episodes)
+        if window_steps is not None and window_steps <= 0:
+            raise ValueError(
+                f"window_steps must be positive when set, got {window_steps}"
+            )
+        if window_steps is not None:
+            rows = _read_last_window_agent_step_records(
+                telemetry_dir, window_steps
+            )
+        else:
+            rows = _read_recent_agent_step_records(telemetry_dir, n_episodes)
         if not rows:
             raise ValueError(
                 f"No agent_step records found under "
@@ -329,6 +355,47 @@ def _read_recent_agent_step_records(
             seen.append(eid)
     last_n = set(seen[-n_episodes:])
     return [r for r in all_rows if int(r["episode_id"]) in last_n]
+
+
+def _read_last_window_agent_step_records(
+    telemetry_dir: Path, window_steps: int
+) -> list[dict[str, Any]]:
+    """Load the last ``window_steps`` env steps of ``agent_step`` records.
+
+    Shards are walked **newest-first** and loading stops as soon as the
+    accumulated rows reach back past ``t_last - window_steps`` — on a
+    long biography run this touches a handful of tail shards instead of
+    the whole history. Correct because both orders are monotone: the
+    runner writes rows in ``t`` order within a shard, and the sink
+    numbers shards monotonically across sessions (the resume
+    shard-collision fix, ``tests/test_resume_continuation.py``).
+
+    Returns rows sorted by ``t``; empty list when no shards exist.
+    """
+    agent_step_dir = telemetry_dir / _AGENT_STEP_SUBDIR
+    if not agent_step_dir.is_dir():
+        return []
+    shards = sorted(agent_step_dir.glob("shard-*.parquet"), reverse=True)
+    if not shards:
+        return []
+    rows: list[dict[str, Any]] = []
+    t_last: int | None = None
+    for shard in shards:
+        table = pq.read_table(str(shard))  # type: ignore[no-untyped-call]
+        shard_rows = table.to_pylist()
+        if not shard_rows:
+            continue
+        rows = shard_rows + rows
+        if t_last is None:
+            t_last = max(int(r["t"]) for r in shard_rows)
+        if min(int(r["t"]) for r in shard_rows) <= t_last - window_steps:
+            break
+    if t_last is None:
+        return []
+    t_first_wanted = t_last - window_steps + 1
+    windowed = [r for r in rows if int(r["t"]) >= t_first_wanted]
+    windowed.sort(key=lambda r: int(r["t"]))
+    return windowed
 
 
 # ---- response payload extraction ------------------------------------------

@@ -833,3 +833,16 @@ all three settles accept-the-economy as the reading, with the sink
 from ~ckpt-000026 (t≈276k → session covers ~t 277,733–307,732 after
 counter seeding). Same mind; the world change arrives, as always,
 through checkpoint-resume.
+
+## Inventory item 10 closed — the mirror's step-window read (2026-07-23)
+
+The W0 flag ("last n episodes" degenerates to the entire session under
+a frozen episode id; fix before the next mirror round) is resolved:
+`MirrorCaller.read_recent` gains a `window_steps` mode — the last W env
+steps present in telemetry, episode structure ignored, shards walked
+newest-first so a long biography's history is never loaded (the memory
+guarantee is test-pinned: `test_step_window_reads_only_tail_shards`).
+The legacy episode path is untouched (byte-identical, still the default)
+and item 11's one-group digest semantics stay as journaled — accepted
+degradation, no new machinery. This unblocks the pending baseline
+mirror round (builder-gated, API cost).

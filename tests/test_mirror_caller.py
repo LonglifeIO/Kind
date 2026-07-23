@@ -29,8 +29,10 @@ from kind.mirror.caller import (
     MirrorReading,
     MirrorReadingPayload,
 )
+from kind.mirror import caller as caller_module
 from kind.mirror.caller import (
     _extract_payload,
+    _read_last_window_agent_step_records,
     _read_recent_agent_step_records,
 )
 from kind.observer.digest import build_digest, compact_record_repr
@@ -277,7 +279,71 @@ def test_read_recent_concatenates_across_shards(tmp_path: Path) -> None:
     assert len(rows) == 15
 
 
-# ---- digest function -----------------------------------------------------
+# ---- step-window reading (world v2, W0 inventory item 10) -----------------
+
+
+def test_step_window_selects_last_w_steps_under_frozen_episode(
+    tmp_path: Path,
+) -> None:
+    """One frozen episode id (the e0+ world): the step window bounds the
+    read where "last n episodes" would return the entire session."""
+    records = [
+        _make_agent_step(t=t, episode_id=775, step_in_episode=t)
+        for t in range(30)
+    ]
+    _write_records_to_parquet(records, tmp_path)
+    rows = _read_last_window_agent_step_records(tmp_path, window_steps=10)
+    assert [int(r["t"]) for r in rows] == list(range(20, 30))
+
+
+def test_step_window_ignores_episode_structure(tmp_path: Path) -> None:
+    """The window is step-counted, not episode-counted: it may start
+    mid-episode."""
+    records = _records_for_episodes(n_episodes=3, steps_per_episode=5)
+    _write_records_to_parquet(records, tmp_path)
+    rows = _read_last_window_agent_step_records(tmp_path, window_steps=7)
+    assert [int(r["t"]) for r in rows] == list(range(8, 15))
+
+
+def test_step_window_wider_than_history_returns_everything(
+    tmp_path: Path,
+) -> None:
+    records = _records_for_episodes(n_episodes=2, steps_per_episode=3)
+    _write_records_to_parquet(records, tmp_path)
+    rows = _read_last_window_agent_step_records(tmp_path, window_steps=999)
+    assert len(rows) == 6
+
+
+def test_step_window_missing_and_empty_dirs(tmp_path: Path) -> None:
+    assert _read_last_window_agent_step_records(tmp_path, 5) == []
+    (tmp_path / "agent_step").mkdir()
+    assert _read_last_window_agent_step_records(tmp_path, 5) == []
+
+
+def test_step_window_reads_only_tail_shards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The memory guarantee on a long biography: shards older than the
+    window are never opened."""
+    records = [
+        _make_agent_step(t=t, episode_id=0, step_in_episode=t)
+        for t in range(40)
+    ]
+    _write_records_to_parquet(records, tmp_path, rows_per_shard=4)
+    assert len(sorted((tmp_path / "agent_step").glob("shard-*.parquet"))) == 10
+
+    opened: list[str] = []
+    real_read_table = caller_module.pq.read_table
+
+    def counting_read_table(path: str, **kwargs: object) -> object:
+        opened.append(path)
+        return real_read_table(path, **kwargs)
+
+    monkeypatch.setattr(caller_module.pq, "read_table", counting_read_table)
+    rows = _read_last_window_agent_step_records(tmp_path, window_steps=5)
+    assert [int(r["t"]) for r in rows] == list(range(35, 40))
+    # t=35..39 lives in the last two 4-row shards; the other eight stay shut.
+    assert len(opened) == 2
 
 
 def test_digest_returns_no_records_marker_for_empty_input() -> None:
@@ -588,6 +654,28 @@ def test_read_recent_uses_only_last_n_episodes_in_envelope(tmp_path: Path) -> No
     assert reading.n_episodes_read == 2
     # Last 2 episodes are 3 and 4. With 4 steps each, t ranges 12..19.
     assert reading.agent_step_range == (12, 19)
+
+
+def test_read_recent_step_window_envelope(tmp_path: Path) -> None:
+    """``window_steps`` mode: the envelope reflects the windowed step
+    range and the distinct episode ids inside it."""
+    records = _records_for_episodes(n_episodes=5, steps_per_episode=4)
+    _write_records_to_parquet(records, tmp_path)
+
+    caller, _ = _fake_caller_with_payload()
+    reading = caller.read_recent(tmp_path, run_id="r", window_steps=6)
+
+    assert reading.agent_step_range == (14, 19)
+    # t=14..15 are episode 3, t=16..19 episode 4.
+    assert reading.n_episodes_read == 2
+
+
+def test_read_recent_rejects_nonpositive_window(tmp_path: Path) -> None:
+    caller, _ = _fake_caller_with_payload()
+    with pytest.raises(ValueError, match="window_steps must be positive"):
+        caller.read_recent(tmp_path, window_steps=0)
+    with pytest.raises(ValueError, match="window_steps must be positive"):
+        caller.read_recent(tmp_path, window_steps=-100)
 
 
 def test_read_recent_reading_is_frozen() -> None:
