@@ -784,3 +784,52 @@ live options. No further sink-rate tuning without a new dated fork —
 print divides by the *absolute* resumed step counter (printed "22
 ms/step" for a 200 ms/step session) — cosmetic, fixed post-close with a
 session-relative baseline.
+
+## Session 8 launch — the trail-off diagnostic, with a corrected map (2026-07-23)
+
+**Fork resolved.** The builder ratified option (C), the journaled
+fallback: one 30k-step session under a new dated diagnostic stage
+`e3_no_trail` — exactly e3 with `trail_enabled=False`, one field wide,
+test-pinned, not a ladder rung (decision doc
+`worldv2_e3_fork_trail_off_diagnostic_2026-07-23.md`). The e2/e4
+chains still build on full e3.
+
+**The pre-launch reconstruction changed the question.** Before
+launching, session 7's position log was replayed against the
+deterministic patch-drift law and a 50-step trail window. Three
+corrections to the session-7 close's map, recorded before the run so
+the readings can't be fitted to it afterward:
+
+1. **"Grazes wide" was wrong.** Io *paces*: ~60% of the session in a
+   corner block around (6–7, 1–2) below the L-wall's end; a 50-step
+   trail window covers only ~4.1 unique cells (7.1% of the free
+   board). Stay-share 0.0000 had read as roaming; it is movement
+   without travel. Io is inside the patch 6.4% of steps, mean
+   Chebyshev distance to its center 3.46.
+2. **The patch-scale food-shadow is dead**: mean 0.35 of 9 patch cells
+   trail-shadowed (4.8% of non-wall capacity) — noise against a 10×
+   intake shortfall.
+3. **The home-range shadow is the live mechanism**: expected regrowths
+   destroyed by trail ≈ **738** over the session — **41% of the
+   world's entire food production** (1,055 actual + 738 prevented) —
+   with **676 within Chebyshev ≤2 of Io**. The patch's bounce circuit
+   reaches Io 46.4% of steps; in those windows a mean 0.68 reachable
+   patch cells sit trail-sterile. Io starves partly because its own
+   footprints sterilize the ground under it exactly when the weather
+   visits. (The corner block produced 64 of 1,055 regrowths.)
+
+**The question this session asks** (pre-registered in the decision
+doc): with the trail off — (R1) does intake rise as the home range
+regrows (honest expectation: even +676 meals ≈ +0.022/step against
+~0.15 break-even — the floor should still hold); (R2) does the pacing
+loop dissolve (stigmergic entrainment — Io's footprints holding its own
+spatial pattern in place) or persist (the pattern is the policy's own);
+(R3) does the 10× curiosity rise survive without self-laid trail
+dynamics to watch, or was Io substantially self-stimulating? A null on
+all three settles accept-the-economy as the reading, with the sink
+(session 7) and the trail (session 8) both ruled out.
+
+**Launch:** `--resume --world-stage e3_no_trail --session-steps 30000`
+from ~ckpt-000026 (t≈276k → session covers ~t 277,733–307,732 after
+counter seeding). Same mind; the world change arrives, as always,
+through checkpoint-resume.

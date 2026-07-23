@@ -253,6 +253,15 @@ def test_stage_e3_is_cumulative() -> None:
     assert staged.patch_expiry_p == PATCH_EXPIRY_P
 
 
+def test_stage_e3_no_trail_is_e3_minus_trail_only() -> None:
+    """The session-8 diagnostic (fork option C, 2026-07-23): exactly
+    e3 with the trail off — one field wide, nothing else moves."""
+    e3 = apply_world_stage(GridWorldConfig(), "e3")
+    staged = apply_world_stage(GridWorldConfig(), "e3_no_trail")
+    assert staged.trail_enabled is False
+    assert staged == dataclasses.replace(e3, trail_enabled=False)
+
+
 # ---- the off-patch expiry amendment (ratified 2026-07-09) ---------------------
 
 

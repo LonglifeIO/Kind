@@ -35,6 +35,14 @@ Stages defined so far:
   removable at any pause without ceremony (DP3)** — if its
   disagreement never localizes, removal is a capacity finding, not a
   failure.
+* ``e3_no_trail`` — **a dated diagnostic, not a ladder rung**
+  (session-8 fork option C, ratified 2026-07-23; decision doc
+  ``worldv2_e3_fork_trail_off_diagnostic_2026-07-23.md``): exactly e3
+  with the somatic trail off. The session-7 reconstruction measured
+  Io's trail destroying ~41% of the world's food production, 92% of it
+  within Io's reach — this stage asks what Io's economy, pacing loop,
+  and curiosity do without self-laid trail. Removable after the
+  diagnostic; the e2/e4 chains still build on full e3.
 
 Requesting an undefined stage raises.
 """
@@ -102,6 +110,7 @@ WORLD_STAGES: Final[tuple[str, ...]] = (
     "e1",
     "e2",
     "e3",
+    "e3_no_trail",
     "e4",
 )
 
@@ -141,6 +150,14 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             patch_p_inside=PATCH_P_INSIDE,
             patch_p_outside=PATCH_P_OUTSIDE,
             patch_expiry_p=PATCH_EXPIRY_P,
+        )
+    if stage == "e3_no_trail":
+        # The session-8 diagnostic (2026-07-23): full e3, trail off.
+        # ``trail_decay_steps`` keeps its value — with the flag off it
+        # is inert, and the diff against e3 stays one field wide.
+        return dataclasses.replace(
+            apply_world_stage(config, "e3"),
+            trail_enabled=False,
         )
     if stage == "e2":
         return dataclasses.replace(
