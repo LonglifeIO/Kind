@@ -1034,3 +1034,72 @@ decision at next pause).
 
 **Launch:** `--resume --world-stage e2 --session-steps 30000` from
 ~ckpt-000032 (t≈336k; session covers t 337,733–367,732).
+
+## Session 10 close — e2: the clock came to Io's house, and Io moved out (2026-07-24)
+
+Clean natural close: t 337,733 → 367,732, §7 clean (entropy ok; PE
+blocks 0.40/0.14/0.33/0.17 — the lowest of recent sessions; torpor
+informational 0.28; 350 lifetime dream sessions). The clock ran: 3,251
+bloom stamps / 3,226 fades (~2,500 cycles).
+
+**The placement accident, first.** BLOOM_CELL (6,6) was chosen
+2026-07-09 ("open quadrant away from the E0 corridor") when Io's range
+was the (6,2)/(7,2) corner. By session 9 the range had migrated: Io
+spent **45.1%** of S9 within Chebyshev 1 of (6,6). e2 therefore landed
+the world's first external mystery *inside Io's home range* — not the
+designed condition.
+
+| | S9 (amended e3) | S10 (e2) |
+|---|---|---|
+| meals | 734 (0.024/st) | **418 (0.014/st)** |
+| mean energy / floored | 0.015 / 84% | 0.009 / 91% |
+| top-4 occupancy | 49% | **70%** (tightest of the biography) |
+| within 1 of (6,6) | 45.1% | **1.9%** |
+| modal distance to (6,6) | 1 | **6** |
+| curiosity 1st-1k → last-1k (med) | 0.84 → 1.07 (0.65) | 1.07 → 0.34 (0.69) |
+
+**Time-course** (share of steps within 1 of the ring, 2k blocks):
+7.0% → 15.2% → 5.5% → 0.6% → 0.1% → **0.0% for the final ten blocks**
+— twenty thousand consecutive steps without one visit. New residence:
+(1,0)/(0,0)/(1,1) — 59.5% of the session in three cells at the
+grid's opposite corner, the maximum available distance.
+
+**The pre-registered trichotomy missed.** Engaged / ignored /
+overwhelmed does not name what happened: no fountain (curiosity
+settled to median 0.69 ≈ S9's), no ignoring (contact then zero), no
+sustained engagement. The observed reading is a fourth:
+**sampled, then displaced** — investigation for ~4–6k steps (curiosity
+elevated ~1.7 through the contact window), then relocation to maximum
+distance, the biography's tightest spatial concentration, and a halved
+food intake. Behavioral description only; no interior vocabulary at
+this ceiling.
+
+**The signal dissociation, recorded without mechanism:** across the
+same session, prediction error fell to its lowest recent block means
+while ensemble disagreement held at its usual level and meals halved.
+In plain terms: after relocation Io's world is more predictable, its
+usual disagreement diet is maintained away from the clock, and the
+move cost it half its food. Under an architecture whose only drive
+seeks disagreement, distance-maximizing relocation away from the most
+novel process in the world is **not the sign-predicted behavior**, and
+no mechanism is claimed here. Candidate mechanisms left OPEN for a
+research pass: (a) disagreement-vs-PE dissociation at the bloom (the
+ensemble may agree the ring is unpredictable — converged uncertainty
+carries no epistemic pull, while the actor's rollouts through the
+region degrade); (b) trail-vocabulary interference — bloom stamps are
+observationally footprint-lookalikes appearing uncaused where Io's own
+footprints live; the world-model's self-trail predictions were
+suddenly wrong in its own home range; (c) mundane economics (ring
+cells blocked from regrowth ~17% duty — weak on its own given the
+whole-grid relocation).
+
+**Gate reading (three-signal): HOLD-shaped.** No §7 flag, but a
+world change displaced the resident at economic cost and broke the
+pre-registered reading set. e4 must not stack on this. Builder's fork
+at next resume: (a) hold e2 one more session — the trail lesson says
+mastery can take time, though the trail was never *avoided*; (b) a
+dated amendment relocating BLOOM_CELL off the home range — restoring
+the designed condition (external process at a *distance*), the
+placement having been mooted by range drift; (c) remove e2 (the
+synthesis's own removability discipline) and take the finding; (d) a
+research pass on the open mechanisms before any world change.
