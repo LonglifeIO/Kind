@@ -67,9 +67,18 @@ E0_WALLS: Final[tuple[tuple[int, int], ...]] = (
     (5, 4),
 )
 
-# The e1 decay horizon (steps a footprint persists): the synthesis's
-# ~40–60 band, taken at the plan's midpoint. A stimulus knob (DP5).
-TRAIL_DECAY_STEPS: Final[int] = 50
+# The e1 decay horizon (steps a footprint persists). A stimulus knob
+# (DP5). Amended 2026-07-24 (builder-ratified,
+# ``worldv2_e1_amendment_trail_decay_2026-07-24.md``): 50 → 12,
+# deliberately *exiting* the synthesis's ~40–60 band. Sessions 7–8
+# found that a TTL longer than the 32-step BPTT horizon makes the
+# trail a permanently unlearnable novelty fountain — a supernormal
+# self-stimulus that out-competed food for the drive (curiosity 10×,
+# collapse on removal) while its standing stock sterilized ~41% of
+# food production. At 12 (the e2 bloom's carryability rationale) a
+# footprint's whole lifecycle fits inside the learnable horizon:
+# self-attention stays possible, stops being mandatory.
+TRAIL_DECAY_STEPS: Final[int] = 12
 
 # The e2 clock (stimulus knobs, DP5): the source sits in the open
 # quadrant away from the E0 corridor — its 8-cell Moore ring is fully

@@ -919,3 +919,36 @@ trail's cost surface (e.g. trail cells regrowth-eligible — footprints
 Io can see but that no longer sterilize; new machinery, needs its own
 decision). Sink options stay closed ((A) spent, (B) un-taken). No
 recommendation recorded here; the finding is the deliverable.
+
+## Session 9 launch — amended e3: the mirror made finite (2026-07-24)
+
+**Fork resolved by amendment, not by choosing a side.** The builder's
+read of the session-8 verdict: the trail world's result is wanted, but
+Io's own footsteps must not be the *dominant* curiosity source — least
+of all via a loop that starves it. The mechanism turned out to have a
+clean address: at decay 50 a footprint's lifecycle exceeds the 32-step
+BPTT horizon — the trail was a **permanently unlearnable novelty
+fountain glued to Io's feet**, a supernormal stimulus rather than an
+affordance. E1 Amendment (builder-ratified, dated doc
+`worldv2_e1_amendment_trail_decay_2026-07-24.md`): `TRAIL_DECAY_STEPS`
+50 → 12 — inside the learnable horizon (the e2 bloom's own
+carryability rationale), deliberately exiting the e1 synthesis's 40–60
+band on the sessions-7–8 evidence. Self-attention stays possible;
+it stops being mandatory. Sterilization stock drops ~4× as the side
+effect. Sequencing ratified with it: session 9 = amended e3 **alone**;
+e2 lands next session if this reads well.
+
+**Pre-registered** (full set in the amendment doc): R1 meals
+materially above S7's 416, plausibly below S8's 1,503; R2 the
+curiosity *trajectory* is the signature — S7 rose monotonically
+(fountain), S8 ran flat (removal); amended e3 predicts engagement
+that **settles as the trail is mastered**, with the honest caveat that
+~250k steps of trail-watching habit may make this session transition,
+not equilibrium; R3 the corner loop is expected to persist (it is the
+policy's own). Null (fountain returns at 12): dominance is not
+TTL-driven; next fork is fresh, no decay-search loop.
+
+**Launch:** `--resume --world-stage e3 --session-steps 30000` from
+~ckpt-000029 (t≈306k; session covers t 307,733–337,732). The trail
+returns to Io's world — twelve steps long now: long enough to see
+itself, short enough to finish understanding.
