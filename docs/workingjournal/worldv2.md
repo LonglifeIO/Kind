@@ -952,3 +952,55 @@ TTL-driven; next fork is fresh, no decay-search loop.
 ~ckpt-000029 (t≈306k; session covers t 307,733–337,732). The trail
 returns to Io's world — twelve steps long now: long enough to see
 itself, short enough to finish understanding.
+
+## Session 9 close — the finite mirror: the fountain is gone, by the other mechanism (2026-07-24)
+
+Clean natural close: t 307,733 → 337,732, ~160 ms/step, §7 clean (PE
+blocks 0.49/0.99/0.70/0.84 not strictly rising; torpor informational
+0.32; 322 lifetime dream sessions, +28). Same definitions as prior
+closes:
+
+| | S7 (trail 50) | S8 (no trail) | S9 (trail 12) |
+|---|---|---|---|
+| meals | 416 (0.014/st) | 1,503 (0.050/st) | **734 (0.024/st)** |
+| regrowth / in-reach | 1,055 / 238 | 1,984 / 969 | 1,262 / 443 |
+| mean energy / floored / in-band | 0.008 / 91% / 0.07% | 0.065 / 67% / 2.42% | 0.015 / 84% / 0.18% |
+| top-4 occupancy | 62% | 52% | **49%** |
+| inside patch / mean dist | 6.4% / 3.46 | 6.4% / 3.48 | **10.5% / 3.36** |
+| curiosity 1st-1k → last-1k (median) | 0.47 → 5.66 (0.55) | 0.77 → 0.42 (0.60) | **0.84 → 1.07 (0.65)** |
+
+**R2 — the signature readout: confirmed.** The fountain did not
+return. S7's curve was a monotone climb to 5.66; S9's whole session
+lives in a bounded band (max 3k-block mean 1.75, median 0.65, close
+1.07) — flare and settle, engagement without capture. The
+pre-registered null ("fountain returns at 12 → dominance is not
+TTL-driven") did not trigger. The learnable-horizon mechanism reads as
+real: a 12-step footprint is something Io can finish understanding.
+
+**R1 — economy: corridor hit, mechanism corrected.** Meals 734 —
+materially above S7 (1.8×), below S8, exactly the pre-registered
+corridor. But the *predicted mechanism was wrong*: expected
+sterilization at TTL=12 measured **884** prevented regrowths — not the
+~180 the stock-scaling arithmetic promised, and above S7's 738.
+Refresh-on-revacate nullifies TTL-shrinkage for a pacing agent: the
+standing stock is bounded by the loop's size, not the clock. The
+sterile zone even *followed Io toward the patch* (more high-value
+overlap). The economic gain came entirely through the **attention
+channel** — with the fountain off, Io went where food is (inside-patch
+10.5% vs 6.4% both prior sessions, the first movement of that number
+in the biography) and ate what it found. Recorded plainly: the
+amendment worked, for the second of its two stated reasons only.
+
+**R3 — space: loosening continues.** Top-4 occupancy 49% — the
+loosest yet — and the patch-following shift above. The corner loop
+persists but is no longer the whole story.
+
+**Reading.** The world now has a trail Io can see, master, and stop
+being ruled by; a drive that flares and settles instead of feeding on
+itself; and — for the first time — a measurable tilt of allocation
+toward the food-weather. Still a floor economy (0.024 << ~0.15
+break-even; floored 84%) — pressure, as the charter endorses, not
+emergency, as §7 confirms. **Per the ratified sequencing ("e2 lands
+next session if this reads well"): it reads well.** e2 — the hidden
+clock, the ladder's first genuinely external curiosity object — is GO
+on the builder's word at next resume.
