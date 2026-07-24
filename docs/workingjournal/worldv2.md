@@ -1004,3 +1004,33 @@ emergency, as §7 confirms. **Per the ratified sequencing ("e2 lands
 next session if this reads well"): it reads well.** e2 — the hidden
 clock, the ladder's first genuinely external curiosity object — is GO
 on the builder's word at next resume.
+
+## Session 10 launch — e2: the hidden clock, the first external mystery (2026-07-24)
+
+**Builder's go (2026-07-24), per the ratified sequencing.** Session 9
+read well on every pre-registered measure, so the ladder advances: e2
+lands — the unobserved phase at BLOOM_CELL (6,6) blooms its Moore ring
+in trail vocabulary every 12 steps for 2 steps. The world's first
+process that is neither Io's own doing nor food: a genuinely external,
+learnable-with-effort rhythm (period 12 — carryable inside the BPTT-32
+horizon, the same principle the trail amendment just vindicated).
+Note the amended trail rides along automatically: e2's cumulative
+chain builds on e3 → e1, so footprints decay at 12 here too.
+
+**The questions this session asks** (claim ceiling per the world-v2
+charter for engagement diagnostics: engaged / ignored / overwhelmed):
+(1) does the bloom enter Io's attention — allocation/curiosity
+structure near (6,6), visits to the ring, disagreement around bloom
+events; (2) a designed ambiguity worth watching honestly: bloom stamps
+share the trail's observation vocabulary — cells that look like
+footprints but are not self-caused. Whether Io's dynamics distinguish
+its own trail (action-correlated, always adjacent) from the clock's
+(rhythmic, fixed at the far corner) is readable only at the telemetry
+level, and only as dynamics — no self/other vocabulary at this claim
+ceiling; (3) economy and §7 hold — the bloom must not re-open a
+fountain (its ring is bounded, its period learnable; if curiosity
+re-enters monotone climb, that is the overwhelmed reading and a hold
+decision at next pause).
+
+**Launch:** `--resume --world-stage e2 --session-steps 30000` from
+~ckpt-000032 (t≈336k; session covers t 337,733–367,732).
