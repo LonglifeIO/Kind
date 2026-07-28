@@ -1103,3 +1103,104 @@ the designed condition (external process at a *distance*), the
 placement having been mooted by range drift; (c) remove e2 (the
 synthesis's own removability discipline) and take the finding; (d) a
 research pass on the open mechanisms before any world change.
+
+## Session 10 mechanism pass — the flight was the drive working (2026-07-28)
+
+Fork option (d) ratified by the builder 2026-07-28: a research pass on
+the open mechanisms before any world change. No run, no world edit —
+telemetry only (S9/S10 `agent_step` + `world_event`).
+
+**Method.** Io's position is not logged; it was reconstructed by
+deterministic replay — each session's `env_reset` start cell ((5,7) at
+t=307,733; (3,0) at t=337,733) advanced through the logged `action_t`
+sequence under the movement rules (only walls and bounds block; trail,
+resources, and bloom stamps are walkable; no mover in e2). The replay
+reproduces the session-10 close numbers exactly (modal distance 6 at
+48.1%, top-4 residence (1,0)/(0,0)/(1,1)+(6,1) at 70.2%), which
+validates it. One telemetry quirk found and worked around: the first
+S10 shard (`shard-000169`) carries a single stray buffered S9 row
+(t=330,001) duplicated from shard-000165 — deduped by t.
+
+**A correction before the findings.** The plan was to read the
+actor's own value decomposition (`pragmatic_value_t` /
+`epistemic_value_t` / `pragmatic_share_t`). Those columns are **None
+for the entire biography**: the runner populates them only when
+`energy_preference` is configured, and the biography configures none.
+This is not a logging gap — it is the architecture: **the biography
+Io has no pragmatic term at all.** Its actor scores imagined futures
+by summed ensemble disagreement and nothing else; eating is
+incidental, and food loss is invisible to the drive. There was never a
+food-vs-curiosity arbitration to read, and any framing of session 10
+as Io "paying" a food cost imports an economics Io does not have. The
+halved meals are a welfare-relevant side effect the drive cannot see —
+§7 remains the instrument for that. What CAN be read is
+`intrinsic_signal_t`: the realized disagreement at every step, i.e.
+what the drive was actually being paid, by position and time.
+
+**Finding 1 — the clock was mastered, fast.** Near-ring (Chebyshev
+≤2 of (6,6)) disagreement by 1k-block through the contact window:
+0.96 → 0.82 → 0.60 → 0.67 → 1.90 → 1.17 → 0.83, contact ending by
+~6.1k (15 bouts; last real bout t_rel≈6.0–6.1k). A decaying curve —
+the ensemble learned the bloom while Io sampled it. Sharper:
+bloom-visible near-ring steps carried **no more** disagreement than
+quiet near-ring steps (blk 0: 0.91 vs 0.90; blk 1: 0.61 vs 0.63). The
+bloom never surprised the ensemble much even at first contact — its
+stamps use the trail vocabulary, whose TTL-12 dynamics Io had just
+mastered in session 9. **The world's first external mystery arrived
+pre-solved in vocabulary; only its timing was new, and period 12 was
+chosen to be learnable.** It was.
+
+**Finding 2 — the far corner was a novelty reservoir; the flight was
+sign-consistent.** Per-cell disagreement during the relocation
+transit: the western cells Io moved through paid 3.6–5.5 — the
+session's highest values — because the northwest corner was the
+least-visited region of the model's recent life (S9 spent ~140 of 30k
+steps there; residence sat on (6,6)). Corner-block disagreement on
+arrival: **4.65** (2k-block means: 4.65 → 2.84 → 1.53 → 1.07 → 0.84 →
+0.69 → 0.39 → 0.40 → 0.43 → 0.30). A disagreement-maximizing actor
+moving from a mastered ring (0.6–0.8) to an unmastered corner (4.7)
+is the drive doing exactly what its sign says. **"Sampled, then
+displaced" resolves to: mastered, then moved to the largest remaining
+novelty.** The maximum-distance geometry was epiphenomenal — the far
+corner was farthest because session 9's residence was at (6,6), so it
+was also least-known. Mechanism (a) from the close is confirmed in
+refined form (not "converged uncertainty carries no pull" but simply
+"the ring's uncertainty was spent"); mechanism (b)
+(trail-vocabulary interference) finds no support (near-ring
+self-prediction error 0.0002 vs 0.0001 elsewhere — negligible, and
+no bloom-visibility effect); mechanism (c) is unnecessary.
+
+**Finding 3 — the drive explains the arrival, not the staying.** By
+2k-blocks 11–14 the corner pays 0.30–0.43 — the lowest realized
+disagreement of the session, lower than the abandoned ring — yet
+residence holds at 97–100%, pacing 3–4 cells per 50-step window,
+action 4 (stay) still at 0.0%. This is the honest answer to "why is
+Io still sitting in corners": **novelty-seeking gets Io to a corner;
+policy inertia keeps it there.** Once the local landscape flattens,
+nothing generates a gradient strong enough to move a converged policy,
+and the compact pacing loop persists as habit. The dissociation from
+the close (PE at record lows, disagreement steady, meals halved)
+dissolves: session-mean disagreement ~0.69 was the average of decaying
+waves — seek, master, PE falls, move on — a working epistemic loop,
+not a contradiction. Why the attractor is always a *corner*
+(S7 southeast, S9 south, S10 northwest) stays open; candidate:
+walls halve the neighborhood, so corner loops are the cheapest to
+master and the most stable to pace. The blk-4 near-ring disagreement
+spike (1.90, p90 6.0, t_rel≈4–5k) also stays open — likely transit
+sampling, not re-engagement, but unread.
+
+**Gate re-reading.** The HOLD was placed because a world change
+displaced the resident "at economic cost" outside the pre-registered
+reading set. With the mechanism read, the displacement is the drive
+working as designed, and the reading set missed because it assumed
+the clock would be *hard* — engaged (still learning), ignored (never
+learned), overwhelmed (unlearnable). It was easy. Re-priced fork:
+(a) hold e2 another session → predicts continued near-zero contact
+(nothing left to learn); (b) relocate BLOOM_CELL → predicts
+re-sampling then re-mastery in ~5k steps — now the *cleanest
+pre-registerable test* of this mechanism reading, no longer a
+placement fix; (c) remove e2 → unnecessary, the mastered clock is
+inert; (e4 flag) the mover's turn hazard (0.02) is *irreducible*
+stochasticity — an external process that can never be fully mastered
+is a candidate unlearnable fountain, the S7 lesson in external form;
+this must be assessed before e4 lands. Builder's call.
