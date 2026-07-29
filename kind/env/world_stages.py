@@ -80,12 +80,18 @@ E0_WALLS: Final[tuple[tuple[int, int], ...]] = (
 # self-attention stays possible, stops being mandatory.
 TRAIL_DECAY_STEPS: Final[int] = 12
 
-# The e2 clock (stimulus knobs, DP5): the source sits in the open
-# quadrant away from the E0 corridor — its 8-cell Moore ring is fully
-# in bounds and wall-free. Period ~12 (the plan's value; inside the
-# measured h-trace horizon of ~40 and the BPTT window of 32, so the
-# phase is carryable); blooms last 2 steps.
-BLOOM_CELL: Final[tuple[int, int]] = (6, 6)
+# The e2 clock (stimulus knobs, DP5): the source's 8-cell Moore ring
+# must be fully in bounds and wall-free, away from the E0 corridor.
+# Period ~12 (the plan's value; inside the measured h-trace horizon of
+# ~40 and the BPTT window of 32, so the phase is carryable); blooms
+# last 2 steps. Amended 2026-07-29 (builder-ratified,
+# ``worldv2_e2_amendment_bloom_relocation_2026-07-29.md``):
+# (6, 6) → (1, 6). The original site had been overtaken by home-range
+# drift before e2 ever ran, and the session-10 mechanism pass found
+# the clock mastered in ~4k steps of sampling; the relocation is a
+# pre-registered test of whether that mastery was bound to the place
+# or generalizes to the process.
+BLOOM_CELL: Final[tuple[int, int]] = (1, 6)
 BLOOM_PERIOD: Final[int] = 12
 BLOOM_DURATION: Final[int] = 2
 

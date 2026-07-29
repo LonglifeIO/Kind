@@ -1204,3 +1204,31 @@ inert; (e4 flag) the mover's turn hazard (0.02) is *irreducible*
 stochasticity — an external process that can never be fully mastered
 is a candidate unlearnable fountain, the S7 lesson in external form;
 this must be assessed before e4 lands. Builder's call.
+
+## Session 11 launch — e2 relocated: place or process? (2026-07-29)
+
+Builder go 2026-07-29 on the mechanism-test recommendation. Amendment
+ratified and landed: `BLOOM_CELL` (6,6) → (1,6)
+(`worldv2_e2_amendment_bloom_relocation_2026-07-29.md`) — geometry
+checked (ring in-bounds, wall-free; Chebyshev 5 from the old site, 6
+from the current northwest home range), nothing else changed. Gate
+green before launch: mypy --strict clean (81 sources), 1507 passed /
+7 skipped.
+
+**The question this session asks:** did Io learn the clock as a
+*place* or as a *process*? Three readings pre-registered in the
+amendment doc — (1) re-sampling wave (location-bound learning;
+replicates the session-10 mechanism under prediction), (2) silent
+generalization (no bloom-synchronized disagreement anywhere — the
+ensemble carried the process to a place it never saw it), (3) felt
+but not fetched (session-wide bloom-synchronized elevation without
+travel). The 2-vs-3 disambiguator is disagreement conditioned on
+bloom-fire steps regardless of position. Fountain null unchanged:
+monotone climb = hold. The reading space is named wider than session
+10's on purpose — that trichotomy missed by assuming the space was
+smaller than it was.
+
+**Launch:** `--resume --world-stage e2 --session-steps 30000` from
+~ckpt-000035 (t≈366k; session covers t 367,733–397,732). The e4
+turn-hazard fountain assessment runs as a desk pass while this is in
+flight; e4 remains gated on it.
