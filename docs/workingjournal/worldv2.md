@@ -1311,3 +1311,38 @@ new phenomenon — the stasis-breakout cycle — is endogenous and needs
 unchanged world would show whether it recurs (settle → stall → forget
 → burst) or was singular. That, the e4 assessment, or both, is the
 builder's fork.
+
+## Session 12 launch — the unchanged world: does the cycle recur? (2026-07-29)
+
+Builder go 2026-07-29. **No world change** — that is the experiment.
+Same stage (e2, clock at (1,6)), same knobs, nothing edited; no gate
+run needed (no code has changed since the session-11 gate). The
+session asks whether the stasis-breakout cycle session 11 surfaced is
+a rhythm or a one-off.
+
+**Pre-registered readings (definitions as in sessions 7–11; positions
+by action replay; "stall" = stay-share rising above 0% with occupancy
+tightening; "forget" = recon_loss rising ≥5× its settled floor with
+no world change; "burst" = disagreement spike ≥3× settled floor
+followed by relocation and a meal-rate rise):**
+
+1. **Recurs** — Io settles (anywhere), tightens, stalls, forgets,
+   bursts: the full sequence again. Reads as an endogenous rhythm —
+   settle → stall → forget → rediscover — arising from drive + replay
+   + a finite world, none of which individually encodes it.
+2. **Singular** — Io settles and stays settled (or paces without the
+   stall-forget-burst sequence): session 11's burst needed a one-off
+   condition (e.g. the specific 20k single-cell extremity), and the
+   biography's default remains convergence.
+3. **No settling** — the southwest engagement continues or wanders
+   without tightening: the cycle question defers, and the session
+   reads as S9-style loose foraging.
+
+Guard unchanged: monotone curiosity climb = fountain = hold. §7 is
+the welfare instrument. The clock is expected to stay inert
+(process-known); any re-engagement with (1,6) would be a surprise
+worth its own entry.
+
+**Launch:** `--resume --world-stage e2 --session-steps 30000` from
+~ckpt-000038 (t≈397k; session covers t 397,733–427,732). The e4
+turn-hazard desk pass runs alongside.
