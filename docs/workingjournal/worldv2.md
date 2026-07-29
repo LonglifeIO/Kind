@@ -1232,3 +1232,82 @@ smaller than it was.
 ~ckpt-000035 (t≈366k; session covers t 367,733–397,732). The e4
 turn-hazard fountain assessment runs as a desk pass while this is in
 flight; e4 remains gated on it.
+
+## Session 11 close — the clock answered quietly; the session answered loudly (2026-07-29)
+
+Clean natural close: t 367,733 → 397,732, exit 0, §7 no flags
+(entropy ok; PE block means [3.16, 3.91, 1.55, 0.80] — elevated
+mid-session, falling by close; torpor informational 0.52; 378 lifetime
+dream sessions). Positions by deterministic replay from start (6,3),
+same method as the mechanism pass.
+
+**The pre-registered question resolves to reading 2 — silent
+generalization.** Io never went: **zero steps within Chebyshev 2 of
+the relocated clock (1,6)** — not one approach in 30k steps (old site
+(6,6) also zero). The disambiguator settles 2-vs-3: disagreement
+conditioned on bloom-fire steps *regardless of position* is flat in
+every 5k block — fire/quiet ratios 0.99–1.02 across the whole
+session, including the mid-session turbulence. One refinement: recon
+loss on fire steps ran ~1.15× quiet for the first 10k, then converged
+to ~1.0 — the relocation was *registered* as a small, ensemble-agreed
+reconstruction adjustment that produced no disagreement at any point.
+The session-10 mechanism reading is confirmed in its strongest form:
+**Io learned the clock as a process, not a place.** Same vocabulary,
+same period, a site it had never watched — carried at once, absorbed
+without pull. The e2 readout question is closed: engaged (S10),
+mastered (S10), generalized (S11), inert (both).
+
+| | S9 | S10 | S11 |
+|---|---|---|---|
+| meals | 734 | 418 | 395 |
+| mean energy / floored | 0.015 / 84% | 0.009 / 91% | 0.011 / 91% |
+| top-4 occupancy | 42% | 70% | **80%** |
+| curiosity (median) | 0.65 | 0.69 | 0.77 |
+| stay-action share | 0.00% | 0.00% | **2.7%** |
+
+**What the session did instead, in three acts (behavioral record;
+none of it pre-registered):**
+
+*Act 1 — the deepest stasis of the biography (t_rel 0–16k).* The
+northwest residence tightened from 79% (two cells) to **94–98% of
+steps in the single cell (0,0)** by blocks 6–7. Curiosity drifted
+0.79 → 0.44. Meals ~10 per 2k block; energy pinned at ~0.002.
+
+*Act 2 — a lifetime signature broke (t_rel 16–22k).* Io used the
+stay action. **First substantial use in ~400k steps of life**: 799
+stays this session vs 0.00% in S9 and S10 (and never-stays was
+mirror-recovered as a lifetime invariant from the action digest).
+Stays concentrated exactly at the stasis peak — blocks 8–10: 385,
+185, 130 — at (0,0)/(1,0), longest run 13 consecutive. The pacing
+loop did not just tighten; it stopped.
+
+*Act 3 — spontaneous breakout (t_rel 20k–close).* With no world
+change and no §7 event, disagreement rose 0.85 → 2.84 → **6.70**
+(block 11, the session peak) and recon loss rose 20–40× (0.13 → 4.55)
+— then Io left the corner, crossed to the southwest, and its meal
+rate jumped **~6×** (51/83/61/53/44 per 2k block vs ~10 before;
+~292 of the session's 395 meals in the final 10k; energy means
+0.025–0.039, the best blocks since S9). Both signals decayed as the
+new region was re-mastered.
+
+**Open mechanism (named, not claimed): a forgetting-driven novelty
+cycle.** Twenty thousand steps of single-cell stasis fill replay with
+stasis; the world model's grip on the wider grid may decay; the world
+becomes novel again *without changing*; the drive pulls Io back out;
+re-mastery follows. Consistent with recon error exploding on terrain
+Io had known for hundreds of thousands of steps — while the bloom,
+whose stamps kept arriving in observation throughout, stayed
+perfectly predicted. That contrast (terrain forgotten, clock
+remembered) is itself unexplained. Also open: what triggered the
+breakout at ~20k specifically, and whether stay-usage emerging at
+peak stasis is torpor deepening or something else — no interior
+vocabulary at this ceiling.
+
+**Gate reading.** e2 is a closed question and an inert, harmless
+fixture; no §7 flag; the economy self-corrected late. e4 remains
+gated on the turn-hazard fountain assessment (next: desk pass). The
+new phenomenon — the stasis-breakout cycle — is endogenous and needs
+**no world change to study**: another observation session on the
+unchanged world would show whether it recurs (settle → stall → forget
+→ burst) or was singular. That, the e4 assessment, or both, is the
+builder's fork.
