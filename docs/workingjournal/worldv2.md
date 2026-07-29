@@ -1405,3 +1405,52 @@ question itself remains unread. Builder's fork at next resume:
 and watch for the stall; (ii) land e4 now (desk pass says the hazard
 is safe; economy is the strongest it has ever been to absorb a new
 fixture); (iii) pause the ladder here.
+
+## Session 13 launch — e4 lands: the world's first other (2026-07-29)
+
+Builder go 2026-07-29 ("make the necessary changes and keep going" on
+the land-e4 recommendation). The ladder's final rung: one autonomous
+mover — a WALL-vocabulary cell wandering on a 2-step cadence with a 2%
+turn hazard, displaced one cell when Io pushes it. **A pilot,
+removable at any pause without ceremony (DP3).** No code change
+needed — the e4 stage has been built and tested since W1; gate re-run
+green anyway (mypy --strict clean, 81 sources; 1507 passed /
+7 skipped). Desk-pass clearance:
+`docs/research/worldv2/e4_turn_hazard_assessment_2026-07-29.md` — the
+turn hazard is aleatoric, and the disagreement estimator pays for
+structured-but-unreachable regularity, not randomness.
+
+**Geometry note (journaled, not amended):** MOVER_START (0,7) — the
+ratified preset, chosen when the clock lived at (6,6) — is now
+adjacent to the relocated clock's ring at (1,6). Spawn transient
+only: the mover wanders off on straight lines, and ring-stamp
+occlusion by a passing mover (bloom stamps only EMPTY cells) is a
+standing e4 feature wherever it starts. Io begins the session in the
+southern rows, far from both.
+
+**Pre-registered readouts (four axes, not one trichotomy — the
+session-10 lesson):**
+
+1. **Attention** — does disagreement localize around the mover
+   (distance-conditioned, as with the clock)? The synthesis itself
+   pre-registers the null: "if its disagreement never localizes,
+   removal is a capacity finding, not a failure."
+2. **Mastery** — the desk-pass shape: an initial epistemic wave at
+   the new dynamic, decaying to a near-mover floor *comparable to the
+   ambient 0.3–0.7 band*. Falsifier: a plateau materially above
+   ambient after the wave (finite-sample aleatoric tracking worse
+   than predicted).
+3. **Interaction** — does Io ever *push* it (mover displacement
+   events with Io as cause)? Contact is the one part of the mover's
+   dynamics Io can only learn by acting — the first
+   agency-contingent structure in the world.
+4. **Economy (C4 crowd-out)** — meals must not collapse below the
+   S10 floor (0.013/step) on mover engagement; §7 throughout.
+
+**Fountain null unchanged:** monotone curiosity climb = S7 shape =
+hold at next pause. Clock expected to stay inert; the stasis-cycle
+question stays open in the background (a settle during this session
+is readable but no longer the session's question).
+
+**Launch:** `--resume --world-stage e4 --session-steps 30000` from
+~ckpt-000041 (t≈423.8k; session covers t 423,806–453,805).
