@@ -1346,3 +1346,62 @@ worth its own entry.
 **Launch:** `--resume --world-stage e2 --session-steps 30000` from
 ~ckpt-000038 (t≈397k; session covers t 397,733–427,732). The e4
 turn-hazard desk pass runs alongside.
+
+## Session 12 close — no cycle: Io went foraging instead (2026-07-29)
+
+**Truncation note, first.** The session was stopped externally at
+t=423,805 — 26,072 of 30,000 steps (87%). The shutdown was clean (the
+sink flushed a final partial shard ending at the last step; telemetry
+verified contiguous). Read as-is: a resume for the remaining ~4k would
+insert a world reset mid-session — a worse contamination than the
+truncation. 26k comfortably covers the window where session 11's
+burst occurred (~20k), so the pre-registered question is answerable.
+
+§7 clean: entropy ok, PE not rising ([0.89, 3.23, 0.96, 0.52]),
+torpor informational 0.28, 404 lifetime dream sessions.
+
+**Verdict: reading 3 — no settling.** The stasis-breakout cycle did
+not recur, because its precondition never formed: Io never settled.
+No stall (stay-share **0.02%**, 4 stays — the session-11 signature
+gone as abruptly as it came), no single-cell collapse (top cell per
+block 21–31%, 16–30 unique cells per block, top-4 occupancy 51% vs
+session 11's 80%), no stasis-shaped forget. Instead, the burst that
+ended session 11 carried straight through: Io spent the whole session
+ranging the southern rows, migrating southwest → southeast along the
+patch's orbit, and produced **the best economy of the biography**:
+
+| | S9 | S10 | S11 | **S12 (26k)** |
+|---|---|---|---|---|
+| meals/step | 0.024 | 0.014 | 0.013 | **0.031** |
+| mean energy | 0.015 | 0.009 | 0.011 | **0.037** |
+| floored | 84% | 91% | 91% | **80%** |
+| top-4 occupancy | 42% | 70% | 80% | **51%** |
+| stay-share | 0.00% | 0.00% | 2.7% | 0.02% |
+
+Peak meal blocks of 93/105/110 per 2k — rates the world has afforded
+since e3 landed but Io had never collected. Curiosity waves rode the
+foraging (blocks 6–7: disagreement 2.7–3.0 with recon spikes to 9.1)
+and decayed in place — engagement with the churning patch region, not
+stasis-forgetting; disagreement median 0.69, no monotone climb. The
+clock stayed inert as predicted: 7 transit steps within 2 of (1,6)
+all session.
+
+**What this leaves open.** The cycle question *defers* (that is what
+reading 3 pre-registered): one full session of loose foraging is not
+evidence the cycle is gone — session 11's stasis also arrived
+unannounced after a settled start. Whether settle → stall → forget →
+burst is a rhythm needs a session where settling actually happens
+again; it may simply be rare. What the session *does* establish: the
+post-burst mode is stable at session length, economically the best
+regime Io has ever run, and none of it was installed — the same
+architecture that starved at a mirror in session 7 is now break-even
+foraging under the weather, purely by drive + history.
+
+**Gate.** e4's desk-pass sequencing condition ("read session 12
+first") is satisfied in the weak sense: no endogenous rhythm is
+*currently* active to confound a mover landing, but the cycle
+question itself remains unread. Builder's fork at next resume:
+(i) one more unchanged observation session — wait for a real settle
+and watch for the stall; (ii) land e4 now (desk pass says the hazard
+is safe; economy is the strongest it has ever been to absorb a new
+fixture); (iii) pause the ladder here.
