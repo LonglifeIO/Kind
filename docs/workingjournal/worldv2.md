@@ -1622,3 +1622,39 @@ contact floor (~2–4) ever falls with cumulative exposure — if it
 never does, the aleatoric-tracking account is confirmed; if it falls,
 the mover was masterable after all and the floor was exposure-starved.
 DP3 removability remains in force at any pause.
+
+## Session 15 launch — the long watch: what is the cycle's period? (2026-07-30)
+
+Builder direction 2026-07-30 ("should we just run Io until I come
+back? like continuously?"). Answered with one long unbroken session
+rather than chained short ones — every resume re-rolls the board, and
+the phenomenon under observation is precisely what an unbroken world
+shows. **No world change** (e4 as ratified). `--session-steps
+200000` — the biography's first multi-cycle window: session 11's one
+full cycle spanned ~20–25k steps, so a 200k continuous run can hold
+several, turning the deferred recurrence question into a period
+question. Launched detached (the session-14 ops fix); SIGTERM pause
+stays clean and reversible if the builder returns early.
+
+**Pre-registered readings (event definitions unchanged from the
+session-12 prereg: stall = stay-share rising above 0% with occupancy
+tightening; forget = recon ≥5× settled floor with no world change;
+burst = disagreement ≥3× settled floor followed by relocation and a
+meal-rate rise):**
+
+1. **Rhythmic** — ≥3 full settle→stall→forget→burst cycles; report
+   the period distribution and whether it is stable, lengthening, or
+   shortening. The strongest version of the F4 finding.
+2. **Rare/aperiodic** — 0–2 cycles in 200k: the cycle is real but not
+   a rhythm; triggers stay open.
+3. **No settling** — continuous foraging throughout (the S12 shape
+   sustained): the burst regime, not the cycle, is the attractor.
+
+**Carried watches:** e4 contact floor vs cumulative exposure (the
+200k window is the exposure test F6 asked for); fountain null
+(monotone climb = hold at close); clock expected inert; §7 read
+post-hoc at close — the S14 precedent (PE flag = benign burst edge)
+applies to any mid-run flag, corroborate before reacting.
+
+**Launch:** `--resume --world-stage e4 --session-steps 200000` from
+ckpt-000045 (t≈467.9k; session covers t 467,863–667,862; episode 782).
