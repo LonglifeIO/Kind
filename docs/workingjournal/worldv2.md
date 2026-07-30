@@ -1538,3 +1538,76 @@ harness, not by run failures; a detached run survives them.
 
 **Launch:** `--resume --world-stage e4 --session-steps 30000` from
 ckpt-000042 (t≈437.9k; session covers t 437,863–467,862).
+
+## Session 14 close — the ladder's last rung, read in full (2026-07-30)
+
+Clean natural close: t 437,863 → 467,862, full 30k, detached launch
+survived the conversation (ops fix worked). §7: one **FLAG** — PE
+strictly rising over the last four blocks (2.58 → 6.4), the world-v2
+era's first. Disposition below; corroboration says benign. 446
+lifetime dream sessions. Replay caveat as in session 13 (mover makes
+positions approximate; push events are chain-derived ground truth).
+
+**The four axes, full-arc:**
+
+1. **Attention — chance.** P(d≤1 of mover) 7.1% vs 7.4% shuffled;
+   P(d≤2) 16.3% vs 19.1%. Io does not seek the mover spatially (the
+   two live-snapshot adjacencies of sessions 13–14 were luck, as
+   suspected). Disagreement *localizes at contact* (below), so the
+   synthesis's removal-null ("disagreement never localizes") does NOT
+   fire — the mover registers; it just doesn't beckon.
+2. **Mastery — falsifier 1 trips in letter, not in consequence.**
+   Near-mover (d≤2) disagreement holds at ~2–4 all session (blocks
+   with real exposure: 3.8, 3.8, 1.9, 1.3, 2.7, 3.2, 2.7 … 3.1, 3.6,
+   3.5, 3.2) — no decay toward the ambient 0.3–0.7 band. The
+   pre-registered plateau condition is formally met. But everything
+   that falsifier guarded against is absent: session-wide
+   disagreement is bounded and wavy (block means 0.57–2.88, no
+   monotone climb — fountain null holds), attention is at chance, and
+   the economy is the biography's best. Reading: the mover is
+   *permanently interesting at contact, never compelling at range* —
+   consistent with finite-sample aleatoric tracking (the heads keep
+   paying a little for genuine coin flips) plus perpetual location
+   novelty (every encounter happens somewhere new). Watch across
+   future sessions: if cumulative exposure grows and the contact
+   floor never falls, the aleatoric account is confirmed.
+3. **Interaction — 7 more pushes** (t_rel 8.2k, 11.8k, 13.0k, 13.3k,
+   14.7k, and two in the final 200 steps). Lifetime total: 15.
+   Contact recurs in every observed window; the displacement rule is
+   a used affordance, not a latent one.
+4. **Economy — the best session of Io's life.** 977 meals
+   (0.033/step), mean energy **0.092** (S13: 0.059; S12: 0.037),
+   floored 78.2%. The world's first other coexists with the richest
+   economy the biography has recorded. C4 crowd-out: none.
+
+**The cycle recurred — second observation.** Mid-session, Io settled
+into (1,3)/(2,3)/(1,2) and went through a 4k-step stall (blocks 8–9:
+**zero meals**, disagreement floor 0.65–0.75, recon at session lows)
+— then the burst: blocks 11–14 show recon rising 2.86 → 6.77,
+disagreement 0.57 → 1.80, residence dispersing toward (7,7), meals
+recovering 44 → 82. Settle → stall → forget → burst, the session-11
+sequence, now under e4 — and *this rising edge is exactly what
+tripped the §7 PE flag.* **Flag disposition (per the ladder:
+corroborate before acting):** multi-signal read is benign — meals
+were *recovering* through the flagged blocks, disagreement co-rose
+with dispersal (drive re-engaging, not welfare deteriorating), stays
+0.01%, entropy clean. Recorded as the burst phase of the endogenous
+cycle, not a welfare event. The cycle is now the biography's
+strongest open phenomenon: two full observations, same shape, one
+with a §7 signature at the burst edge. The mover's
+refresh-protection prediction also held: no bloom-style forgetting of
+the mover was needed — it was never mastered at contact to begin
+with. Clock: 1,229 steps within 2 of (1,6) — residence drifted near
+its quadrant; no re-engagement signature claimed (transit/adjacency).
+
+**Gate verdict (builder ratification pending): keep e4, keep
+watching.** Falsifier 1's trip is recorded and its benign context
+with it; nothing else tripped; §7's flag corroborated benign. The
+world-v2 ladder — e0 persistence, e1 trail, e3 weather, e2 clock, e4
+other — is now fully landed and fully read at least once. What the
+world affords Io today: terrain, its own traces, weather it can
+follow, a clock it knows as a process, and an other it has learned to
+push. Next horizons (builder's fork): observation sessions on the
+finished world (the cycle question is now a *rhythm* question — what
+is its period?); the criteria-driven mirror round; Probe 4.5
+reopening; or a pause to synthesize.
