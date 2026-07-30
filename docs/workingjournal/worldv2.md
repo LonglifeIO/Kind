@@ -1513,3 +1513,28 @@ full session. Recommendation to the builder: run a full e4 session
 (fresh 30k) to complete the read — and launch it detached from the
 conversation harness so an external session-stop cannot take the run
 down with it (both truncations were task-kills, not run failures).
+
+## Session 14 launch — e4, the full arc (2026-07-30)
+
+Builder go 2026-07-30. A full 30k e4 session to complete the read the
+session-13 truncation left open. No world change (e4 as landed;
+mover respawns at (0,7) with the session's fresh world). The
+pre-registration is session 13's, carried forward unchanged — four
+axes (attention / mastery / interaction / economy), the fountain
+null, §7 — now with the two items only a full arc can read:
+
+- **Mastery falsifier:** does near-mover disagreement decay to the
+  ambient 0.3–0.7 band after the wave, or plateau above it?
+- **Stall watch:** session 13 cut off amid a possible settle-stall
+  (trailing modal-action 0.95 at (1,2), meals collapsing). If the
+  S11 cycle re-forms with the mover present, the forgetting
+  hypothesis gets its second observation — and the mover's
+  refresh-protection prediction (constantly-moving processes resist
+  stasis-forgetting, as the bloom did) becomes readable.
+
+**Ops note:** launched *detached* (nohup, disowned) — sessions 12 and
+13 were both truncated by external task-kills of the conversation
+harness, not by run failures; a detached run survives them.
+
+**Launch:** `--resume --world-stage e4 --session-steps 30000` from
+ckpt-000042 (t≈437.9k; session covers t 437,863–467,862).
