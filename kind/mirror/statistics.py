@@ -255,6 +255,17 @@ class StatisticConfig(BaseModel):
       classifiers' baseline. Default ``50``.
     - ``bootstrap_seed``: deterministic seed for the shuffled-time controls.
       Default ``0``.
+    - ``chunk_steps``: when set, the per-episode analysis slices are
+      further subdivided so no slice exceeds this many rows. Added for
+      the continuing-world biography (2026-07-30, dated decision doc
+      ``mirror_v2_windowed_mode_2026-07-30.md``): with ``episode_id``
+      frozen per session, "per-episode" degenerates to
+      one-giant-group — and the stated rationale for per-episode
+      computation ("the lag-k correlation doesn't bridge an episode
+      boundary") was always a stationarity/locality assumption, not an
+      episode one. ``chunk_steps=200`` reproduces the geometry the V2
+      instrument was calibrated on (200-step episodes). Default
+      ``None`` is byte-identical to the pre-change behavior.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -270,6 +281,7 @@ class StatisticConfig(BaseModel):
     trajectory_window_W: int = 50
     trajectory_pre_window: int = 50
     bootstrap_seed: int = 0
+    chunk_steps: int | None = None
 
     @field_validator("autocorr_lag", "kmeans_k", "kmeans_iters")
     @classmethod
@@ -518,6 +530,34 @@ def _episode_slices(
     return slices
 
 
+def _analysis_slices(
+    rows: Sequence[Mapping[str, Any]],
+    chunk_steps: int | None,
+) -> list[tuple[int, int]]:
+    """Episode slices, optionally subdivided to at most ``chunk_steps``
+    rows each.
+
+    ``chunk_steps=None`` returns :func:`_episode_slices` unchanged (the
+    pre-continuing-world behavior). With ``chunk_steps`` set, each
+    episode slice is cut into consecutive pieces of ``chunk_steps``
+    rows (the final piece of an episode may be shorter); no piece
+    bridges an episode boundary, so every locality guarantee the
+    per-episode computation provided is preserved or tightened.
+    """
+    episode_slices = _episode_slices(rows)
+    if chunk_steps is None:
+        return episode_slices
+    if chunk_steps <= 0:
+        raise ValueError(f"chunk_steps must be positive; got {chunk_steps}.")
+    chunked: list[tuple[int, int]] = []
+    for start, end in episode_slices:
+        pos = start
+        while pos < end:
+            chunked.append((pos, min(pos + chunk_steps, end)))
+            pos = min(pos + chunk_steps, end)
+    return chunked
+
+
 # ---------------------------------------------------------------------------
 # Computation functions — one per Phase 7 SignalMapping name.
 #
@@ -568,7 +608,7 @@ def compute_latent_self_reference_t(
     per_episode_values: list[float] = []
     per_episode_shuffled: list[float] = []
     rng_seed = config.bootstrap_seed
-    for start, end in _episode_slices(rows):
+    for start, end in _analysis_slices(rows, config.chunk_steps):
         if end - start <= lag:
             continue
         h_ep = h[start:end]
@@ -1101,7 +1141,7 @@ def compute_latent_regime_indicator_t(
         )
     h = _stack_field(rows, "h_t")
     labels = np.zeros((h.shape[0],), dtype=np.int64)
-    for start, end in _episode_slices(rows):
+    for start, end in _analysis_slices(rows, config.chunk_steps):
         ep_labels = _kmeans_lloyd(
             h[start:end],
             k=config.kmeans_k,
@@ -1119,7 +1159,8 @@ def compute_latent_regime_indicator_t(
             f"k-means clustering on h_t with k={config.kmeans_k}; "
             f"features standardized per-episode; Lloyd's algorithm with "
             f"{config.kmeans_iters} iter budget, seed={config.kmeans_seed}; "
-            f"n_episodes={len(_episode_slices(rows))}; label indices "
+            f"n_slices={len(_analysis_slices(rows, config.chunk_steps))}; "
+            f"chunk_steps={config.chunk_steps}; label indices "
             f"are episode-local — cross-episode comparison of label "
             f"identity is not meaningful"
         ),
@@ -1213,10 +1254,11 @@ def compute_policy_modulation_t(
     )
     num_actions = int(np.max(actions)) + 1 if actions.size > 0 else 1
 
-    # Latent regime partition: k-means on h_t per-episode.
+    # Latent regime partition: k-means on h_t per analysis slice
+    # (per-episode, or chunked under StatisticConfig.chunk_steps).
     h = _stack_field(rows, "h_t")
     regime_labels = np.zeros((h.shape[0],), dtype=np.int64)
-    for start, end in _episode_slices(rows):
+    for start, end in _analysis_slices(rows, config.chunk_steps):
         ep_labels = _kmeans_lloyd(
             h[start:end],
             k=config.kmeans_k,

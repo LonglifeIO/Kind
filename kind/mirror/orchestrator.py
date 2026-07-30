@@ -168,6 +168,15 @@ class PassConfig(BaseModel):
       what the mirror reads at this round.
     - ``perturbation_tolerance_ms``: alignment tolerance for the
       perturbation aligner.
+    - ``window_steps``: when set, the pass reads only the last
+      ``window_steps`` env steps of telemetry (agent_step windowed via
+      the caller module's newest-first reader; dream rollouts filtered
+      to seeds inside the window; the perturbation timeline filtered to
+      the window and aligned in skip-unmatched mode). Added 2026-07-30
+      (``mirror_v2_windowed_mode_2026-07-30.md``) — the continuing-world
+      biography is ~470k steps and the full-stream load is neither
+      tractable nor honest for a "read this checkpoint" pass. Default
+      ``None`` is the legacy full-stream behavior, byte-identical.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
@@ -190,6 +199,7 @@ class PassConfig(BaseModel):
         "world_event timestamps to AgentStep.t — the membrane discipline."
     )
     perturbation_tolerance_ms: int = 1000
+    window_steps: int | None = None
 
     @field_validator("run_id", "checkpoint_id")
     @classmethod
@@ -244,10 +254,36 @@ class PassResult(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _load_agent_step_rows(telemetry_dir: Path) -> tuple[dict[str, Any], ...]:
-    """Load every :class:`~kind.observer.schemas.AgentStep` row in
-    ``telemetry_dir/agent_step/`` (parquet shards). Returns rows sorted
-    by ``t``."""
+def _load_agent_step_rows(
+    telemetry_dir: Path,
+    window_steps: int | None = None,
+) -> tuple[dict[str, Any], ...]:
+    """Load :class:`~kind.observer.schemas.AgentStep` rows from
+    ``telemetry_dir/agent_step/`` (parquet shards), sorted by ``t``.
+
+    ``window_steps=None`` loads the entire stream (the pre-2026-07-30
+    behavior, byte-identical). With ``window_steps`` set, only the last
+    ``window_steps`` env steps are loaded — shards walked newest-first
+    via the caller module's tested reader — and rows are deduplicated
+    by ``t`` keep-first (the biography carries a handful of duplicated
+    resume-buffer rows; last-write-wins dict semantics downstream would
+    otherwise pick arbitrarily).
+    """
+    if window_steps is not None:
+        from kind.mirror.caller import _read_last_window_agent_step_records
+
+        windowed = _read_last_window_agent_step_records(
+            telemetry_dir, window_steps
+        )
+        seen_t: set[int] = set()
+        deduped: list[dict[str, Any]] = []
+        for row in windowed:
+            t = int(row["t"])
+            if t in seen_t:
+                continue
+            seen_t.add(t)
+            deduped.append(row)
+        return tuple(deduped)
     shard_dir = telemetry_dir / _AGENT_STEP_SUBDIR
     if not shard_dir.is_dir():
         return tuple()
@@ -261,7 +297,13 @@ def _load_agent_step_rows(telemetry_dir: Path) -> tuple[dict[str, Any], ...]:
 
 def _load_dream_rollout_rows(
     telemetry_dir: Path,
+    t_range: tuple[int, int] | None = None,
 ) -> tuple[dict[str, Any], ...]:
+    """Load dream-rollout rows; with ``t_range`` set, keep only
+    rollouts whose ``seed_step`` (the waking ``t`` the rollout was
+    seeded from) falls inside the inclusive range — the windowed pass
+    reads dreams seeded from the same window it reads waking rows
+    from."""
     shard_dir = telemetry_dir / _DREAM_ROLLOUT_SUBDIR
     if not shard_dir.is_dir():
         return tuple()
@@ -269,16 +311,27 @@ def _load_dream_rollout_rows(
     for shard in sorted(shard_dir.glob("shard-*.parquet")):
         table = pq.read_table(str(shard))  # type: ignore[no-untyped-call]
         rows.extend(table.to_pylist())
+    if t_range is not None:
+        t_lo, t_hi = t_range
+        rows = [r for r in rows if t_lo <= int(r["seed_step"]) <= t_hi]
     return tuple(rows)
 
 
 def _build_telemetry_batch(
     telemetry_dir: Path,
     perturbation_timeline: PerturbationTimeline,
+    agent_step_rows: tuple[dict[str, Any], ...] | None = None,
+    dream_t_range: tuple[int, int] | None = None,
 ) -> TelemetryBatch:
     return TelemetryBatch(
-        agent_step_rows=_load_agent_step_rows(telemetry_dir),
-        dream_rollout_rows=_load_dream_rollout_rows(telemetry_dir),
+        agent_step_rows=(
+            agent_step_rows
+            if agent_step_rows is not None
+            else _load_agent_step_rows(telemetry_dir)
+        ),
+        dream_rollout_rows=_load_dream_rollout_rows(
+            telemetry_dir, t_range=dream_t_range
+        ),
         replay_meta_rows=tuple(),
         perturbation_step_indices=tuple(
             e.t for e in perturbation_timeline.events
@@ -291,13 +344,19 @@ def _build_telemetry_batch(
 
 def _build_agent_step_wallclock_lookup(
     telemetry_dir: Path,
+    agent_step_rows: tuple[dict[str, Any], ...] | None = None,
 ) -> dict[int, int]:
     """Build a ``{t: wallclock_ms}`` lookup over the run's
-    ``agent_step`` shards. Phase 12's
+    ``agent_step`` shards (or the pre-loaded rows, when given). Phase
+    12's
     :func:`~kind.mirror.calibration.sham_schedule.inject_sham_events`
     consumes this so each injected sham event's ``wallclock_ms`` is
     sourced from the orchestrator-side log (not synthesized)."""
-    rows = _load_agent_step_rows(telemetry_dir)
+    rows = (
+        agent_step_rows
+        if agent_step_rows is not None
+        else _load_agent_step_rows(telemetry_dir)
+    )
     return {int(r["t"]): int(r["wallclock_ms"]) for r in rows}
 
 
@@ -618,6 +677,21 @@ def run_adversarial_pass(
     passes_dir = mirror_dir / PASSES_SUBDIR
     world_event_path = telemetry_dir / _WORLD_EVENT_FILE
 
+    # 0. Windowed mode: load the agent-step window once; every later
+    # consumer (aligner, wallclock lookup, batch) shares it. Full mode
+    # (window_steps=None) keeps the legacy per-consumer loads.
+    windowed_rows: tuple[dict[str, Any], ...] | None = None
+    window_t_range: tuple[int, int] | None = None
+    if config.window_steps is not None:
+        windowed_rows = _load_agent_step_rows(
+            telemetry_dir, window_steps=config.window_steps
+        )
+        if windowed_rows:
+            window_t_range = (
+                int(windowed_rows[0]["t"]),
+                int(windowed_rows[-1]["t"]),
+            )
+
     # 1. Align perturbations against the world-event log.
     aligned_timeline = align_perturbations(
         world_event_path,
@@ -625,6 +699,9 @@ def run_adversarial_pass(
         run_id=config.run_id,
         checkpoint_id=config.checkpoint_id,
         tolerance_ms=config.perturbation_tolerance_ms,
+        agent_step_rows=windowed_rows,
+        t_range=window_t_range,
+        skip_unmatched=config.window_steps is not None,
     )
     # 1a. Phase 12: inject scheduled sham events into the timeline.
     # 1b. Phase 13: inject scheduled synthetic events alongside the
@@ -636,7 +713,9 @@ def run_adversarial_pass(
     #     validator.
     wallclock_lookup: dict[int, int] | None = None
     if injected_sham_entries or injected_synthetic_entries:
-        wallclock_lookup = _build_agent_step_wallclock_lookup(telemetry_dir)
+        wallclock_lookup = _build_agent_step_wallclock_lookup(
+            telemetry_dir, agent_step_rows=windowed_rows
+        )
     timeline = aligned_timeline
     if injected_sham_entries:
         # Import locally to avoid a circular import at module load time
@@ -660,7 +739,12 @@ def run_adversarial_pass(
             agent_step_wallclock_lookup=wallclock_lookup,
         )
     # 2. Build the in-memory batch.
-    batch = _build_telemetry_batch(telemetry_dir, timeline)
+    batch = _build_telemetry_batch(
+        telemetry_dir,
+        timeline,
+        agent_step_rows=windowed_rows,
+        dream_t_range=window_t_range,
+    )
 
     # 3. Compute statistic results for both partitions. Held-out and
     # active are computed against the same telemetry; the held-out
@@ -778,6 +862,18 @@ def run_adversarial_pass(
         timeline, active_primary, config.active_registry
     )
     sham_notes = _format_sham_notes(sham_findings)
+    if config.window_steps is not None:
+        window_note = (
+            f"windowed pass: window_steps={config.window_steps}, "
+            f"t_range={window_t_range}, "
+            f"agent_step_rows={len(windowed_rows or ())}, "
+            f"dream_rollouts_in_window={len(batch.dream_rollout_rows)}, "
+            f"perturbations_aligned={len(timeline.events)}, "
+            f"skipped_unmatched={timeline.skipped_unmatched}, "
+            f"skipped_collisions={timeline.skipped_collisions}, "
+            f"chunk_steps={config.statistic_config.chunk_steps}"
+        )
+        sham_notes = f"{sham_notes}\n{window_note}"
 
     # 9. Pack the result and write it to disk.
     result = PassResult(

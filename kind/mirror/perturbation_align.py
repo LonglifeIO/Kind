@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import bisect
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -111,6 +112,12 @@ class PerturbationTimeline(BaseModel):
     events: tuple[PerturbationEvent, ...]
     run_id: str
     checkpoint_id: str
+    # Windowed-mode alignment bookkeeping (2026-07-30): events dropped
+    # under ``skip_unmatched`` — outside tolerance, or same-``t``
+    # collisions resolved keep-first. Both 0 in the raise-on-failure
+    # default mode (byte-identical legacy behavior).
+    skipped_unmatched: int = 0
+    skipped_collisions: int = 0
 
     @model_validator(mode="after")
     def _validate_sorted_unique(self) -> PerturbationTimeline:
@@ -189,6 +196,9 @@ def align_perturbations(
     run_id: str,
     checkpoint_id: str,
     tolerance_ms: int = DEFAULT_ALIGNMENT_TOLERANCE_MS,
+    agent_step_rows: Sequence[Mapping[str, Any]] | None = None,
+    t_range: tuple[int, int] | None = None,
+    skip_unmatched: bool = False,
 ) -> PerturbationTimeline:
     """Build a :class:`PerturbationTimeline` from the runner's emitted logs.
 
@@ -219,6 +229,27 @@ def align_perturbations(
     events in the log or if either log is empty. Empty logs are valid
     — a pass against a checkpoint that ran without any perturbations
     produces a clean empty timeline, not an error.
+
+    Windowed-mode extensions (2026-07-30, dated decision doc
+    ``mirror_v2_windowed_mode_2026-07-30.md``; all defaults preserve
+    the original behavior byte-identically):
+
+    - ``agent_step_rows``: pre-loaded AgentStep rows to align against
+      instead of reading ``agent_step_log_path`` (the orchestrator's
+      windowed path loads once and shares).
+    - ``t_range``: inclusive ``(t_lo, t_hi)`` filter applied to the
+      perturbation events by ``t_event`` before alignment — a windowed
+      pass must not try to align perturbations that happened outside
+      the loaded window.
+    - ``skip_unmatched``: when True, an event with no agent step within
+      ``tolerance_ms`` is dropped (counted in
+      ``PerturbationTimeline.skipped_unmatched``) instead of raising —
+      the biography's dream/pause gaps put a handful of events >100 s
+      from any waking step. Same-``t`` alignment collisions (the
+      generator fires same-instant bursts) are likewise resolved by
+      keeping the first event and counting the rest in
+      ``PerturbationTimeline.skipped_collisions``, instead of the
+      timeline validator raising.
     """
     if tolerance_ms < 0:
         raise ValueError(
@@ -230,6 +261,12 @@ def align_perturbations(
         we for we in world_events
         if we.get("event_type") == PERTURBATION_EVENT_TYPE
     ]
+    if t_range is not None:
+        t_lo, t_hi = t_range
+        perturbations = [
+            we for we in perturbations
+            if t_lo <= int(we.get("t_event", -1)) <= t_hi
+        ]
     if not perturbations:
         return PerturbationTimeline(
             events=tuple(),
@@ -237,7 +274,11 @@ def align_perturbations(
             checkpoint_id=checkpoint_id,
         )
 
-    agent_rows = _read_agent_step_rows(agent_step_log_path)
+    agent_rows = (
+        list(agent_step_rows)
+        if agent_step_rows is not None
+        else _read_agent_step_rows(agent_step_log_path)
+    )
     if not agent_rows:
         # Perturbations exist on the log but the agent-step parquet is
         # empty — this is a hard inconsistency the orchestrator should
@@ -257,6 +298,7 @@ def align_perturbations(
     wallclocks = [int(r["wallclock_ms"]) for r in sorted_rows]
     ts = [int(r["t"]) for r in sorted_rows]
 
+    n_skipped_unmatched = 0
     aligned: list[PerturbationEvent] = []
     for pert in perturbations:
         wc_pert = int(pert["wallclock_ms"])
@@ -275,6 +317,9 @@ def align_perturbations(
         best = min(candidates, key=lambda i: abs(wallclocks[i] - wc_pert))
         delta = abs(wallclocks[best] - wc_pert)
         if delta > tolerance_ms:
+            if skip_unmatched:
+                n_skipped_unmatched += 1
+                continue
             raise PerturbationAlignmentError(
                 f"builder_perturbation event at wallclock_ms={wc_pert} "
                 f"has no agent_step within tolerance_ms={tolerance_ms} "
@@ -297,10 +342,24 @@ def align_perturbations(
 
     # Sort by t for the timeline contract; reject collisions per the
     # PerturbationTimeline validator (two events at the same t cannot
-    # be distinguished).
+    # be distinguished) — unless skip_unmatched, where collisions are
+    # resolved keep-first and counted.
     aligned.sort(key=lambda e: e.t)
+    n_skipped_collisions = 0
+    if skip_unmatched:
+        deduped: list[PerturbationEvent] = []
+        seen_t: set[int] = set()
+        for event in aligned:
+            if event.t in seen_t:
+                n_skipped_collisions += 1
+                continue
+            seen_t.add(event.t)
+            deduped.append(event)
+        aligned = deduped
     return PerturbationTimeline(
         events=tuple(aligned),
         run_id=run_id,
         checkpoint_id=checkpoint_id,
+        skipped_unmatched=n_skipped_unmatched,
+        skipped_collisions=n_skipped_collisions,
     )
