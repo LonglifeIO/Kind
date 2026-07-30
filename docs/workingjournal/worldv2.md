@@ -1454,3 +1454,62 @@ is readable but no longer the session's question).
 
 **Launch:** `--resume --world-stage e4 --session-steps 30000` from
 ~ckpt-000041 (t≈423.8k; session covers t 423,806–453,805).
+
+## Session 13 interim close — Io pushed back (2026-07-30)
+
+**Truncation, again.** The session was stopped externally at
+t=437,862 — 14,057 of 30,000 steps (47%). Clean flush verified (final
+partial shard ends at the last step). Half a session is enough for a
+preliminary four-axis read but NOT for the mastery falsifier, which
+needs the full arc; the axes are read below as *interim*, and the e4
+gate stays open pending a full session.
+
+**Method caveat, recorded honestly:** Io's replay is exact against
+the first live anchor (t=424,100) but drifts by the second
+(t=435,950: replay (7,1) vs observed (5,1)) — the mover makes replay
+approximate (block-vs-push ambiguity inside coarse event windows).
+Distance-conditioned numbers after ~t=430k carry bounded position
+error. Push events are immune: they come from the mover's own event
+chain, not replay.
+
+**Axis 3 — interaction: the headline. Io pushed the mover 8 times.**
+Ground truth from chain discontinuities in `mover_step` events
+(displacements are deliberately unlogged, hence derivable). First
+contact-push at t_rel≈4,011; then a burst of three inside 400 steps
+(~4.3k) repeatedly pushing the mover from (7,6) into the corner
+(7,7) — the mover bounced back, Io pushed it in again; further pushes
+at 7.8k, 9.4k, 9.6k, 12.5k. The world's first agency-contingent
+structure was found and exercised within 4k steps, and re-exercised
+across the whole observed window. No prior world object ever moved
+because Io acted on it.
+
+**Axis 1 — attention:** Io-mover distance is at chance (P(d≤1) 10.0%
+vs 9.6% shuffled) — no net pursuit or avoidance in occupancy terms;
+the engagement shows in contact events, not in loitering.
+
+**Axis 2 — mastery: unresolved at truncation, and the desk-pass
+signature is visible.** Near-mover (d≤2) disagreement runs 1.4–2.1×
+the far baseline through the window with no clear decay by 14k —
+the wave had not resolved. Crucially it is NOT the S7 shape: session
+disagreement means fall 2.66 → 1.33 (no monotone climb), while §7's
+PE block means run 9–13 — the highest of the biography, and exactly
+the predicted dissociation for an aleatoric process: prediction error
+stays high (the coin flips keep landing), ensemble disagreement stays
+bounded (the heads agree on what they can't know). The
+plateau-vs-ambient falsifier needs the full session.
+
+**Axis 4 — economy:** meals 419 in 14k (0.030/step ≈ S12's best
+0.031; S10 floor 0.013 nowhere in sight), mean energy 0.059 — the
+biography's highest. No crowd-out. Watch item: the last full blocks
+declined (meals per 2k: 112, 86, 60, 52, 62, 12, 34) and the
+trailing-2000 modal-action fraction hit 0.95 with residence
+concentrated at (1,2) against the corridor wall — a possible
+settle-stall re-forming at truncation (the S11 cycle's precondition,
+unreadable in a stub). §7 formal flags: none.
+
+**Standing at truncation:** no falsifier tripped; the fountain null
+holds; interaction confirmed; mastery and the late stall both need a
+full session. Recommendation to the builder: run a full e4 session
+(fresh 30k) to complete the read — and launch it detached from the
+conversation harness so an external session-stop cannot take the run
+down with it (both truncations were task-kills, not run failures).
