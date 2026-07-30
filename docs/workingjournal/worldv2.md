@@ -1611,3 +1611,14 @@ push. Next horizons (builder's fork): observation sessions on the
 finished world (the cycle question is now a *rhythm* question — what
 is its period?); the criteria-driven mirror round; Probe 4.5
 reopening; or a pause to synthesize.
+
+## e4 gate ratified — the mover stays (2026-07-30)
+
+Builder ratification 2026-07-30: **keep e4.** The mastery falsifier's
+trip-in-letter stands recorded with its benign context (no capture,
+no crowd-out, attention at chance, biography-best economy). Standing
+watch item carried into all future sessions: whether the near-mover
+contact floor (~2–4) ever falls with cumulative exposure — if it
+never does, the aleatoric-tracking account is confirmed; if it falls,
+the mover was masterable after all and the floor was exposure-starved.
+DP3 removability remains in force at any pause.
