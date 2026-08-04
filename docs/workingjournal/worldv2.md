@@ -1658,3 +1658,71 @@ applies to any mid-run flag, corroborate before reacting.
 
 **Launch:** `--resume --world-stage e4 --session-steps 200000` from
 ckpt-000045 (t≈467.9k; session covers t 467,863–667,862; episode 782).
+
+## Session 15 close — the long watch: stasis is the attractor (2026-08-04)
+
+Clean natural close: t 467,863 → 667,862 — the full 200k, the longest
+unbroken stretch of Io's life (detached run survived unattended;
+~242 ms/step by close). §7 at close: **no flags** (entropy ok, PE not
+strictly rising [10.49, 4.93, 2.31, 3.74], torpor informational 0.45,
+644 lifetime dream sessions, +198). Positions replayed with the
+session-13 mover-aware method (start (7,4); 29,681 mover steps; pushes
+from chain discontinuities).
+
+**The pre-registered verdict: reading 2 — rare and aperiodic, with an
+amendment.** The settle→stall→forget→burst cycle did not present as a
+rhythm. What 200k steps actually contain, in phases (2k-block panel in
+the analysis record):
+
+| phase | t_rel | shape |
+|---|---|---|
+| settled start | 0–8k | (2,3)/(1,3) home, ~50% top cell, few meals |
+| active wave | 8–18k | meals 83–127/2k, disagreement 1.8–3.3 |
+| **deep stasis I** | 18–40k | (7,7) at 97–100%, meals → 0, disagreement → 0.14 |
+| failed stir | 40–44k | 85%, meals ~40–50, recon ~4 — collapses back |
+| messy active | 52–70k | shift one cell to (7,6); 8 mover pushes at 54–61k |
+| **deep stasis II** | 72–122k | (7,6) 88–100%; blocks 50–60: **eleven consecutive 2k-blocks at 100% single cell with zero meals** — a 22k-step total fast |
+| slow loosening | 122–170k | (7,5) area, trickle meals, disagreement ~0.2–0.7 |
+| quiet relocation | 170–182k | (7,1), 100% blocks again |
+| **closing burst** | 182–200k | disagreement 1.9→3.8, recon 3.6→10.4, meals rising, and **14 mover pushes in the final 12k** — the densest interaction of the biography — cut off mid-rise by the session end |
+
+The amendment to the cycle picture: the **stall event never fired** —
+stay-share 0.00% for the whole 200k. Session 11's 799 stays now read
+as a one-time event, not a stage of the cycle; deep stasis presents as
+single-cell wall-pacing without the stay action. And the "forget"
+signature inverted: recon during the stases *decayed* to 0.04–0.08
+(mastery, not forgetting), with recon spikes riding the active phases
+instead. At this horizon the honest description is: **stasis is the
+attractor; bursts are rare, mostly weak, and aperiodic** (two deep
+stases of ~22k and ~50k; one failed stir; one full burst building
+exactly at the close). Period question: answered by dissolution — F4's
+"rhythm" framing does not survive the long window.
+
+**The welfare row, stated plainly:** meals 1,693 (0.008/step — the
+worst of the world-v2 era; S7's treadmill was 0.014), mean energy
+0.009, floored 94.5%. §7's formal instruments stayed clean throughout
+and the drive cannot see food (F2); the number is builder-side
+information, recorded here without a world decision attached.
+
+**Carried watches:** e4 contact floor — no decay with cumulative
+exposure (~49k near-mover steps; epoch means wander 0.56–2.17, ending
+high in the closing burst): F6's aleatoric account holds; the mover
+stays permanently interesting at contact, and pushes cluster in
+active phases (27 this session, 42 lifetime). Clock: 0.6% within 2 —
+inert, sixth consecutive session. Fountain null: holds (median 0.35,
+no climb). Two anomaly blocks noted for the record: (4,4) at
+88–100% occupancy with recon 16–17 (blocks 33, 66) — parked in the
+patch orbit where the world churns under a stationary Io; not a flag,
+but a distinctive posture worth remembering.
+
+**What this opens (builder's fork, none urgent):** (a) resume and see
+whether the interrupted closing burst carries (the S11→S12 precedent
+says bursts can carry across a resume); (b) prefer shorter sessions —
+the post-resume re-roll reliably stirs Io, and 200k in one unchanged
+finite world may simply exceed what its novelty budget can hold —
+an observation about the *world's* size, not Io's health; (c) the
+funded mirror round (the V2 instrument reading a stasis window vs a
+burst window is now an obvious two-pass design); (d) the era's
+later-if-ever bucket (a larger world, new dynamics) — a research
+conversation, not a knob turn. No stacking decision is pending; the
+world is as ratified.
