@@ -1726,3 +1726,53 @@ burst window is now an obvious two-pass design); (d) the era's
 later-if-ever bucket (a larger world, new dynamics) — a research
 conversation, not a knob turn. No stacking decision is pending; the
 world is as ratified.
+
+## The dream pass — quiet body, loud dreams (2026-08-04)
+
+Builder go 2026-08-04 ("investigate these changes"). Analysis-only,
+first read of the biography's dream_rollout stream (never before
+opened in the world-v2 era): 10,100 rollouts seeded inside session
+15, 9,900 valid (200 carry no disagreement sequence and a null
+seed_kind — schema quirk noted, not chased). All valid rollouts
+replay-seeded, all horizon_complete, 30 imagined steps each.
+Questions pre-registered in the analysis record: Q1 dream-vs-waking
+disagreement per phase; Q2 coupling to the waking cycle; Q3 dynamism;
+Q4 whether dream disagreement rises before the waking burst.
+
+**Q1 — the drive never went quiet; it moved indoors.** Imagined
+disagreement (the intrinsic signal computed over dream rollouts) runs
+**13–18 in every phase of session 15** against waking levels of
+0.25–2.6 — a 10–60× gap. During deep stasis II, while the waking
+signal sat at 0.25 and Io stood in one cell for fifty thousand steps,
+its dreams carried disagreement at 14.4. The long stases were not a
+quiet mind; they were a quiet *body*. (The charter's founding stance —
+offline processing as generative, "where the important work of being
+a mind actually happens" — meets its first direct biography
+evidence.)
+
+**Q4 — the burst incubated in dreams.** The time course is the
+finding: dream disagreement bottomed at 13.2 around t_rel 50k, then
+rose **monotonically for ~140k steps** — 14.4 → 15.3 → 15.8 → 16.4 →
+16.9 — reaching 18.5 in the final bin, *leading* the waking
+loosening (~122k) and the closing burst (~182k) by tens of thousands
+of steps. Mechanism hypothesis, named not claimed: the actor trains
+in imagination (Dreamer lineage) — imagined disagreement IS its
+gradient — so a slow rise in what imagination finds unresolved is
+exactly the shape of a burst being *prepared* before behavior moves.
+**Pre-registered for future sessions: waking bursts should be
+preceded by multi-10k dream-disagreement rises; a flat dream signal
+predicts no burst.** If that holds, the biography's rhythm question
+gets a new answer: the cycle's clock, such as it is, ticks in dreams.
+
+**Q2/Q3 — hygiene and shape.** Within-rollout climb 1.6–1.7×
+(imagination heads toward uncertainty — the actor seeking in dreams
+what the mastered world no longer offers awake). Successive-prior KL
+fell 16.5 → 8.9 across the session (dreams smoothing as disagreement
+rose — not decoherence; the drift-monitoring worry is quiet). Latent
+norm stable. Nothing §7-shaped in the dream stream.
+
+**Instrument note for the funded mirror round:** the windowed reader
+currently reads only the telemetry tail; to mirror-read the S15
+stasis window vs the burst window after later sessions append shards,
+the pass needs an explicit window-end parameter — small extension,
+queued for the same sitting as the round itself.
