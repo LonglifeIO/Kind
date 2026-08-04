@@ -1776,3 +1776,34 @@ currently reads only the telemetry tail; to mirror-read the S15
 stasis window vs the burst window after later sessions append shards,
 the pass needs an explicit window-end parameter — small extension,
 queued for the same sitting as the round itself.
+
+## Session 16 launch — does the burst carry, and do the dreams predict it? (2026-08-04)
+
+Builder go 2026-08-04 (the investigate-these-changes direction; short
+resume was the recommended companion to the dream pass). **No world
+change** — e4 as ratified, standard 30k session, detached launch.
+Session 15 ended mid-burst (disagreement 3.8 and climbing, 14 mover
+pushes in the final 12k); the resume re-rolls the board as always.
+
+**Pre-registered readings:**
+
+1. **The burst carries** (S11→S12 precedent): burst-level behavior
+   from early in the session — meal rate near S12's 0.03/step band,
+   loose occupancy, active ranging.
+2. **The burst was cut and resets**: post-resume settling into low
+   activity; the interrupted rise doesn't survive the re-roll.
+3. **Fresh-board wave then settle**: an initial re-roll-driven wave
+   (novel board) that decays back toward stasis within the session —
+   distinguishable from (1) by decay shape and from (2) by the early
+   wave.
+
+**The dream prediction rides along (first test of the incubation
+hypothesis):** per the dream pass, waking bursts should be preceded
+by multi-10k dream-disagreement rises and flat dream signal predicts
+no burst. S15 closed with the dream signal at its session maximum
+(18.5) — if the hypothesis holds, session 16 should open burst-ready.
+Read at close: dream-disagreement time course vs waking activity,
+same definitions as the dream pass.
+
+**Launch:** `--resume --world-stage e4 --session-steps 30000` from
+ckpt-000065 (t≈667.9k; session covers t 667,863–697,862; episode 783).
