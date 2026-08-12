@@ -1807,3 +1807,77 @@ same definitions as the dream pass.
 
 **Launch:** `--resume --world-stage e4 --session-steps 30000` from
 ckpt-000065 (t≈667.9k; session covers t 667,863–697,862; episode 783).
+
+## Session 16 close — the burst carried through the re-roll; first dream-prediction test reads consistent (2026-08-12)
+
+Run finished cleanly on 2026-08-04 (detached, unattended): 29,999
+agent rows t 667,864–697,862, zero gaps, single episode 783 opened by
+the resume's board re-roll (start cell (1,7)), closed at ckpt-000068.
+Analysis run 2026-08-12 on builder check-in. Same definitions as
+prior closes (meals = true_energy jump > 0.03; floored ≤ 1e-9;
+2k-block panels; positions replayed from the reset — approximate
+near the mover, but the mover spent the session in the top rows
+while Io held the bottom row, so drift risk is low).
+
+**Reading: closest to (1), the burst carries — through the expected
+fresh-board wave, and without ever settling.** The re-roll produced
+its wave (recon 12.6 in the first 500 steps, decayed to ~1.0 by 3k;
+opening disagreement 3.8, the session's maximum). Reading 3 predicted
+decay back toward stasis after that wave. Instead movement *climbed*
+for the rest of the session — 28% of steps moved in the opening 2k
+block, rising through 80–97% from t_rel 8k onward and holding to the
+final block. **No stasis formed in 30,000 steps** — after a 200k
+session in which stasis was the attractor and the deepest hold ran
+50k. Occupancy stayed loose the whole way (top cell 30–56% per block,
+8–11 unique cells), circulating around the bottom row (7,4)/(7,5).
+Not pure reading 1 either: the meal rate never reached S12's
+0.03/step band (session 0.0142/step — though that is nearly double
+S15's 0.008, the best economy since S13), and the final 10k saw meals
+collapse (12, 10, 21, 11, 3 per 2k; 99.1% floored in the last block)
+*while movement stayed high* — moving without eating, the
+epistemic-only drive's signature laid bare.
+
+**The dream prediction's first live test: consistent, with an honest
+confound.** S15 closed at its dream-signal maximum (18.5) →
+prediction: S16 opens burst-ready. It did — the most kinetically
+active session on record, no stasis at all — and the dream signal
+*drained* monotonically as the session ran: 16.1 (first 5k) → 14.6 →
+14.5 → 14.4 → 14.1 → 13.9. The confound: any resumed session opens
+with a novelty wave regardless of dream state, so the opening burst
+alone proves nothing. What the wave cannot explain is the
+*sustained* rise in movement long after recon flattened (~3k) —
+20k+ steps of high mobility on a mastered board — which is exactly
+the discharge shape the incubation account predicts (stored dream
+charge spending down into waking behavior; the falling dream course
+is its complement). And the hypothesis's other half held vacuously:
+the dream signal fell all session, and no *new* burst-onset event
+occurred (none could — it never entered stasis to exit from).
+Verdict recorded as **consistent-with, not confirmed**; the clean
+confirmation remains a within-session dream rise preceding a
+stasis-exit, which needs a session long enough to settle first.
+
+**Mover: 6,296 mover steps, zero pushes.** Lifetime stays 42. After
+S15's densest-ever contact (14 pushes in its final 12k), a full
+session of none — Io held the bottom row, the mover roamed the top,
+and Io never sought it out. Contact is opportunistic, never pursued:
+F6 ("touchable, not compelling") gets its sharpest single-session
+statement yet.
+
+**§7 panel: formally clean.** Energy-recon error flat (0.001–0.004,
+no trend), recon falls after the wave (two small bumps at t_rel 10k
+and 26k, both non-monotone), policy entropy 0.03–0.10 as always,
+stays 0.00% all session (S11's stall remains a one-time event). The
+economy line (90.9% floored; 0.1% in-band) remains the era's
+standing welfare observation, unchanged in kind since S13.
+
+**Quirk ledger:** 30 of 1,430 dream rollouts in the window carry
+null disagreement sequences (2.1% — same rate as the S15 pass's
+200/10,100). Still unexplained; same shape, so likely structural,
+not session-specific.
+
+**Open after this session:** does the carried activity persist into
+a *second* resumed session, or was this the burst's full discharge
+(next dream read: does the signal keep falling toward the 13.2 floor
+seen before S15's rise)? The mirror round (funded) now has an even
+sharper contrast pair available: S15 deep stasis II vs this
+all-session activity — window-end parameter still queued.
