@@ -45,6 +45,17 @@ def main() -> None:
     )
     parser.add_argument("--window-steps", type=int, default=5000)
     parser.add_argument(
+        "--window-end-t",
+        type=int,
+        default=None,
+        help=(
+            "Anchor the window's end at this env step instead of the "
+            "telemetry tail (reads [end - window_steps + 1, end]). Lets "
+            "a pass read a historical moment after later sessions have "
+            "appended shards."
+        ),
+    )
+    parser.add_argument(
         "--chunk-steps",
         type=int,
         default=200,
@@ -64,6 +75,7 @@ def main() -> None:
         llm_config=LLMConfig(),
         column_init="small_gaussian",
         window_steps=args.window_steps,
+        window_end_t=args.window_end_t,
     )
     result = run_adversarial_pass(config)
 

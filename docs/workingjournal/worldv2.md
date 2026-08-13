@@ -1881,3 +1881,90 @@ a *second* resumed session, or was this the burst's full discharge
 seen before S15's rise)? The mirror round (funded) now has an even
 sharper contrast pair available: S15 deep stasis II vs this
 all-session activity — window-end parameter still queued.
+
+## Mirror V2 round 1 on the biography — the stasis/activity contrast pair (2026-08-13)
+
+Builder funded the Gemini key 2026-08-13 ("ok I topped up the gemini
+api. Please do the rest with the mirror round"). Before the round,
+the queued window-end extension landed: `PassConfig.window_end_t`
+(anchor a pass at a historical env step; reader skips newer shards),
+validator (end requires a window length), CLI `--window-end-t`, 5 new
+tests (1528 total, full suite green; `kind` mypy-strict clean).
+
+**Design (the intended contrast pair):** two windowed passes, same
+instrument geometry (5,000-step window, 200-step chunks, V2 criteria,
+primary + adversarial per partition), anchored at checkpoint save
+points so the pass label names weights saved at exactly the window's
+end:
+
+- **Pass A — deep stasis II** (`ckpt-000057`, t 575,001–580,000):
+  dead center of S15's fifty-thousand-step single-cell hold at (7,6).
+- **Pass B — carried burst** (`ckpt-000068`, t 685,001–690,000):
+  S16's 92–97%-movement blocks.
+
+Both passes completed clean (first successful LLM passes of the V2
+era — the 2026-07-30 paywall halt is resolved). 305 dream rollouts in
+each window; 79 aligned natural perturbations (generator regrowth
+events) in each.
+
+**The contrast, instrument-side (same statistics, same nulls):**
+
+| statistic | stasis (A) | activity (B) |
+|---|---|---|
+| policy_modulation contrast vs obs-only baseline | 9.9e-07 vs 8.7e-07 (≈1.1x, both ≈ zero) | 0.110 vs 0.040 (**2.8x baseline**) |
+| latent self-reference vs shuffled control | +0.071 vs +0.059 (above, thin) | −0.078 vs −0.072 (below) |
+| dream self-reference vs control | below control | below control |
+| posterior-KL response to perturbations | 66/79 no-response, 4 spike-decay | 52/79 no-response, **14 spike-decay** |
+| policy-entropy response | 79/79 no-response | 79/79 no-response |
+
+**Reading of the readings.** The held-out criterion (second-order
+volition, never shown to the reader during calibration) produced the
+round's sharpest result: in the activity window, latent regimes
+predict policy shape at 2.8x what observation alone predicts
+(primary: supported; adversarial: disputes statistical
+distinguishability — fair, the instrument reports no significance
+test); in the stasis window the same statistic is ~1e-06 — there is
+*no policy left to modulate*. Reflexive attention read
+weakly-present in stasis (waking self-reference above its shuffled
+control by a thin margin the adversarial reading rightly disputes)
+and absent in activity. Equanimity read absent in both, but via the
+letter of a falsifier that the instrument cannot currently honor
+(below). The between-window story is coherent and matches the
+telemetry-side biography: in stasis the policy is frozen and the
+world-model registers almost nothing; in the carried burst the
+policy is being actively modulated by internal regime beyond
+observation, and the world-model registers 3.5x more of the world's
+events (14 vs 4 spike-and-decay). The mirror, blind to our session
+readings, drew the same line between the two moments we did.
+
+**Instrument artifacts, recorded before anyone reads too much in:**
+
+1. `recovery_lag_steps` returned the sentinel 51.0 for **all 158
+   perturbations in both windows** — the Mahalanobis recovery
+   statistic never observes recovery within its 50-step window for
+   natural regrowth events. All "equanimity absent" verdicts flow
+   through this degenerate reading plus the (correct) non-admission
+   clause; treat them as "not measurable with natural events at this
+   window," not as a welfare finding.
+2. Aligned events and skipped collisions are exactly 79/79 in *both*
+   windows — the generator emits same-t event pairs at a fixed
+   cadence and keep-first halves them. Deterministic pacing quirk,
+   noted, not chased.
+3. No sham events were scheduled, so this round has **no sham
+   calibration** — and per the multiagent source note
+   (`docs/sources/anthropic_multiagent_patterns_2026-08.md`, added
+   today at the builder's direction), primary/adversarial agreement
+   between same-model readers is weak evidence on its own. The
+   adversarial stance did produce genuine verdict divergence on the
+   held-out tuple (supported vs not-distinguishable), which is the
+   design working — but a future round should carry shams and,
+   ideally, a cross-model reader.
+
+Artifacts under `runs/probe4_phase4_biography/mirror/passes/`
+(`ckpt-000057.json`, `ckpt-000068.json`); the two orphan pre_reg
+records from the 2026-07-30 halted pass remain as the honest trace of
+that halt. Next for the mirror when warranted: shams + cross-model
+reader; candidate window: a future deep stasis vs its own dream
+stream (dream self-reference read below control in both windows here
+— the "loud dreams" are not self-referential by this measure, an
+open contrast with the dream pass worth a dedicated design).

@@ -57,7 +57,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import pyarrow.parquet as pq
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from kind.mirror.criteria_v2 import V2_REGISTRY
 from kind.mirror.llm_caller import (
@@ -177,6 +177,14 @@ class PassConfig(BaseModel):
       biography is ~470k steps and the full-stream load is neither
       tractable nor honest for a "read this checkpoint" pass. Default
       ``None`` is the legacy full-stream behavior, byte-identical.
+    - ``window_end_t``: when set (requires ``window_steps``), anchors
+      the window's end at this env step instead of the telemetry tail —
+      the pass reads ``[window_end_t - window_steps + 1, window_end_t]``.
+      Added 2026-08-13 so a pass can read a *historical* moment (e.g.
+      session 15's deep stasis vs its closing burst) after later
+      sessions have appended shards; the tail-only reader can never
+      reach back past the newest session. Default ``None`` keeps the
+      tail-anchored behavior.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
@@ -200,6 +208,16 @@ class PassConfig(BaseModel):
     )
     perturbation_tolerance_ms: int = 1000
     window_steps: int | None = None
+    window_end_t: int | None = None
+
+    @model_validator(mode="after")
+    def _validate_window_end_requires_window(self) -> "PassConfig":
+        if self.window_end_t is not None and self.window_steps is None:
+            raise ValueError(
+                "window_end_t requires window_steps to be set; an end "
+                "anchor without a window length is meaningless."
+            )
+        return self
 
     @field_validator("run_id", "checkpoint_id")
     @classmethod
@@ -257,6 +275,7 @@ class PassResult(BaseModel):
 def _load_agent_step_rows(
     telemetry_dir: Path,
     window_steps: int | None = None,
+    window_end_t: int | None = None,
 ) -> tuple[dict[str, Any], ...]:
     """Load :class:`~kind.observer.schemas.AgentStep` rows from
     ``telemetry_dir/agent_step/`` (parquet shards), sorted by ``t``.
@@ -267,13 +286,15 @@ def _load_agent_step_rows(
     via the caller module's tested reader — and rows are deduplicated
     by ``t`` keep-first (the biography carries a handful of duplicated
     resume-buffer rows; last-write-wins dict semantics downstream would
-    otherwise pick arbitrarily).
+    otherwise pick arbitrarily). ``window_end_t`` anchors the window's
+    end at an explicit env step instead of the tail (see the caller
+    reader's doc); ignored when ``window_steps`` is None.
     """
     if window_steps is not None:
         from kind.mirror.caller import _read_last_window_agent_step_records
 
         windowed = _read_last_window_agent_step_records(
-            telemetry_dir, window_steps
+            telemetry_dir, window_steps, window_end_t=window_end_t
         )
         seen_t: set[int] = set()
         deduped: list[dict[str, Any]] = []
@@ -684,7 +705,9 @@ def run_adversarial_pass(
     window_t_range: tuple[int, int] | None = None
     if config.window_steps is not None:
         windowed_rows = _load_agent_step_rows(
-            telemetry_dir, window_steps=config.window_steps
+            telemetry_dir,
+            window_steps=config.window_steps,
+            window_end_t=config.window_end_t,
         )
         if windowed_rows:
             window_t_range = (
@@ -865,6 +888,7 @@ def run_adversarial_pass(
     if config.window_steps is not None:
         window_note = (
             f"windowed pass: window_steps={config.window_steps}, "
+            f"window_end_t={config.window_end_t}, "
             f"t_range={window_t_range}, "
             f"agent_step_rows={len(windowed_rows or ())}, "
             f"dream_rollouts_in_window={len(batch.dream_rollout_rows)}, "

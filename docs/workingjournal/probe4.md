@@ -815,3 +815,16 @@ confirming the conduit still carries signal at 60× the age. A
 criteria-driven (V2) round on the biography remains a separate
 builder decision; the orchestrator's episode-partitioning assumptions
 are unvetted for e0+ worlds (inventory item 11 kin).
+
+## 2026-08-13 — Mirror V2 round 1 (first funded LLM passes)
+
+The V2 instrument's first real readings of the biography ran today as
+a stasis/activity contrast pair (S15 deep stasis II vs S16's carried
+burst; anchored windows via the new `window_end_t` parameter). Full
+entry in `worldv2.md` ("Mirror V2 round 1"). Headline: held-out
+second-order-volition statistic separates the two moments cleanly
+(policy modulation 2.8x observation-baseline in activity, ≈zero in
+stasis); reflexive attention thin-positive in stasis only; equanimity
+unmeasurable with natural perturbation events (recovery statistic
+degenerate — instrument artifact recorded). No sham calibration this
+round; future rounds want shams + a cross-model reader.

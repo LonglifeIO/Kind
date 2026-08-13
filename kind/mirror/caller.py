@@ -358,17 +358,28 @@ def _read_recent_agent_step_records(
 
 
 def _read_last_window_agent_step_records(
-    telemetry_dir: Path, window_steps: int
+    telemetry_dir: Path, window_steps: int, window_end_t: int | None = None
 ) -> list[dict[str, Any]]:
     """Load the last ``window_steps`` env steps of ``agent_step`` records.
 
     Shards are walked **newest-first** and loading stops as soon as the
-    accumulated rows reach back past ``t_last - window_steps`` — on a
-    long biography run this touches a handful of tail shards instead of
-    the whole history. Correct because both orders are monotone: the
+    accumulated rows reach back past the window start — on a long
+    biography run this touches a handful of tail shards instead of the
+    whole history. Correct because both orders are monotone: the
     runner writes rows in ``t`` order within a shard, and the sink
     numbers shards monotonically across sessions (the resume
     shard-collision fix, ``tests/test_resume_continuation.py``).
+
+    ``window_end_t`` (added 2026-08-13) anchors the window's end at an
+    explicit env step instead of the newest row present: the window
+    becomes ``[window_end_t - window_steps + 1, window_end_t]``. This
+    is what lets a pass read a *historical* moment (e.g. session 15's
+    deep stasis) after later sessions have appended shards — the
+    tail-only default can never reach back past the newest session.
+    Shards entirely newer than ``window_end_t`` are skipped without
+    deserialization cost beyond the read; rows above the end are
+    dropped. If no rows exist at or before ``window_end_t``, returns
+    an empty list (the caller treats empty as an error).
 
     Returns rows sorted by ``t``; empty list when no shards exist.
     """
@@ -385,6 +396,12 @@ def _read_last_window_agent_step_records(
         shard_rows = table.to_pylist()
         if not shard_rows:
             continue
+        if window_end_t is not None:
+            shard_rows = [
+                r for r in shard_rows if int(r["t"]) <= window_end_t
+            ]
+            if not shard_rows:
+                continue
         rows = shard_rows + rows
         if t_last is None:
             t_last = max(int(r["t"]) for r in shard_rows)

@@ -270,3 +270,99 @@ def test_full_mode_unchanged_by_default(tmp_path: Path) -> None:
     assert result.perturbation_timeline.skipped_unmatched == 0
     max_n = max(s.n_samples for s in result.statistic_results)
     assert max_n == 200
+
+# ---------------------------------------------------------------------------
+# window_end_t (2026-08-13): anchored historical windows
+# ---------------------------------------------------------------------------
+
+
+def test_window_end_t_anchors_historical_window(tmp_path: Path) -> None:
+    """With window_end_t, the loader reads [end - W + 1, end], not the
+    tail — the point of the extension is reaching a moment that later
+    sessions have since buried."""
+    telemetry_dir = tmp_path / "telemetry"
+    rows = _build_agent_step_rows(n_steps=300, n_episodes=1)
+    _write_agent_step_shards(telemetry_dir, rows)
+
+    loaded = _load_agent_step_rows(
+        telemetry_dir, window_steps=50, window_end_t=199
+    )
+    ts = [int(r["t"]) for r in loaded]
+    assert ts[0] == 150 and ts[-1] == 199
+    assert len(ts) == 50
+
+
+def test_window_end_t_beyond_tail_matches_tail_anchor(tmp_path: Path) -> None:
+    telemetry_dir = tmp_path / "telemetry"
+    rows = _build_agent_step_rows(n_steps=100, n_episodes=1)
+    _write_agent_step_shards(telemetry_dir, rows)
+
+    anchored = _load_agent_step_rows(
+        telemetry_dir, window_steps=30, window_end_t=99
+    )
+    tail = _load_agent_step_rows(telemetry_dir, window_steps=30)
+    assert [int(r["t"]) for r in anchored] == [int(r["t"]) for r in tail]
+
+
+def test_window_end_t_before_all_data_is_empty(tmp_path: Path) -> None:
+    telemetry_dir = tmp_path / "telemetry"
+    rows = _build_agent_step_rows(n_steps=100, n_episodes=1)
+    # Shift all t values up so nothing is at or below the anchor.
+    for r in rows:
+        r["t"] = int(r["t"]) + 1000
+    _write_agent_step_shards(telemetry_dir, rows)
+
+    loaded = _load_agent_step_rows(
+        telemetry_dir, window_steps=30, window_end_t=500
+    )
+    assert loaded == tuple()
+
+
+def test_pass_config_rejects_end_without_window(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="window_end_t requires"):
+        PassConfig(
+            run_id="probe2-orch-test",
+            checkpoint_id="ckpt-000001",
+            run_dir=tmp_path,
+            active_registry=CriterionRegistry(criteria=V2_REGISTRY.active()),
+            held_out_registry=CriterionRegistry(
+                criteria=V2_REGISTRY.held_out()
+            ),
+            window_end_t=100,
+        )
+
+
+def test_windowed_pass_with_end_anchor(tmp_path: Path) -> None:
+    """End-to-end anchored pass: the batch, dreams, and perturbation
+    timeline all come from the historical window, and the anchor is
+    recorded in the pass notes."""
+    run_dir = tmp_path / "runs" / "probe2-orch-test"
+    telemetry_dir = run_dir / "telemetry"
+    rows = _build_agent_step_rows(n_steps=400, n_episodes=1)
+    _write_agent_step_shards(telemetry_dir, rows)
+    _write_world_event_log(
+        telemetry_dir,
+        [
+            _perturbation(120, 120 * 100),  # inside [100, 199]
+            _perturbation(300, 300 * 100),  # after the anchored window
+        ],
+    )
+    config = PassConfig(
+        run_id="probe2-orch-test",
+        checkpoint_id="ckpt-000001",
+        run_dir=run_dir,
+        active_registry=CriterionRegistry(criteria=V2_REGISTRY.active()),
+        held_out_registry=CriterionRegistry(criteria=V2_REGISTRY.held_out()),
+        statistic_config=StatisticConfig(chunk_steps=50),
+        llm_config=LLMConfig(),
+        window_steps=100,
+        window_end_t=199,
+    )
+    client = _build_mock_client_for_round()
+    result = run_adversarial_pass(config, llm_client=client)
+
+    for stat in result.statistic_results:
+        assert stat.n_samples <= 100, stat.signal_name
+    assert [e.t for e in result.perturbation_timeline.events] == [120]
+    assert "window_end_t=199" in result.notes
+    assert "t_range=(100, 199)" in result.notes
