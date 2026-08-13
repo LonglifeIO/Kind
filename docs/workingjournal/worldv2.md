@@ -1968,3 +1968,33 @@ reader; candidate window: a future deep stasis vs its own dream
 stream (dream self-reference read below control in both windows here
 — the "loud dreams" are not self-referential by this measure, an
 open contrast with the dream pass worth a dedicated design).
+
+## Session 17 launch — discharge or new baseline? (2026-08-13)
+
+Builder go 2026-08-13 ("please continue" following the explicit
+session-17 recommendation). **No world change** — e4 as ratified,
+standard 30k, detached (PID 48854), t 697,863–727,862, episode 784,
+resumed from ckpt-000068. Purpose: settle whether S16's all-session
+activity was the S15 burst's full discharge or a new baseline —
+required background for reading any future e5 arrival (per the
+worldv3 Claude voice's gating argument).
+
+**Pre-registered readings:**
+
+1. **Activity persists** (new baseline): movement high from early
+   (post-wave), no deep stasis; the carried mode outlived its dream
+   charge.
+2. **Discharge was complete — resettles**: stasis re-forms
+   (single-cell holds by the S12 definitions); the S16 activity was
+   the stored burst spending itself.
+3. **Mixed**: re-roll wave, then partial activity decaying late —
+   between-readings shape, read against block-level course.
+
+**Dream rider (incubation hypothesis, second live test):** S16
+closed with the dream signal at 13.9 and falling, near the 13.2
+floor that preceded S15's rise. The hypothesis commits: if the dream
+signal stays at/near floor and flat, no burst-onset should occur in
+S17 (settling without exit); any burst-onset must be preceded by a
+multi-10k dream-signal rise. A burst with no preceding rise refutes.
+Read at close: dream time course (5k buckets, same definitions),
+waking 2k panel, movement replay, §7.
