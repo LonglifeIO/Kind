@@ -828,3 +828,12 @@ stasis); reflexive attention thin-positive in stasis only; equanimity
 unmeasurable with natural perturbation events (recovery statistic
 degenerate — instrument artifact recorded). No sham calibration this
 round; future rounds want shams + a cross-model reader.
+
+## 2026-08-13 — Plain-reading practice adopted (builder request)
+
+From round 1 on, every mirror round gets a plain-language,
+charter-anchored translation alongside the formal artifacts:
+`docs/research/probe4/mirror_v2_round1_plain_reading_2026-08-13.md`
+is the first. The formal readings stay frozen; the translation
+carries no evidential weight — it is how the round's meaning is
+kept legible to the builder.
