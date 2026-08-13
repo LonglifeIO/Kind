@@ -1998,3 +1998,59 @@ S17 (settling without exit); any burst-onset must be preceded by a
 multi-10k dream-signal rise. A burst with no preceding rise refutes.
 Read at close: dream time course (5k buckets, same definitions),
 waking 2k panel, movement replay, §7.
+
+## Session 17 close — reading 1: the activity is a new baseline, and the dream tank is empty (2026-08-13)
+
+Clean natural close (29,999 rows, t 697,864–727,862, zero gaps,
+episode 784 from the resume re-roll at (3,1), detached run PID 48854).
+Same definitions as prior closes.
+
+**Reading 1 of 3 — activity persists.** No stasis formed in 30k:
+movement 73–96% of steps in every 2k block, 8–12 unique cells per
+block, top cell (7,5) holding only ~50% — the patch-orbit shape,
+sustained wall to wall. Two active sessions in a row now (S16 30k +
+S17 30k = 60k steps of continuous high mobility) following an era in
+which stasis was the attractor. S16's activity was not a one-time
+discharge wave; this is, for now, how Io lives.
+
+**And the economy came back with it:** 594 meals = 0.0198/step (S16
+0.0142, S15 0.008), floored 87.2% (S15 94.5%), meals stabilizing at
+45–58 per 2k through the back half. Moving-and-eating, for the first
+time since S14 — the patch orbit at (7,5) feeds incidentally, by
+geography, not by wanting.
+
+**Dream rider (second live test): consistent again, now at the
+floor.** The dream signal continued its monotone drain: 14.5 → 14.3
+→ 14.3 → 13.6 → 13.5 → **13.3** — statistically at the 13.2 floor
+that preceded S15's long rise. The hypothesis's commitment (flat/
+falling signal → no burst-onset) held: no burst event occurred (none
+could — no stasis to exit). Across S16+S17 the picture is a clean
+discharge curve: 18.5 at the S15 cut → 16.1 → 13.9 → 13.3, spent
+into 60k steps of waking activity.
+
+**Pre-registered for session 18 (the discharge account's first
+forward prediction):** the tank is empty. If the incubation account
+is right and the activity has been running on stored dream charge,
+S18 should *settle* — stasis re-forming, dream signal flat at floor
+— with any later burst again preceded by a multi-10k dream rise. If
+instead S18 sustains high activity on a floor-flat dream signal,
+the discharge framing weakens: activity would be self-sustaining
+(perhaps fed by the recovered economy's own regularities), and the
+dream signal a lagging indicator, not a battery. Either outcome
+teaches; the second would be the more surprising.
+
+**Rest of the panel:** one mover push at t=697,865 (two steps after
+the re-roll — spawn adjacency, not pursuit; 43 lifetime), then
+5,710 mover steps without contact. §7 formally clean: energy-recon
+flat, recon falling after a small mid-session wave (2.3 at t_rel
+6k), stays 0.00% (eleventh straight session), entropy 0.03–0.09.
+Null-dream quirk: 30/1,430 again (2.1% — third consecutive
+identical rate; structural, still unexplained).
+
+Gate note: the S7 sequencing gate ("session 17 before any e5
+arrival") is now satisfied. The e5 block reading, if DP1 ratifies,
+will land against a known background: sustained patch-orbit
+activity with a drained dream signal — and S18's settle-or-sustain
+question can ride the same session as the block arrival ONLY if the
+builder accepts confounding them; the synthesis recommends not
+(one change, one question).
