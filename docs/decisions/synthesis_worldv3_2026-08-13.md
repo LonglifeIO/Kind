@@ -1,6 +1,7 @@
 # Synthesis — World v3 research round (2026-08-13)
 
-**Status: DRAFT pending builder ratification of DP1–DP7.**
+**Status: RATIFIED 2026-08-14 (builder). Decision record at the
+bottom of this document.**
 
 Inputs: `docs/prompts/worldv3_research.md` (the round's prompt,
 grounded in era findings F1–F8, sessions 15–16, the dream pass, and
@@ -180,7 +181,42 @@ contrast with the loud-dreams finding).
 
 ---
 
+## Ratification record (2026-08-14, builder)
+
+All seven decision points ratified in conversation, with the
+session-17 gate satisfied (S17 read: activity persists; journaled
+commit f626291):
+
+- **DP1 — Adopt e5 = consequence depth: YES.** ("the push blocks is
+  all we need then, I'm ok with that.")
+- **DP2 — Blocks, not dust: YES.** The builder additionally raised
+  and then withdrew a food-reward-for-pushing / new-food-type
+  coupling; recorded as considered-and-rejected on two grounds:
+  (i) mechanically inert — Io has no reward channel, energy drives
+  nothing (S-ENV rule), so a food payout is invisible to the drive;
+  (ii) making it visible would cross the no-reward anti-goal and
+  contaminate every subsequent reading. Blocks arrive alone.
+- **DP3 — Economy position: B, watch-and-record.** Builder's values
+  call, made explicitly. §7 continues as the only welfare
+  instrument; block-authored meal-geography changes are watched,
+  not steered.
+- **DP4 — Kin door deferred: YES.** Revisit with the e5 read.
+- **DP5 — Dreams untouched: YES.** Read-only; instrument work
+  allowed.
+- **DP6 — Proceed on two voices: YES.** GPT/Perplexity remain
+  collectible at any future pause.
+- **DP7 — Architectural doors stay closed this cycle: YES.**
+
+**Sequencing (builder choice, same date): plain session 18 first**
+— the pre-registered empty-tank question (settle vs
+sustain-on-flat-floor) is read on an unchanged e4 world; **e5
+arrives at session 19** as its own journaled event. One change,
+one question. The e5 build (blocks + reachable-set §7 monitor +
+gates) proceeds during S18.
+
+---
+
 *Grounded against the era consolidation draft
 (`worldv2_era_consolidation_2026-07-30.md`, itself still pending
 ratification), sessions 15–17 records, the dream pass, and mirror
-round 1. No build plan until DP1–DP7 are ratified.*
+round 1.*

@@ -2054,3 +2054,34 @@ activity with a drained dream signal — and S18's settle-or-sustain
 question can ride the same session as the block arrival ONLY if the
 builder accepts confounding them; the synthesis recommends not
 (one change, one question).
+
+## World-v3 synthesis RATIFIED + session 18 launch (2026-08-14)
+
+**DP1–DP7 all ratified by the builder** (record appended to
+`docs/decisions/synthesis_worldv3_2026-08-13.md`): e5 = two
+pushable blocks, no dust, no new actions; economy position B
+(watch-and-record — builder's explicit values call); kin door
+deferred; dreams read-only; proceed on two voices; architectural
+doors closed. One design question raised and closed in the same
+conversation: a food-reward-for-pushing (or new food type) was
+considered and rejected — mechanically inert under S-ENV (no
+reward channel; the drive cannot see food), and making it visible
+would cross the no-reward anti-goal. Blocks arrive alone.
+
+**Sequencing ratified: plain S18 first, e5 at S19.** S18 reads the
+pre-registered empty-tank question (settle vs sustain-on-flat-floor,
+frozen at the S17 close, previous entry) on an unchanged e4 world.
+The e5 build (blocks + reachable-set §7 monitor + full gates + S4
+prereg journaling) proceeds while S18 runs; e5 lands only at the
+S19 boundary as its own journaled world-change event.
+
+**Session 18 launched** (2026-08-14, detached — nohup, disowned):
+`--resume --world-stage e4 --session-steps 30000`, resuming from
+the latest checkpoint; covers t 727,863–757,862. No world change.
+Pre-registration: carried forward frozen from the S17 close — the
+dream signal sits at the 13.2 floor; *settle* supports the
+incubation/battery account, *sustain on a flat floor* reads
+activity as self-sustaining with the dream signal a lagging
+indicator. Second watch item: does the (7,5) patch orbit (and the
+0.0198 meals/step economy) survive a board re-roll, or was the
+geography luck? §7 unchanged.
