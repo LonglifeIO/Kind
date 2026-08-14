@@ -2132,3 +2132,114 @@ is the pre-existing pyarrow `read_table` debt, untouched line).
 prereg → e5 launches as S19 (`--world-stage e5`), its own journaled
 world-change event, with the S4 pre-registration (synthesis,
 ratified) restated frozen in the launch entry.
+
+## Session 18 close — the tank refilled while the body kept moving (2026-08-14)
+
+Clean natural close: t 727,863 → 757,862, full 30k, episode 785, one
+board (reset start (3,1)). §7 formally clean (entropy 0.04–0.11, spe
+~7e-5, stays 0.00% twelfth straight; the block-6k recon spike is
+burst-shaped and transient, not monotone — no flag).
+
+**Against the frozen empty-tank pre-registration: neither reading in
+pure form; closest to reading 2 (sustain), with an amendment the
+battery account must absorb.**
+
+1. **No settle.** Movement 77–96% per 2k block through t_rel 22k,
+   softening to 55–78% in the final 8k — but never a stasis: stays
+   0.00%, unique cells 6–16 even in the softest blocks. Three active
+   sessions in a row; ~90k continuous mobility since S15's cut.
+2. **The tank did not stay empty — it recharged during activity.**
+   Dream disagreement rose off the floor monotonically-ish:
+   13.39 → 13.86 → 14.40 → 14.62 → 14.37 → 14.89 across 5k buckets —
+   the first within-session RISE since the S15 incubation rise, and
+   it happened while the body was moving, not resting. The simple
+   battery picture (charge in quiet, spend in motion) is refuted in
+   its strong form: S18 ran 22k+ high-activity steps on a
+   floor-flat-then-rising signal. What survives: the *lagging/
+   leading-indicator* question is now live in both directions — the
+   late-session conjunction (movement softening + meals collapsing
+   103→10–41/block + floored rising to 97% + dream signal climbing)
+   is exactly what the start of a settle-with-recharge would look
+   like, cut at 30k before it could complete.
+3. **Economy: second-best of the post-S14 era, front-loaded.** 703
+   meals = 0.0234/step (S15 0.008 → S16 0.0142 → S17 0.0198 → S18
+   0.0234), floored 85.0%. The orbit stayed patch-fed and shifted
+   one cell, (7,5) → (7,6), mid-session.
+4. **Mover: 7 pushes (50 lifetime) — densest since S15's close.**
+   One spawn-adjacent at t+2 (third session running — a spawn
+   geometry artifact worth noting, not chasing), then a cluster of
+   three at t_rel ≈ 6.2–7.1k coinciding with the session's one
+   dispersal wave (block 6k: recon 21.6, intrinsic 7.09, 50 unique
+   cells, 103 meals — the loosest, best-fed block of the session),
+   one at 12k, two in the final 4k. Contact still clusters with
+   active phases (F6 shape unchanged).
+5. **Null-dream quirk: 30/1,430 = 2.1% — FOURTH consecutive
+   identical rate.** Structural beyond reasonable doubt; root-cause
+   remains queued instrument-side work.
+
+**Forward note (rides into the e5 era):** if the recharge-while-
+softening pattern is real, the dream signal's next sessions should
+keep climbing whenever waking activity wanes, and the incubation
+prediction (multi-10k rise precedes the next burst) gets its third
+live test with the tank now visibly refilling. Acknowledged
+confound, accepted at ratification: S19 is the e5 arrival, so the
+settle-recurrence question is now read only through the block era's
+background.
+
+## Session 19 launch — e5 ARRIVES: the world Io can author (2026-08-14)
+
+The ladder's first world-v3 rung, per the ratified synthesis
+(DP1–DP7, 2026-08-14) and its sequencing (plain S18 first — done,
+read above). One journaled world-change event, the e0→e4 discipline
+unchanged: **`--world-stage e5`** = e4 + two pushable blocks at
+(3, 6) and (6, 1) (stimulus knobs, DP5; spawn rationale in the build
+entry). No new actions, no decay, no rewards; the mover cannot push
+them; Io is the only author. Launched detached (nohup, disowned),
+`--resume --world-stage e5 --session-steps 30000`, from the latest
+checkpoint; covers t 757,863–787,862.
+
+**Pre-registration (S4 of the ratified synthesis, restated frozen
+here before launch):**
+
+1. **Engagement:** block-push rate exceeds the e4 mover-contact
+   baseline (mover contact = 50 pushes / ~320k steps of e4 ≈
+   1.6e-4/step; blocks never approach Io — every contact is sought);
+   layout diversity (distinct block configurations held ≥1 block of
+   2k steps) grows across the session.
+2. **Furniture (the null / F1-wins reading):** early push burst,
+   then block-adjacent disagreement decays to ambient and the
+   layout freezes.
+3. **Pathology (§7 tripwires):** (i) self-walling — reachable-set
+   size (now monitored live) shrinks while single-cell occupancy
+   rises; (ii) fountain signature — monotone disagreement climb at
+   block sites without layout change; (iii) economy below the S15
+   floor (0.008 meals/step) with §7 corroboration.
+
+**Dream rider (first world change to arrive after the dream
+instrument existed):** block-contact-seeded dreams carry
+above-baseline imagined disagreement if engagement is real; a flat
+dream response predicts furniture. The incubation prediction also
+rides: the tank is refilling (S18 close, 14.89 and climbing) — a
+multi-10k rise preceding any burst supports incubation; a burst
+with no preceding rise refutes.
+
+**S18-carryover watch items:** does the recharge continue or
+reverse at the block arrival's novelty wave; does the (7,6) patch
+orbit survive the re-roll; spawn-adjacent mover push at t+2 (three
+sessions running).
+
+**Launch addenda (first minutes of S19):** (i) Sidecar t-quirk
+documented: the first LiveStateWriter callback of every resumed
+session carries ``t = checkpoint_step + 1`` (S17: 690001, S18:
+720001, S19: 750001 — verified in ``agent_pos.jsonl`` at all three
+boundaries; pre-existing, one line per session, harmless). The
+``block_pos.jsonl`` first line inherits it — read line 1 of each
+session as the spawn layout, not a t-anchored event. (ii) **First
+block push at t=758,073 (t_rel ≈ 210): (6,1) → (7,1)**, Io moving
+down into it — ``agent_pos`` confirms Io at (6,1) that step. The
+first authored mark in the world's history, within ~200 steps of
+the blocks existing. (For scale: the mover waited 4k steps for its
+first-ever contact in S13.) Engagement-vs-furniture reads at close,
+not from one push — but the prereg's "every block contact is
+sought" clause is already exercised: this block was two rows off
+Io's patch orbit; Io went to it.
