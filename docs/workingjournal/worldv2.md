@@ -2085,3 +2085,50 @@ activity as self-sustaining with the dream signal a lagging
 indicator. Second watch item: does the (7,5) patch orbit (and the
 0.0198 meals/step economy) survive a board re-roll, or was the
 geography luck? §7 unchanged.
+
+## e5 BUILT (blocks + reachable-set monitor), gated — arrival waits for S19 (2026-08-14)
+
+Built while session 18 runs (the build touches no live run — e5
+arrives only via the next launch's `--world-stage e5`):
+
+- **`GridWorldConfig.block_cells`** (empty = off, byte-identical —
+  blocks add no RNG stream, so the identity is exact). Push rule
+  identical to the mover's (into EMPTY only, else blocks like the
+  wall it renders as), then the block STAYS. The mover cannot push
+  blocks (its moves require EMPTY); pushing a block into the mover's
+  cell fails the same EMPTY test. Bloom stamps only EMPTY cells, so
+  a block parked on the ring simply isn't stamped. Regrowth excludes
+  block cells automatically (EMPTY-mask).
+- **Stage `e5`** = e4 + `E5_BLOCK_CELLS = ((3, 6), (6, 1))` —
+  stimulus knobs (DP5), chosen away from the E0 corridor, the bloom
+  cell (1,6) and its Moore ring, the mover spawn (0,7), and Io's
+  recent row-7 patch orbit; each spawn has all four neighbors free
+  so every push direction is initially available.
+- **Ground truth without polluting the event stream:** block pushes
+  are Io-caused, so (mover-displacement precedent) they emit NO
+  WorldEvents. Surfaces: `block_positions` /
+  `last_block_displacement` properties, `GridState.block_positions`,
+  and a new run-script sidecar `block_pos.jsonl` (LiveStateWriter;
+  written only when the layout changes; absent in block-free runs).
+- **§7 reachable-set monitor** (`kind/env/reachability.py`):
+  4-connected non-WALL region around Io, computable live (from
+  `live_state.json`) and by replay (`_from_layout` variant). Wired
+  into `scripts/monitor_probe4_run.py` as an `[info]` line. The
+  pre-registered tripwire is the conjunction (reachable-set
+  shrinking + single-cell occupancy rising), never this number
+  alone. Smoke-tested against live S18: 57/64 (= 64 − 6 walls −
+  mover) — correct.
+
+**Gates:** 24 new tests (`tests/test_blocks.py`: byte-identity,
+push/stay/blocked-push matrix incl. block↔mover both directions,
+mover-cannot-push, determinism, no-events-in-ENVIRONMENT-stream,
+placement/validation, e5 preset cumulative + spawn-clearance,
+reachability unit tests incl. the sealed-pocket signature, sidecar
+written-on-change-only). Full suite 1547 passed / 7 skipped; mypy
+--strict clean on `kind` (the monitor script's one remaining error
+is the pre-existing pyarrow `read_table` debt, untouched line).
+
+**Standing plan:** S18 closes → read against the frozen empty-tank
+prereg → e5 launches as S19 (`--world-stage e5`), its own journaled
+world-change event, with the S4 pre-registration (synthesis,
+ratified) restated frozen in the launch entry.

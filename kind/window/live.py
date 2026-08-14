@@ -28,7 +28,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 from pydantic import BaseModel, ValidationError
 
@@ -152,6 +152,16 @@ class LiveStateWriter:
         self._pos_log = (run_dir / "agent_pos.jsonl").open(
             "a", buffering=1, encoding="utf-8"
         )
+        # World v3 E5: block-position sidecar (same run-script-record
+        # status as ``agent_pos.jsonl`` — never telemetry). Block pushes
+        # are Io-caused, so they are deliberately not WorldEvents (the
+        # mover-displacement precedent); this sidecar is the per-step
+        # ground truth the reachable-set §7 monitor and close analysis
+        # replay against. Opened lazily on the first line so block-free
+        # runs leave no empty file; written only when the layout
+        # changes (blocks move rarely).
+        self._block_log: TextIO | None = None
+        self._last_blocks: tuple[tuple[int, int], ...] | None = None
 
     def _recent_events(self) -> list[LiveEventRow]:
         path = self._run_dir / "telemetry" / "world_event.jsonl"
@@ -217,6 +227,17 @@ class LiveStateWriter:
             f'{{"t": {info.env_step}, "pos": [{int(state.agent_pos[0])}, '
             f"{int(state.agent_pos[1])}]}}\n"
         )
+        blocks = state.block_positions
+        if blocks and blocks != self._last_blocks:
+            if self._block_log is None:
+                self._block_log = (self._run_dir / "block_pos.jsonl").open(
+                    "a", buffering=1, encoding="utf-8"
+                )
+            cells = ", ".join(f"[{int(r)}, {int(c)}]" for r, c in blocks)
+            self._block_log.write(
+                f'{{"t": {info.env_step}, "blocks": [{cells}]}}\n'
+            )
+            self._last_blocks = blocks
         self._track_consumption(info.env_step, float(state.true_energy))
         feed = sorted(
             self._recent_events() + self._derived_rows,

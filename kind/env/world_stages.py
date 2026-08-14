@@ -35,6 +35,14 @@ Stages defined so far:
   removable at any pause without ceremony (DP3)** — if its
   disagreement never localizes, removal is a capacity finding, not a
   failure.
+* ``e5`` — + two pushable blocks (world-v3 synthesis DP1/DP2, ratified
+  2026-08-14): WALL-vocabulary cells with no self-motion, displaced by
+  Io's contact exactly like the mover (into EMPTY only) — but they
+  *stay* where they land. No decay, no new actions, no new observation
+  channels, no RNG stream. The world's configuration becomes something
+  Io authors; the mover cannot push them (Io is the only author). §7
+  gains the reachable-set monitor (``kind.env.reachability``) — the
+  new pathology class is self-walling.
 * ``e3_no_trail`` — **a dated diagnostic, not a ladder rung**
   (session-8 fork option C, ratified 2026-07-23; decision doc
   ``worldv2_e3_fork_trail_off_diagnostic_2026-07-23.md``): exactly e3
@@ -119,6 +127,18 @@ MOVER_START: Final[tuple[int, int]] = (0, 7)
 MOVER_STEP_EVERY: Final[int] = 2
 MOVER_TURN_HAZARD: Final[float] = 0.02
 
+# The e5 blocks (stimulus knobs, DP5; journaled in
+# ``docs/workingjournal/worldv2.md`` at the build entry): two spawn
+# cells chosen away from the E0 corridor, the bloom cell (1, 6) and
+# its Moore ring, the mover's spawn corner (0, 7), and Io's recent
+# patch-orbit haunt (row 7). (3, 6) sits in the open NE interior;
+# (6, 1) in the open SW interior — each with all four neighbors
+# free, so every push direction is initially available.
+E5_BLOCK_CELLS: Final[tuple[tuple[int, int], ...]] = (
+    (3, 6),
+    (6, 1),
+)
+
 WORLD_STAGES: Final[tuple[str, ...]] = (
     "default",
     "e0",
@@ -127,6 +147,7 @@ WORLD_STAGES: Final[tuple[str, ...]] = (
     "e3",
     "e3_no_trail",
     "e4",
+    "e5",
 )
 
 
@@ -188,6 +209,11 @@ def apply_world_stage(config: GridWorldConfig, stage: str) -> GridWorldConfig:
             mover_start=MOVER_START,
             mover_step_every=MOVER_STEP_EVERY,
             mover_turn_hazard=MOVER_TURN_HAZARD,
+        )
+    if stage == "e5":
+        return dataclasses.replace(
+            apply_world_stage(config, "e4"),
+            block_cells=E5_BLOCK_CELLS,
         )
     raise ValueError(
         f"unknown world stage {stage!r}; defined stages: {WORLD_STAGES}"

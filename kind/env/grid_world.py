@@ -192,6 +192,17 @@ class GridWorldConfig:
     mover_step_every: int = 2
     mover_turn_hazard: float = 0.02
     mover_start: tuple[int, int] = (0, 7)
+    # World v3 E5 (synthesis DP1/DP2, ratified 2026-08-14): pushable
+    # blocks — WALL-vocabulary cells with **no self-motion**. Pushed by
+    # Io (same displacement rule as the mover: into EMPTY only,
+    # otherwise the block blocks like the wall it renders as), a block
+    # *stays* where it lands: the world's configuration becomes
+    # something Io authors. The mover cannot push blocks (its moves
+    # require EMPTY — blocks are walls to it); Io is the only author.
+    # No decay, no new actions, no new observation channels, no RNG
+    # stream (blocks are fully deterministic). Empty tuple = no blocks
+    # (byte-identical legacy behavior).
+    block_cells: tuple[tuple[int, int], ...] = ()
     initial_regrowth_p: float = 0.01
     drift_magnitude_per_step: float = 1e-5
     drift_p_min: float = 0.001
@@ -328,6 +339,10 @@ class GridState:
     # builder-facing ground truth only, never observation-facing (prereg §4
     # opacity: no marker anywhere in the observation or sensed pipeline).
     energy_fault_active: bool = False
+    # World v3 E5: current block cells — mirror/telemetry ground truth
+    # (Io sees only the WALL values they render as). Empty when the
+    # world has no blocks.
+    block_positions: tuple[tuple[int, int], ...] = ()
 
 
 # ---- the environment ------------------------------------------------------
@@ -453,6 +468,13 @@ class GridWorld:
             tuple[tuple[int, int], tuple[int, int]] | None
         ) = None
 
+        # World v3 E5 block state. Empty until placed by reset when
+        # ``block_cells`` is non-empty. Deterministic — no RNG stream.
+        self._block_positions: tuple[tuple[int, int], ...] = ()
+        self._last_block_displacement: (
+            tuple[tuple[int, int], tuple[int, int]] | None
+        ) = None
+
     # ---- public API -------------------------------------------------------
 
     def reset(self) -> EnvStep:
@@ -501,6 +523,7 @@ class GridWorld:
             )
 
         self._last_mover_displacement = None
+        self._last_block_displacement = None
         consumed_resource = self._apply_action(action)
         # The fault process advances before the energy update so the step's
         # decay is drawn under the step's own fault state (onset steps decay
@@ -604,8 +627,28 @@ class GridWorld:
         self,
     ) -> tuple[tuple[int, int], tuple[int, int]] | None:
         """The mover's Io-caused ``(from, to)`` displacement on the most
-        recent step, else ``None``. Mirror-side ground truth only."""
+        recent completed ``step()``. World v3 E5 blocks expose the same
+        surface via ``last_block_displacement``."""
         return self._last_mover_displacement
+
+    @property
+    def block_positions(self) -> tuple[tuple[int, int], ...]:
+        """The blocks' current cells (empty when the world has no
+        blocks). Mirror-side ground truth; Io sees only the WALL values
+        they render as."""
+        return self._block_positions
+
+    @property
+    def last_block_displacement(
+        self,
+    ) -> tuple[tuple[int, int], tuple[int, int]] | None:
+        """A block's Io-caused ``(from, to)`` displacement on the most
+        recent completed ``step()``, else ``None``. Like mover contact
+        displacements, block pushes are deliberately *not* environment
+        events (Io-caused; WorldEvent.source has no self class) — ground
+        truth is this surface, ``GridState.block_positions``, and the
+        run-script ``block_pos.jsonl`` sidecar."""
+        return self._last_block_displacement
 
     @property
     def fault_active(self) -> bool:
@@ -633,6 +676,7 @@ class GridWorld:
             regrowth_p=self._regrowth_p,
             true_energy=self._normalize_energy(self._energy),
             energy_fault_active=self._fault_active,
+            block_positions=self._block_positions,
         )
 
     # ---- validation -------------------------------------------------------
@@ -770,6 +814,35 @@ class GridWorld:
                     f"mover_turn_hazard must be in [0, 1], got "
                     f"{c.mover_turn_hazard}"
                 )
+        if c.block_cells:
+            seen_blocks: set[tuple[int, int]] = set()
+            for cell in c.block_cells:
+                br_, bc_ = cell
+                if not (0 <= br_ < c.grid_size and 0 <= bc_ < c.grid_size):
+                    raise ValueError(
+                        f"block cell {cell} is out of bounds for "
+                        f"grid_size {c.grid_size}"
+                    )
+                if cell in c.walls:
+                    raise ValueError(
+                        f"block cell {cell} collides with a wall"
+                    )
+                if cell in seen_blocks:
+                    raise ValueError(f"duplicate block cell {cell}")
+                seen_blocks.add(cell)
+                if c.mover_enabled and cell == c.mover_start:
+                    raise ValueError(
+                        f"block cell {cell} collides with mover_start"
+                    )
+                if c.start_cell is not None and cell == c.start_cell:
+                    raise ValueError(
+                        f"block cell {cell} collides with the agent's "
+                        f"start_cell"
+                    )
+                if c.bloom_cell is not None and cell == c.bloom_cell:
+                    raise ValueError(
+                        f"block cell {cell} collides with the bloom cell"
+                    )
         if c.bloom_cell is not None:
             br, bc = c.bloom_cell
             if not (0 <= br < c.grid_size and 0 <= bc < c.grid_size):
@@ -890,10 +963,15 @@ class GridWorld:
         mover_cell: tuple[int, int] | None = (
             self.config.mover_start if self.config.mover_enabled else None
         )
+        block_set = set(self.config.block_cells)
         if self.config.start_cell is None:
             r = int(self._regrowth_rng.integers(0, self.config.grid_size))
             c = int(self._regrowth_rng.integers(0, self.config.grid_size))
-            while (r, c) in wall_set or (r, c) == mover_cell:
+            while (
+                (r, c) in wall_set
+                or (r, c) == mover_cell
+                or (r, c) in block_set
+            ):
                 r = int(self._regrowth_rng.integers(0, self.config.grid_size))
                 c = int(self._regrowth_rng.integers(0, self.config.grid_size))
             self._agent_pos = (r, c)
@@ -916,6 +994,16 @@ class GridWorld:
             self._last_mover_step = None
             self._last_mover_displacement = None
 
+        # World v3 E5: place (or re-place) the blocks at their spawn
+        # cells; each occupies its cell as the WALL it renders as.
+        # Block state is world state and the world is being resampled —
+        # within a session the layout persists (nothing but Io's pushes
+        # moves it); a fresh session's fresh world re-spawns it.
+        self._block_positions = tuple(self.config.block_cells)
+        self._last_block_displacement = None
+        for block_cell in self._block_positions:
+            self._grid[block_cell] = CellType.WALL.value
+
         # Sample initial-resource cells from non-wall, non-agent cells.
         # Using an exact count rather than per-cell Bernoulli at p — the
         # synthesis's "regrowth distribution at the current p" wording is
@@ -930,6 +1018,8 @@ class GridWorld:
                 if (r, c) in wall_set:
                     continue
                 if (r, c) == mover_cell:
+                    continue
+                if (r, c) in block_set:
                     continue
                 available.append((r, c))
 
@@ -969,6 +1059,36 @@ class GridWorld:
         gs = self.config.grid_size
         if not (0 <= new_r < gs and 0 <= new_c < gs):
             return False
+        # World v3 E5: moving into a block displaces it one cell in the
+        # push direction if that cell is EMPTY; otherwise the block
+        # blocks exactly like the wall it renders as (identical rule to
+        # the mover's displacement below — the ratified synthesis's
+        # "push mechanics identical to the mover's"). Unlike the mover
+        # it then STAYS: the layout is Io's own authorship. Checked
+        # before the wall test — a block *is* a WALL value in the grid;
+        # block and mover cells are always disjoint (a push into the
+        # mover's cell fails the EMPTY test, as does the mover's own
+        # move into a block).
+        if (new_r, new_c) in self._block_positions:
+            push_r, push_c = new_r + dr, new_c + dc
+            if (
+                0 <= push_r < gs
+                and 0 <= push_c < gs
+                and self._grid[push_r, push_c] == CellType.EMPTY.value
+            ):
+                self._grid[push_r, push_c] = CellType.WALL.value
+                self._grid[new_r, new_c] = CellType.EMPTY.value
+                self._last_block_displacement = (
+                    (new_r, new_c),
+                    (push_r, push_c),
+                )
+                self._block_positions = tuple(
+                    (push_r, push_c) if cell == (new_r, new_c) else cell
+                    for cell in self._block_positions
+                )
+                # Io proceeds into the vacated cell below.
+            else:
+                return False
         # World v2 E4: moving into the mover displaces it one cell in
         # the push direction if that cell is free; otherwise the mover
         # blocks exactly like the wall it renders as. Checked before the

@@ -130,6 +130,40 @@ def dream_sessions(telemetry_dir: Path) -> str:
     return f"{len(sessions)} dream sessions (last wake at t={last_wake})"
 
 
+def reachable_set_note(run_dir: Path) -> str:
+    """World v3 §7 monitor (synthesis S3): live reachable-set size.
+
+    Reads the current ``window/live_state.json`` snapshot (builder-eye,
+    written every waking step) and counts the 4-connected non-WALL
+    region around Io. Self-walling — Io constructing its own
+    confinement — is the e5 era's new pathology class; the tripwire is
+    the pre-registered conjunction (shrinking reachable set + rising
+    single-cell occupancy), not this number alone.
+    """
+    import json
+
+    live_path = run_dir / "window" / "live_state.json"
+    try:
+        snapshot = json.loads(live_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "no live_state snapshot — run not writing the window view"
+    try:
+        import numpy as np
+
+        from kind.env.reachability import reachable_set_size
+
+        grid = np.asarray(snapshot["grid"], dtype=np.uint8)
+        agent_pos = tuple(int(v) for v in snapshot["agent_pos"])
+        size = reachable_set_size(grid, (agent_pos[0], agent_pos[1]))
+    except (KeyError, ValueError) as exc:
+        return f"unreadable snapshot ({exc})"
+    total = int(grid.size)
+    return (
+        f"{size}/{total} cells reachable at t={snapshot.get('env_step')} "
+        f"(live snapshot; walls+mover+blocks all block)"
+    )
+
+
 def main(run_dir: Path) -> int:
     telemetry = run_dir / "telemetry"
     data = _load_columns(
@@ -150,6 +184,7 @@ def main(run_dir: Path) -> int:
     print(f"[{'FLAG' if pe_flag else 'ok  '}] PE runaway: {pe_note}")
     print(f"[info] torpor: {torpor_hint(data['action_t'])}")
     print(f"[info] dreams: {dream_sessions(telemetry)}")
+    print(f"[info] reachable set: {reachable_set_note(run_dir)}")
     if entropy_flag or pe_flag:
         print(
             "→ single-vantage anomaly: heighten monitoring; corroborate "
