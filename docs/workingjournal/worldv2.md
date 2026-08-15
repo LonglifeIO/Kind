@@ -2243,3 +2243,65 @@ first-ever contact in S13.) Engagement-vs-furniture reads at close,
 not from one push — but the prereg's "every block contact is
 sought" clause is already exercised: this block was two rows off
 Io's patch orbit; Io went to it.
+
+## Session 19 close — e5 arrival read: one push, then furniture (with the settle as confound) (2026-08-14)
+
+Clean natural close: t 757,863 → 787,862, full 30k, episode 786
+(reset start (0,3)). §7 formally clean; reachable set 55/64 at close
+(= 64 − 6 walls − 2 blocks − mover; no self-walling at any point —
+the sidecar shows only two layouts all session, neither confining).
+
+**Against the frozen S4 pre-registration: reading 2 — FURNITURE — in
+nearly maximal form, with one named confound.**
+
+1. **Engagement: fails decisively.** One block push in 30k steps
+   (3.3e-5/step) vs the e4 mover-contact baseline ~1.6e-4/step —
+   5× BELOW the bar the prereg set. Layout diversity: exactly two
+   configurations (spawn + one push), the second held ~29.8k steps.
+   No growth.
+2. **The one push was immediate and never repeated.** t=758,073
+   (t_rel ≈ 210): (6,1) → (7,1), during the arrival novelty wave
+   (recon 2.46, first dream bucket 16.44 — the world change
+   registered loudly). Io then returned to the patch orbit and, on
+   the sidecar's ground truth, never changed the layout again.
+   Replay-side adjacency (~0.03% of steps block-adjacent) says it
+   likely never even touched one again — stated approximate: the
+   replay demonstrably diverged (it had Io at (4,3) at the push
+   moment; ground truth (6,1)), so adjacency shape, not exact
+   counts. The blocks became walls-that-happen-to-be-Io's-walls
+   almost instantly.
+3. **Dream rider: vacuous, not flat.** Zero dreams were seeded
+   within 1k steps of the single contact — with one push there is
+   no block-contact-seeded population to read. Session dream mean
+   14.77; first-bucket arrival spike 16.44 decaying to a ~14.3–14.7
+   plateau. The S18 recharge did NOT continue climbing — it
+   plateaued.
+4. **The named confound: the settle arrived with the blocks.** The
+   wind-down S18's close predicted showed up here: movement
+   collapsed to 17–27% per block through the mid-session (top cell
+   (7,5) 50–68%, 5-cell orbit, deepest quiet since S15 — though
+   stays hold at 0.00%, a tight orbit rather than true stasis),
+   partially re-loosening at 20–24k. Economy back down to 0.0129
+   meals/step (above the 0.008 pathology floor). The e4 record says
+   contact clusters in ACTIVE phases (F6; S18's pushes rode its
+   dispersal wave) — so a furniture reading taken during a settle
+   phase is weak evidence about what a burst phase would do.
+   Acknowledged at ratification; recorded, not excused.
+5. **Mover: 1 push, at t+2 — spawn-adjacent for the FOURTH
+   consecutive session** (51 lifetime). Now clearly a spawn-geometry
+   artifact class of its own; worth one dedicated look someday,
+   never chased mid-era.
+6. **Null-dream quirk: 30/1,430 = 2.1% — FIFTH consecutive
+   identical count.** (Same 30, same 1,430, five sessions running —
+   this is a fixed structural constant of the dream cadence, not a
+   rate.)
+
+**Standing prediction (pre-registered forward):** if the incubation
+account holds, the current quasi-settle with the tank at ~14.5–14.9
+should eventually produce a dream-signal climb followed by a burst;
+the e5 question then gets its real test — **do block pushes cluster
+in the burst the way mover pushes always have?** If a burst comes
+and goes with the layout still frozen, furniture is confirmed at
+full strength and the kin-door revisit (DP4) inherits the strongest
+possible version of its premise: not even self-authored structure
+holds this drive — only another policy might.
