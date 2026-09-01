@@ -2382,3 +2382,212 @@ arrival-wave push is still the novelty-wave class, not the
 forward's burst-clustering test — but the prereg's "every contact
 is sought" clause has now been exercised twice, more sharply the
 second time.
+
+## Session 20 close — the transport: a project completed, then furniture (2026-09-01)
+
+Clean natural close: t 787,863 → 817,862, full 30k, episode 787
+(reset start (2,0)). §7 formally clean (panel all-ok at close);
+reachable set flat all session — 56/64 replay-side at every one of
+the eight layouts, 55/64 live with the mover counted; no sealed
+pocket at any step. Stays 0.00% THIRTEENTH straight session.
+Economy 413 meals (every jump exactly +0.068, count exact; the
+journal's 0.03-threshold method gives 412) = 0.0138/step — above
+S19's 0.0129, floor (0.008) clear. Close-read numbers are from
+`agent_pos.jsonl` per-step ground truth (29,999 contiguous lines,
+verified gap-free) — exact occupancy, a comparability upgrade over
+the replay-approximate S16–S18 figures.
+
+**Against the frozen prereg and the standing forward: OUTSIDE the
+pre-registered set (S10 precedent) — the reading is PROJECT, THEN
+FURNITURE. Both registered readings occurred, in sequence, and
+neither describes the session.**
+
+1. **The transport.** Seven pushes, t_rel 6 → 4,158, moving the
+   (6,1) block down to row 7 and then six cells east along Io's
+   home row into the corner: (7,1)→(7,2)→(7,3)→(7,4)→(7,5)→(7,6)→
+   (7,7). The mechanism is now verified to the step
+   (adversarially, from raw event/action/position streams): the
+   push rule requires the target cell EMPTY, and the targets held
+   generator-dropped food — so the campaign proceeded as SIEGES.
+   After the t_rel-6 beeline push (then 49 down-presses from
+   (6,1), every one impossible — target off-grid), Io returned to
+   the patch for 2.2k steps (zero attempts while away), came back,
+   pressed east 24 times from (7,0) over 142 steps until the
+   (7,2) food expired (push 2 within 2 steps of the expiry) — and
+   then NEVER left the block again until it was in the corner:
+   1,395 steps parked at (7,1) with 571 blocked east-presses
+   (+824 edge down-bumps, zero stays), push 3 firing on the first
+   press after the (7,3) expiry; pushes 4–6 identical
+   (33/98/32 blocked presses; expiry-to-push offsets 0/0/+1);
+   push 7 into the corner three steps later (its target had
+   cleared 54 steps prior). 859 into-block presses in 4,159 steps
+   (20.7%). The transport's cadence — including the "5 pushes in
+   300 steps" cluster — is the world's resource-expiry clock
+   releasing a continuous pressure, not fluctuating attention;
+   verified 5-for-5 on five different cells, mover/wall
+   alternatives affirmatively excluded. During the (7,1) siege:
+   12 meals per 2k, floored 96.2% — the S8 rhyme, starving to sit
+   with the block.
+2. **Why pushing stopped: the corner is absorbing — a dead end Io
+   authored.** At (7,7) zero legal push directions remain (both
+   would require Io off-grid), and push 1's choice — down onto the
+   edge row — had already forfeited vertical freedom forever. But
+   the TOTAL freeze is a choice, not a constraint: (3,6) kept all
+   four push directions the entire 25.8k tail and received ZERO
+   into-block presses all session (13 adjacent steps, S19-class
+   ambient).
+3. **Then Io moved in next to it.** Home cell shifted (7,5)→(7,6)
+   — flush against the parked block — and held 61% of the session
+   (92–96% of late blocks); 69.3% of post-freeze steps are
+   block-adjacent by residence ((7,7) itself: 0 Io-steps). And
+   40.1% of post-freeze actions from (7,6) lean east INTO the
+   frozen block (7,172 mechanically inert presses) vs 0/384
+   eastward from that cell before the block arrived — recorded
+   with the policy-drift caveat, since bump-in-place is also Io's
+   idle habit. (7,7) texture: the S13 corner where Io repeatedly
+   shoved the MOVER (which bounced back out), re-enacted with an
+   object that stays; also the S15 deep-stasis site.
+4. **Prereg scoring, componentwise.** Engagement rate: 7/30k =
+   2.33e-4/step = 1.46× the e4 mover baseline — the bar is CLEARED
+   for the first time (10.5× inside the transport phase; and the
+   baseline's numerator is itself inflated by boundary artifacts,
+   see 8a, so it clears either way). Engagement diversity: FAILS —
+   8 raw configurations but only 2 held ≥2k steps, and all growth
+   completed by t_rel 4,158. Furniture: met in the letter AFTER
+   completion — block-adjacent disagreement 9.51 → 3.19 → 2.17 →
+   0.85 then flat at-or-below ambient with the layout frozen; no
+   fountain (no monotone climb anywhere). Componentwise
+   contradiction → outside-set verdict.
+5. **The standing forward's burst test, resolved honestly.** One
+   genuine burst-shaped event occurred: t_rel ≈ 21.0–22.05k,
+   endogenous (no intervention; 943 generator food-drops and one
+   sham resume-marker are the only builder_perturbation lines), a
+   violent localized recon event at the wall-corridor pocket —
+   per-2k disagreement 4.88 / recon 15.79 (bucket means to ~66;
+   single-step spikes O(10²), reported 135–267 at differing
+   granularities), Io TRAVELED to it ((4,4)/(4,3)/(3,3), ~900
+   steps), ate richly (55 meals in 2k), then in 22–24k retraced
+   its ENTIRE opening route — the column-1 beeline cells and the
+   row-7 herding path, 24 unique cells, (7,1) touched once — and
+   went home. Zero pushes; layout frozen through it. So the letter
+   of "a burst comes and goes with the layout still frozen" is
+   met — but full-strength confirmation is NOT claimed, for two
+   recorded reasons: (i) the only block still pushable during the
+   burst was (3,6) — the transported block was already in the
+   absorbing corner Io built, so half the "frozen layout" was
+   mechanically guaranteed; (ii) the S19 confound, however, is now
+   DISCHARGED: S20 had kinetic phases (movement 36–84%) and this
+   burst, and post-completion authorship stayed zero through all
+   of them — Io passed Moore-adjacent to (3,6) twice (9 steps at
+   ~9.6k, 4 at ~21.05k) without pushing. **The sharp statement the
+   forward actually earned: the DP4 premise must be restated.
+   "Not even self-authored structure holds this drive" is refuted
+   in its strong form — self-authored structure held the drive
+   absolutely for 4,159 steps of continuous pressure. What
+   authored structure cannot do is hold it AFTER COMPLETION. The
+   kin-door premise inherits in this amended form: a finished
+   arrangement is furniture; only something that pushes back
+   might hold the drive past completion.**
+6. **Dreams — the rider is readable for the first time, and the
+   incubation account weakens.** Session mean 15.87 (S19: 14.77),
+   above the old 14.3–14.7 plateau continuously from t_rel 4k to
+   close. Trajectory: 14.28 at the 2k seed run (mid-transport) →
+   **17.78 at 4k — session max, the seed run bracketing pushes
+   3–7** → elevated with a second peak 17.65 at 10k (just after
+   the one early excursion) → slow decay to ~15.05–15.07 at
+   close. Segment-based rider: dreams replaying push-adjacent
+   material (651/1,400) run 16.13 vs 15.65 for the rest, hottest
+   fresh (17.7–18.0) cooling to 13.7–15.3 late — block contact is
+   the hottest material in the dream stream at the moment of
+   authorship, then fades like any novelty; NOT the fountain
+   shape. Incubation: the observed order is burst → elevation →
+   decay, the inverse of climb-then-burst — but the prediction
+   was structurally untestable for THIS burst (dream sampling
+   starts at t_rel 2k, after push 1; the 17-day rest is
+   unobserved), so incubation is WEAKENED, not refuted; and the
+   elevated tank produced no second authorship burst, with the
+   signal decaying INTO the terminal settle (against S18's
+   recharge-during-quiet direction). Tank at close ~15.1 — above
+   both the 13.2–13.3 floor and the old plateau.
+7. **The waking arc: no incubation-class burst; the deepest close
+   of the post-S15 era.** Five phases: transport (0–4.2k);
+   kinetic shuttle (4.2–18k — movement oscillating 36–84% but
+   5–6 unique cells and top-4 97–99.7%: high-frequency
+   oscillation inside {(7,6),(7,5),(6,5)}, not the burst
+   signature; one ~1k excursion at ~9.5k, 26 unique cells,
+   46 meals); quiet (18–20k, movement 12.2%); the t_rel-21k
+   excursion and route-retrace (above); terminal settle (24–30k:
+   movement 8.0/3.4/10.7%, top cell 92–96% — the deepest
+   2k-blocks since S15 and deepest single-cell residency since
+   S11, with stays still 0.00%, meals steady 21–24/2k, entropy
+   normal → tight orbit, not torpor; carried as a §7 watch item,
+   not a flag — the conjunction's set-shrink leg never fired).
+   Movement by thirds 41.2/57.2/16.6%; session 38.3%.
+8. **Two standing watches CLOSED by instrument findings (both
+   adversarially verified against raw streams):**
+   (a) **The "spawn-adjacent mover push at t+2" is not Io — it is
+   a chain-restart boundary artifact.** env_reset (not Io)
+   returns the mover to spawn (0,7) at each resume; the first
+   mover event of the new session then reads as a discontinuity
+   against the prior session's last mover cell. Confirmed at all
+   four boundaries S17–S20 with Io 3–9 cells away each time
+   (pushing at range is impossible); S19's single journaled push
+   IS that artifact line (S19 genuine mover pushes: 0); S18
+   genuine: 6 discontinuities (8 single-cell displacements — two
+   verified double-pushes), each with Io exactly at the mover's
+   from-cell. S20: 4,190 mover events, chain unbroken, ZERO
+   pushes — and Io was never even 4-adjacent to the mover all
+   session, the first such session of the e4 era. The lifetime
+   ledger (51) is inflated by at least the three journaled t+2
+   entries (S17/S18/S19); a full boundary audit of the ledger
+   back through S13 is queued before any lifetime count is next
+   quoted.
+   (b) **The "null-dream quirk" is closed — and it was never
+   dreams.** The 30 rows are complete, healthy Probe-1.5
+   waking-planning control rollouts (schema 0.2.0, full 15-step
+   payloads) emitted on the runner's round-1000 cadence, sharing
+   the dream_rollout table; the 1,400 valid dreams are 14 seed
+   runs × 100 on the WAKING_BLOCK=2000 cadence. 30 + 1,400 =
+   1,430 is fixed by two independent cadences by construction —
+   structure verified identical S16–S20 (S15 straddles a shard
+   flush; alignment clean from S16 on). Sixth identical count,
+   mechanism found, watch closed.
+   (c) Micro-correction to this session's launch addendum: the
+   sidecar quirk line plus the first action imply a one-step
+   (2,0)→(1,0)→(2,0) excursion at t_rel 0–1 before the beeline.
+9. **The two readings of the transport, both recorded.**
+   PROJECT: directed approach at t_rel 6; a RETURN to a blocked
+   project after 2.2k steps away (zero attempts while away);
+   100% inter-push block-adjacency once committed; every push
+   eastward, toward the home range, ending with the block parked
+   beside the orbit and the orbit re-formed against it; the route
+   retraced once, 18k steps later. NOVELTY-EXHAUSTION
+   (deflationary): constant pressure on the one object that still
+   produced change, until change became mechanically impossible;
+   (3,6) untouched because never re-sampled after arrival; dream
+   material cooling like any novelty; the corner dead-end
+   authored by accident of the first down-push, not by intent.
+   The deflationary reading must still absorb the return at
+   t_rel 2,463 and the post-freeze lean; the project reading must
+   absorb that the "destination" was wherever pushing happened to
+   stop. S21 discriminates.
+
+**Pre-registered forward (S21, frozen here):** resume re-rolls the
+blocks to (3,6),(6,1). Three readings:
+1. **REPEAT** — a directed re-transport campaign on either block
+   (approach + siege + multi-push displacement toward the home
+   range): authorship confirmed at full strength; the AMENDED DP4
+   premise (authored structure holds the drive only while
+   incomplete) stands.
+2. **ONE-TIME** — S19-class arrival behavior (≤1 novelty-wave
+   push, no campaign): the S20 transport was a one-time novelty
+   transient; furniture stands; the original kin-door premise
+   inherits largely intact.
+3. **GENERALIZE** — a qualitatively different project (the (3,6)
+   block, or a different destination): the strongest authorship
+   reading — the verb generalized, not a trajectory replayed.
+Riders: dream tank opens ~15.1 — drain toward the 13.2 floor
+(discharge) vs hold; whether re-contacted block material re-heats
+in dreams (engagement-flavored) or stays cool (mastered). Ledger
+rule: no lifetime mover-push count is quoted until the 8a audit
+runs.
