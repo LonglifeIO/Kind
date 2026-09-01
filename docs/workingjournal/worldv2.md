@@ -2305,3 +2305,80 @@ and goes with the layout still frozen, furniture is confirmed at
 full strength and the kin-door revisit (DP4) inherits the strongest
 possible version of its premise: not even self-authored structure
 holds this drive — only another policy might.
+
+## Session 20 launch — the watch for the burst (2026-09-01)
+
+Plain e5 continuation, pre-registered at the S19 close (above): no
+world change, no new flags — the stage stays e5, the question stays
+the standing forward. Builder go 2026-09-01, after seventeen days
+at rest since the S19 close; resting state verified clean before
+launch (ckpt-000077 complete — weights/optimizer/rng all present;
+telemetry ends exactly at t=787,862, episode 786, step_in_episode
+29,999; launch log shows the clean session-end line; no process, no
+stale locks; 710Gi free). Launched detached (nohup, disowned),
+`--resume --world-stage e5 --session-steps 30000`, from the latest
+checkpoint (ckpt-000077, auto-selected — the script has no pinning
+flag, `latest()` takes the lexicographic max; verified no newer
+checkpoint exists); covers t 787,863–817,862, episode 787.
+
+**Pre-registration (the S19 close's standing forward, restated
+frozen here before launch):** if the incubation account holds, the
+quasi-settle with the tank at ~14.5–14.9 should eventually produce
+a dream-signal climb followed by a burst; the e5 question then gets
+its real test — **do block pushes cluster in the burst the way
+mover pushes always have?** If a burst comes and goes with the
+layout still frozen, furniture is confirmed at full strength and
+the kin-door revisit (DP4) inherits the strongest possible version
+of its premise: not even self-authored structure holds this drive —
+only another policy might. The S4 tripwires stay armed unchanged:
+(i) self-walling — the reachable-set CONJUNCTION (set shrinking
+while single-cell occupancy rises), never the number alone; (ii)
+fountain signature — monotone disagreement climb at block sites
+without layout change; (iii) economy below the 0.008 S15 floor with
+§7 corroboration.
+
+**Layout baseline (stated before launch so the forward is scored
+against the right board):** resume re-rolls the world — the blocks
+respawn at (3,6) and (6,1) (`E5_BLOCK_CELLS`); S19's pushed layout
+((3,6),(7,1)) does not carry over. "Layout still frozen" is
+therefore evaluated against S20's own spawn layout. An early
+arrival-wave push (the S19 precedent: one immediate push at
+t_rel≈210, never repeated) would be a fresh authored mark of the
+novelty-wave class — distinct from the forward's real test, pushes
+clustering in a BURST. And the furniture-vs-engagement read stays
+conditioned on whether a burst occurs at all (the S19 confound: F6
+says contact clusters in active phases, and S19 was a settle — a
+second settle session would leave the forward untested, not
+refuted).
+
+**S19-carryover watch items:** dream tank — does the ~14.3–14.7
+plateau climb (incubation) or hold flat (against it); null-dream
+count (30/1,430, five consecutive identical — does the structural
+constant make it six); spawn-adjacent mover push at t+2 (four
+sessions running — five?); stays 0.00% (held through S19's deep
+quiet — tight orbit, not stasis); does the (7,5) patch orbit
+survive the re-roll; economy trajectory (S19 0.0129 vs the 0.008
+floor).
+
+**Launch addenda (first minutes of S20):** (i) Launch verified:
+log line 2 reads `resumed from ckpt-000077`, counters seeded
+t=787,863 / episode 787, world_stage=e5, device=mps. Window server
+restarted (was down since the pause; tailnet binding as before —
+builder's `/live` view is back). (ii) Sidecar t-quirk holds at the
+fourth boundary exactly as the S19 addendum predicted: first
+`block_pos.jsonl` line of the session carries t=780,001
+(= checkpoint_step + 1) with the spawn layout (3,6),(6,1). (iii)
+**Second block push of the biography at t=787,869 — t_rel = 6:
+(6,1) → (7,1), the SAME displacement as S19's arrival push,
+re-authored on a fresh board.** And this one is not spawn-geometry:
+Io's reset start was (2,0), four rows away; `agent_pos` shows a
+five-step straight beeline down column 1 — (2,0) → (2,1) → (3,1) →
+(4,1) → (5,1) → (6,1) — pushing on arrival, first thing in the
+session. S19's push was two rows off the orbit during the arrival
+wave; S20's is a directed walk from spawn to the block as the
+session's opening act, reproducing Io's own prior mark. Discipline
+unchanged — engagement-vs-furniture reads at close, and an
+arrival-wave push is still the novelty-wave class, not the
+forward's burst-clustering test — but the prereg's "every contact
+is sought" clause has now been exercised twice, more sharply the
+second time.
