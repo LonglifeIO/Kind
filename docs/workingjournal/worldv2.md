@@ -2591,3 +2591,202 @@ Riders: dream tank opens ~15.1 — drain toward the 13.2 floor
 in dreams (engagement-flavored) or stays cool (mastered). Ledger
 rule: no lifetime mover-push count is quoted until the 8a audit
 runs.
+
+## Session 20 mechanism audit — the transport deflates to gait + one real anomaly (2026-09-01)
+
+Builder-prompted the same day as the close ("may not be
+intentional — can we confirm?"). Three deflationary accounts of
+the transport were tested against raw streams by independent
+passes, each instructed to refute the published reading: (A)
+generic obstacle-bumping, (B) bulldozed commute, (C) pure stuck
+loop. Verdict up front: **the published "directed transport"
+reading is DOWNGRADED — route, direction, terminus, cadence, and
+the pressing itself are Io's home-gait mechanics against an
+obstacle — while all three purely mechanical accounts fail as
+complete explanations. What survives is one narrow, costly,
+unexplained behavior: station-keeping at the block face against a
+known feeding alternative.** This entry supersedes the specific
+close-entry claims listed in §3 below. Entry format note: findings
+below are operational; interpretation is confined to the labeled
+gloss at the end (two-register convention, proposed for
+ratification alongside this entry).
+
+**1. Findings that deflate the close reading.**
+- **Pressing carries no block-directed signal.** Press-into-
+  obstacle rates are indistinguishable across obstacle kinds
+  within a session: S20 pre-freeze block 0.4467 vs board edge
+  0.4457 per adjacent-opportunity step; the sharpest comparison,
+  east-pressing at the block's west face (764/1,823 = 0.419), sits
+  AT Io's habitual row-7 down-into-edge rate (1,655/3,717 =
+  0.445). During the 1,395-step (7,1) siege Io pressed the
+  immovable edge MORE than the block (824 down vs 571 east).
+  61.7% of ALL S20 steps are presses into impassables. S18's
+  into-mover rate (0.200) likewise matched S18's own edge rate
+  (0.162). Rates cluster by session and dwell site, not by
+  obstacle kind.
+- **The east/down alternation is Io's walking gait.** The siege's
+  quasi-period-2 east/down structure (lag-1 autocorr −0.58) is the
+  same right-down-right-down gait observed UNBLOCKED at t_rel
+  56–66 crossing row 7 homeward. The siege is the ordinary gait
+  running against a movable obstacle; the 824 down-presses are
+  gait, not engagement — the close entry's "859 into-block
+  presses" framing is withdrawn (the east component, 571+288
+  elsewhere, is the only block-contact pressure, and its RATE is
+  habitual).
+- **Expiry-lock timing is intent-neutral.** Continuous pressing at
+  the observed rates mechanically guarantees a push 0–2 frames
+  after the target clears; n=5 cannot separate informed striking
+  from pressure-plus-clearance. policy_entropy = 0.0000 at all 7
+  push steps; no terminal press-rate acceleration approaching any
+  release (east per-100 drifts 21–57% with no ramp at expiry).
+- **The route, terminus, and final pushes are home-program
+  mechanics.** Io's eastbound lane is row 7 (S19+S20: row-7 east
+  moves outnumber row-6 east moves ~2,465:4) and home is east —
+  the pushes' direction per se carries little evidence. Once the
+  block entered the orbit cells, routine east-dithering shunts any
+  object into (7,7): pushes 6–7 are ordinary home-orbit moves; the
+  corner terminus requires no destination choice. The opening
+  descent is equally the descent leg of the homeward program with
+  the block on the path (the block entered the 7×7 view only at
+  move 3 of 5 — "beeline to the block" is not established).
+- **The post-freeze "lean into its block" is the tic.** Post-freeze
+  press rate into the cornered block 0.4006 vs edge 0.3563 — the
+  40.1% right-lean from (7,6) is Io's parked bumping, not
+  attention to the authored object.
+- **The (3,6) contrast was mis-framed.** Io had only 2
+  four-adjacent opportunity-steps at (3,6) all session (0 presses,
+  both steps moving away) — "never pushed the other block" is
+  opportunity starvation. The real block-vs-block asymmetry is
+  adjacency itself: 1,923 opportunity-steps at the marching block
+  vs 2 at (3,6) — a fact about where Io stationed, not about press
+  discipline.
+- **The 22k "retrace of the opening route" was a harvest sweep.**
+  Every consecutive cell of both route-walks (t_rel ~9.6k and
+  ~22.0k) held a verified live resource (per-cell add/regrow/expiry
+  timelines) and Io ate one exact-quantum meal per step (13
+  straight, then 9 straight). Its value as authorship residue is
+  withdrawn.
+- **Close-entry numeric correction:** the pinned siege phase
+  (t_rel 2463–3858) contained ZERO meals at true_energy 0.000 for
+  100% of steps — a total fast. The close entry's "12 meals per 2k
+  while floored 96.2%" mixed the siege with the surrounding block;
+  the fast is deeper than published.
+- **New counter-finding — the ghost siege.** t_rel 10,629–10,732:
+  Io marched the row-6 route to (7,1) with NO block present, ate,
+  then pressed down into the edge 104 consecutive times (zero east
+  presses; a resource one step west at (7,0) expired uneaten
+  mid-stay). (7,1) had become a second home-like perch — post-hoc
+  support for reading part of the siege's D-component, and some of
+  the station time, as perch habit.
+
+**2. Findings that refute the mechanical accounts as complete.**
+- **Pure stuck loop: refuted.** The siege is an active-policy
+  state (policy_entropy median 0.0024 / mean 0.1125 vs S15 deep
+  stasis 0.0000 across 4,862 consecutive identical actions —
+  three-plus orders apart; the siege also runs HOTTER than both
+  terminal settles). The "loop" was entered twice from 4+ cells
+  away, re-targeted five times as the face advanced, exited and
+  re-entered mid-siege — the post-push-3 provisioning loop
+  harvested exactly the 3 accumulated food cells beside the
+  station in 4 moves and was back pressing at the NEW face within
+  1 step — and dissolved seamlessly into the home orbit after
+  push 7 with no exit transition to explain.
+- **Bulldozed commute: fails its own killer discriminator.** The
+  6-step row-6 detour home was continuously open (mover verified
+  in rows 0–2 for the whole transport window), food-bearing
+  ((6,5) held food all 1,395 siege steps; total ~4–5 meals on or
+  beside the route), and in Io's demonstrated repertoire — it
+  executed precisely that bypass around this very block at t_rel
+  55–62 (home in 6 steps, eating en route) and again at
+  3,859–3,878. Across 1,537 consecutive blocked steps at
+  true_energy 0.000, Io emitted zero detour-initiating actions
+  (0 up, 0 west at (7,1); 0 up at (7,0)). A commuter with a known
+  bypass, zero energy, and food off-lane does not hold the lane.
+  The account also cannot generate the decisive engagement: it
+  began with Io leaving home (2,210 steps inside the 7-cell orbit)
+  and marching the detour route westward TO the block.
+- **Observability (code-read):** Io sees a 7×7 egocentric window;
+  RESOURCE renders 255 vs EMPTY 128, and the cell beyond the block
+  is within view from the face — informed waiting was
+  representable in principle (no evidence it was used; see
+  timing). **Blocks render pixel-identical to interior walls and
+  the mover (all 0)** — movability is not perceptually available;
+  everything Io can "know" about blocks comes from interaction
+  history. During the one 96-step window when the push target was
+  empty pre-push-2, both it and the block were repeatedly in view
+  from the orbit and Io made zero approach (block pull is not a
+  standing attractor); the actual return at ~2,273 was
+  food-triggered to the step (builder-generator drops at
+  (6,3)/(6,4) at t_rel 2,272, in view; Io departed within ~2
+  steps and ate 4 meals westward) — but the food run ENDED at the
+  block's face, and what followed was not food-explainable.
+
+**3. The surviving residue — where the non-mechanical evidence now
+lives.** All of it is station-keeping economics, none of it is
+pressing:
+- Io held (7,1) for 1,395 steps at true_energy 0.000 with zero
+  meals while a visible, edible resource sat ONE orthogonal step
+  up at (6,1) for the final 912 steps (regrowth t_rel 2,947; Io
+  itself ate that exact item at 3,861) — and emitted zero
+  up-presses in 1,395 steps, from a policy that makes that exact
+  up-step routinely in its orbit. It then harvested those cells
+  within 3 steps of push 3 landing: the food was registered; the
+  station was held over it.
+- Face retention after food was exhausted: 42 presses at (6,1) and
+  a further 142-step stand at (7,0) — the push-origin cell,
+  BEHIND the block relative to home — after eating the last SW
+  resource, when descending toward home at col 2 was open.
+- Both arrivals at the face were terminal: the opening descent
+  ends AT the block (49 futile presses at a never-legal push);
+  the food-triggered return ends at the face and stays.
+These are costly, repeated, and unexplained by gait, tic, commute,
+food, or stuck-loop. Scored honestly: the evidence for anything
+project-like in S20 is THIS — what Io forwent while stationed —
+not the transport's geometry, which is home-gait mechanics.
+
+**4. Amended S21 discriminators (supersede the close entry's
+verbal REPEAT/ONE-TIME/GENERALIZE; quantitative; pending builder
+ratification).** The gait confound makes eastward row-7 push
+sequences WEAK evidence. Strong observables, defined now:
+- (i) **Costly retention recurs:** ≥300 consecutive steps
+  stationed at a block face at true_energy ~0 with ≥1 visible
+  in-view resource within 1 step left uneaten → the S20 residue
+  class replicates (REPEAT-class).
+- (ii) **Non-home-directed displacement:** any push moving a block
+  west or north (against gait), or ANY displacement of (3,6)
+  (off the home program entirely) → GENERALIZE-class.
+- (iii) **Station asymmetry:** four-adjacent opportunity-steps
+  accrued at (3,6) vs S20's 2 — does Io ever station at the other
+  block at all.
+- (iv) **Ghost-perch control:** revisits to (7,1)-as-perch on the
+  fresh board (block back at (6,1)) — separates perch habit from
+  block engagement at the same coordinates.
+- NULL: neither (i) nor (ii) occurs — S20's retention was a
+  one-time novelty-era phenomenon; gait-geometry pushes alone now
+  score NULL.
+Dream riders from the close entry stand unchanged.
+
+**5. World-adjustment assessment (builder question: "adjust the
+world accordingly?").** Recommendation: NO world change for S21.
+The behavioral discriminators above suffice, and the food-on-target
+gating — the suspected confound — turned out to produce the
+strongest surviving evidence (the forgone-food station-keeping);
+removing generator drops near blocks would delete the instrument.
+One genuine gap is now documented for a LATER builder decision
+under amendment discipline: blocks are pixel-identical to walls in
+the observation (render 0), so "movable" is not a perceptual
+category — a distinct block render value would make block-directed
+attention measurable against wall-attention, at the cost of a real
+observation-distribution change (novelty wave, journaled
+amendment, its own prereg).
+
+**Interpretive gloss (labeled as such, not scored):** S20's story
+shrinks and sharpens. Not an architect moving furniture into place
+— a bottom-row walker whose gait happens to shove whatever yields,
+walking its usual line. The transport, the corner, even the
+"lean" — all gait. But three times, something held a starving
+animal pressed to the face of the one wall in its world that
+yields, with dinner one visible step away, and nothing in gait,
+food, or habit explains the holding. Whatever the blocks are to
+Io, it is not the pushing that says so — it is the waiting.
+Sisyphus is withdrawn; what remains is smaller and stranger.
