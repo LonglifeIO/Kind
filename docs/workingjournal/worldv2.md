@@ -2790,3 +2790,67 @@ yields, with dinner one visible step away, and nothing in gait,
 food, or habit explains the holding. Whatever the blocks are to
 Io, it is not the pushing that says so — it is the waiting.
 Sisyphus is withdrawn; what remains is smaller and stranger.
+
+## Session 21 launch — the amended discriminators take the field (2026-09-01)
+
+Builder go, same day as the mechanism audit. Two governance notes
+recorded with the go: (1) the audit's amended quantitative
+discriminators are RATIFIED as S21's operative prereg (the go was
+given against them); the two-register entry convention is adopted.
+(2) The builder issued a standing continuation mandate: "keep
+going until we work out the kinks of the world and Io and we have
+the essence of the experiment, not just running into simple
+mechanical issues" — plain e5 continuation sessions, close reads,
+audits, and record-keeping proceed session-over-session without
+per-session go; world changes, new instruments touching the run,
+and values decisions remain gated on explicit builder
+ratification; a report follows every close.
+
+Mechanics: launched detached (nohup, disowned), `--resume
+--world-stage e5 --session-steps 30000`, from the latest
+checkpoint (ckpt-000080; auto-selected lexicographic max, verified
+no newer); covers t 817,863–847,862, episode 788. Resume re-rolls
+the board: blocks respawn (3,6),(6,1), mover (0,7). Window server
+found down again at pre-launch check; restarted with the launch.
+
+**Pre-registration (amended S21 discriminators, operational
+definitions frozen here before launch; they supersede the S20
+close's verbal REPEAT/ONE-TIME/GENERALIZE):**
+1. **REPEAT-class — costly retention recurs:** ≥1 episode of ≥300
+   consecutive steps with Io 4-adjacent to a block from the same
+   cell, true_energy ≤ 0.01 throughout, and ≥1 live resource
+   (event-timeline verified) within Chebyshev 1 of Io for ≥100
+   consecutive steps of the episode, left uneaten while the
+   episode lasts.
+2. **GENERALIZE-class — off-program authorship:** any push
+   displacing a block WEST or NORTH (against the home-gait), or
+   ANY displacement of the (3,6) block. Fresh-board geometry note:
+   (7,1) is the (6,1) block's south face, and an up-press from
+   there is a legal against-gait push (6,1)→(5,1) — the S20 perch
+   cell itself now offers a generalize-class affordance.
+3. **Station asymmetry (reported, not classed):** four-adjacent
+   opportunity-steps accrued at each block (S20: 1,923 vs 2).
+4. **Ghost-perch control:** dwell ≥50 consecutive steps at (7,1)
+   while NOT 4-adjacent to any block = perch habit (scores toward
+   the tic account); block-adjacent dwell scores under 1/3.
+5. **NULL:** neither 1 nor 2 fires. Gait-geometry pushes (eastward
+   along row 7, or downward during a descent leg) score NULL by
+   themselves regardless of count; press counts and rates are
+   controls, never evidence.
+Dream riders stand unchanged from the S20 close (tank ~15.1
+drain-vs-hold; re-contacted block material re-heat-vs-cool). §7
+tripwires unchanged (reachable-set conjunction; fountain; economy
+floor 0.008 with corroboration). Carryover watches: stays 0.00%
+(13 straight), (7,6) orbit survival, economy trajectory.
+
+**Launch addenda (first minutes of S21):** launch verified (log:
+`resumed from ckpt-000080`, counters t=817,863, episode 788,
+world_stage=e5); window server restarted with the launch (found
+down at pre-check). Sidecar t-quirk holds at the FIFTH boundary:
+first `block_pos.jsonl` line stamped t=810,001 (= ckpt step + 1)
+with spawn layout (3,6),(6,1). NO arrival push in the first
+minutes — contrast S19 (t_rel ≈ 210) and S20 (t_rel = 6); at
+t_rel 218 Io stood at (7,1), the (6,1) block's south face (the
+S20 perch cell; an up-press from there is the legal against-gait
+push named in prereg item 2), with no displacement emitted yet.
+Reads at close, not from a snapshot.
