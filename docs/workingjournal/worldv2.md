@@ -2854,3 +2854,69 @@ t_rel 218 Io stood at (7,1), the (6,1) block's south face (the
 S20 perch cell; an up-press from there is the legal against-gait
 push named in prereg item 2), with no displacement emitted yet.
 Reads at close, not from a snapshot.
+
+## Mover ledger audit — corrected counts and settled event-stream semantics (2026-09-01, during S21)
+
+The audit queued at the S20 close, run while S21 was in flight.
+Method: two independent recounts (one blind to all journaled
+counts), then per-event adjudication of every disagreement by
+forward simulation of the mover across S13–S15 — logged walks plus
+Io-trajectory-inferred pushes reproduce ALL 37,749 logged
+`cell_from` values with ZERO mismatches (boundary respawns aside).
+Zero items left ambiguous.
+
+**1. Corrected ledger (genuine pushes; disc = reveal-
+discontinuities, disp = single-cell displacements):**
+S13 8/8 · S14 7/8 (one verified double) · S15 26/34 (one quad
+herd, two doubles, plus FOUR reveal-invisible displacements no
+discontinuity count could see: a cancelling west-east pair at
+t=656,302/656,323 and a session-close herd t=667,851/667,852) ·
+S16 0/0 · S17 0/0 · S18 6/8 · S19 0/0 · S20 0/0.
+**Lifetime: 47 disc / 58 disp.** The journaled 51 was
+simultaneously inflated by 4 boundary artifacts counted as pushes
+(S15@467,865, S17@697,865, S18@727,865, S19@757,865 — identical
+artifacts at S14/S16/S20 were never miscounted) and blind to the
+4 reveal-invisible S15 displacements. Every resumed boundary
+S14–S20 produced exactly one env_reset chain-restart artifact; no
+seamless cross-boundary chain exists. The S20-close ledger rule is
+discharged: lifetime counts may be quoted again, as 47/58.
+
+**2. Corrected e4 baseline and the S20 bar.** Denominator 334,057
+steps (S13 start → S18 end): displacement convention 58/334,057 =
+1.736e-4/step; discontinuity convention 1.407e-4. S20's block-push
+rate 2.33e-4 restated: **1.34× the displacement baseline (the
+apples-to-apples figure) and 1.66× the discontinuity baseline —
+the engagement bar stays CLEARED under both**; the published 1.46×
+becomes 1.34× honestly stated.
+
+**3. Event-stream semantics settled (permanent instrument note).**
+The "lossy log" hypothesis from the recount round is REFUTED:
+`mover_step` logs only the mover's autonomous walks (cadence
+every-other-tick, session-dependent phase — not always even t);
+pushes are never logged and surface only as `cell_from`
+discontinuities at the mover's NEXT walk (observed reveal lag 2 to
+762 ticks — and infinite at a session end, where env_reset
+swallows the reveal). Intra-tick order is mover-first, so Io can
+push the mover the very tick it arrives (this dissolves every
+"co-occupancy" anomaly: walk-then-push, never shared cells). The
+push rule's EMPTY-target requirement blocks presses when the far
+cell holds a resource OR one of Io's own trails, pinning the
+mover's true position between events. The log is stale-by-push,
+never stale-by-drop. Also exact now: each session's out-of-order
+`agent_pos` line stamped t=ckpt+1 is genuinely the session's FIRST
+step mislabeled (relabeling is lossless).
+
+**4. Arc finding: the siege mechanic predates the blocks.** At
+S15's close the mover was pinned by Io's blocked presses and
+pushed 0–2 ticks after the blocking item cleared — resource_expiry
+gating at t=428,062 (S13) and t=667,851 (S15), trail_decay gating
+at t=656,323 — the exact expiry-gated signature S20 documented for
+blocks. S15 also contains one westward (against-gait) mover push
+(t=656,302, head-on context, reversed 21 ticks later). The S20
+block-siege pattern is behaviorally continuous with mover-era
+interaction, not novel to e5.
+
+**Interpretive gloss (labeled):** none needed — this entry is
+bookkeeping and instrument semantics; its one arc-relevant fact
+(the siege signature's mover-era precedent) feeds the S21+ reads
+as context, not as a scored claim.
